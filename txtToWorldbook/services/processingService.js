@@ -962,8 +962,8 @@ ${snippets}
     function splitContentWithProtectedTargets(content, cutTargets) {
         const source = String(content || '');
         const totalLen = source.length;
-        const minLen = 80;
-        const maxLen = 3000;
+        const minLen = 1;
+        const maxLen = 100000;
         const targets = Array.isArray(cutTargets)
             ? cutTargets.map((t) => (Number.isFinite(t) ? Math.round(t) : null)).filter((t) => typeof t === 'number')
             : [];
@@ -1049,8 +1049,8 @@ ${snippets}
     function trySplitContentWithBeatCount(content, beatCount) {
         const source = String(content || '');
         const totalLen = source.length;
-        const minLen = 80;
-        const maxLen = 3000;
+        const minLen = 1;
+        const maxLen = 100000;
 
         if (beatCount < 3 || beatCount > 8) return null;
         if (totalLen < beatCount * minLen) return null;
@@ -1114,8 +1114,8 @@ ${snippets}
     function trySplitContentWithCutTargets(content, cutTargets) {
         const source = String(content || '');
         const totalLen = source.length;
-        const minLen = 80;
-        const maxLen = 3000;
+        const minLen = 1;
+        const maxLen = 100000;
         const targets = Array.isArray(cutTargets)
             ? cutTargets.map((t) => (Number.isFinite(t) ? Math.round(t) : null)).filter((t) => typeof t === 'number')
             : [];
@@ -1722,7 +1722,7 @@ ${snippets}
         if (!splitOutcome || !Array.isArray(splitOutcome.segments)) {
             throw createChapterAssetsSplitError(
                 chapterIndex - 1,
-                '锚点切分后无法满足自然边界/引号括号保护或节拍长度约束（80-3000）',
+                '锚点切分后无法满足自然边界/引号括号保护或节拍长度约束（1-100000）',
                 {
                     beatCount,
                     cutTargets,
