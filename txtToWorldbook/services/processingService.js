@@ -2115,9 +2115,8 @@ ${snippets}
         const truncated = rawLength > text.length
             ? `\n...（已截断，完整响应长度 ${rawLength} 字符）`
             : '';
-        const lengthLabel = Number.isFinite(rawLength) ? `（${rawLength} 字符）` : '';
         updateStreamContent(
-            `📄 [第${index + 1}章][导演API] 原始响应预览${lengthLabel}（用于排查非JSON）:\n`
+            `📄 [第${index + 1}章][导演API] 原始响应预览（用于排查非JSON）:\n`
             + '```text\n'
             + `${text}${truncated}\n`
             + '```\n'
