@@ -2048,11 +2048,13 @@ ${snippets}
     function parseChapterAssetsResponse(response, memory, index) {
         const rawLength = String(response || '').length;
         const rawPreview = String(response || '').replace(/\s+/g, ' ').slice(0, 180);
+        const rawDebugPreview = String(response || '').trim().slice(0, 4000);
         const parsed = extractJsonObject(response);
         if (!parsed) {
             throw createChapterAssetsContractError(index, `导演响应不是有效JSON（响应长度=${rawLength}）`, {
                 rawLength,
                 rawPreview,
+                rawDebugPreview,
             });
         }
 
@@ -2096,6 +2098,29 @@ ${snippets}
             source: 'anchor-strategy',
             compatibility: normalized.compatibility,
         });
+    }
+
+    function appendDirectorRawResponseDebug(index, error) {
+        const detail = error?.detail && typeof error.detail === 'object' ? error.detail : {};
+        const rawDebugPreview = typeof detail.rawDebugPreview === 'string'
+            ? detail.rawDebugPreview
+            : '';
+        const rawPreview = typeof detail.rawPreview === 'string'
+            ? detail.rawPreview
+            : '';
+        const text = rawDebugPreview || rawPreview;
+        if (!text) return;
+
+        const rawLength = Number.isFinite(detail.rawLength) ? detail.rawLength : text.length;
+        const truncated = rawLength > text.length
+            ? `\n...（已截断，完整响应长度 ${rawLength} 字符）`
+            : '';
+        updateStreamContent(
+            `📄 [第${index + 1}章][导演API] 原始响应预览（用于排查非JSON）:\n`
+            + '```text\n'
+            + `${text}${truncated}\n`
+            + '```\n'
+        );
     }
 
     function buildChapterAssetsPrompt(memory, index, retryHint = '') {
@@ -2218,6 +2243,9 @@ ${snippets}
 
                 if (isContractError && error?.detail?.splitPointIndex) {
                     updateStreamContent(`ℹ️ [第${index + 1}章][导演API] 契约诊断: split_point[${error.detail.splitPointIndex}] 重点检查 anchor 是否可定位\n`);
+                }
+                if (isContractError) {
+                    appendDirectorRawResponseDebug(index, error);
                 }
 
                 const canRetry = shouldRetryError(error);

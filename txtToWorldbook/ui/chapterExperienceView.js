@@ -24,6 +24,7 @@ export function createChapterExperienceView(deps = {}) {
         nextBeatButton: 'ttw-next-beat-btn',
         nextButton: 'ttw-next-chapter-btn',
         startFirstButton: 'ttw-start-reading-first',
+        resetAllDirectorButton: 'ttw-reset-all-director-assets',
         viewTabs: 'ttw-view-nav',
         txtModeButton: 'ttw-view-mode-txt',
         progressModeButton: 'ttw-view-mode-progress',

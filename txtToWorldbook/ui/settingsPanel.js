@@ -687,7 +687,10 @@ function buildResultSectionHtml() {
             <div id="ttw-story-outline-section" class="ttw-story-panel" style="display:none;">
                 <div class="ttw-story-panel-header">
                     <h4>🧭 故事大纲</h4>
-                    <button id="ttw-start-reading-first" class="ttw-btn ttw-btn-small">▶ 从第一章开始</button>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                        <button id="ttw-reset-all-director-assets" class="ttw-btn ttw-btn-small ttw-btn-warning">🧹 全部重置导演切拍</button>
+                        <button id="ttw-start-reading-first" class="ttw-btn ttw-btn-small">▶ 从第一章开始</button>
+                    </div>
                 </div>
                 <div id="ttw-story-outline-list" class="ttw-story-outline-list"></div>
             </div>
