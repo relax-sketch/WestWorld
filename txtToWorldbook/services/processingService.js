@@ -1192,31 +1192,41 @@ ${snippets}
 
             if (!isNaturalCutPosition(source, cut)) {
                 const adjusted = findNearestSafeBoundaryCut(source, cut, minCut, maxCut, 420);
-                if (!Number.isInteger(adjusted)) return null;
-                if (adjusted !== cut) {
-                    pointWarnings.push('cut_adjusted_to_natural_boundary');
+                if (Number.isInteger(adjusted)) {
+                    if (adjusted !== cut) pointWarnings.push('cut_adjusted_to_natural_boundary');
+                    cut = adjusted;
+                } else {
+                    // 找不到自然边界时强制用 desired，不放弃整个切分
+                    cut = Math.max(minCut, Math.min(maxCut, desired));
+                    pointWarnings.push('cut_natural_boundary_not_found_used_desired');
                 }
-                cut = adjusted;
             }
 
             if (isInsideQuoteOrBracket(source, cut)) {
                 const adjusted = findNearestSafeBoundaryCut(source, cut, minCut, maxCut, 500);
-                if (!Number.isInteger(adjusted)) return null;
-                if (adjusted !== cut) {
-                    pointWarnings.push('cut_moved_outside_quote_or_bracket');
+                if (Number.isInteger(adjusted)) {
+                    if (adjusted !== cut) pointWarnings.push('cut_moved_outside_quote_or_bracket');
+                    cut = adjusted;
+                    // 仍在引号内时降级：只要求自然边界，放弃引号保护
+                    if (isInsideQuoteOrBracket(source, cut)) {
+                        pointWarnings.push('cut_quote_protection_skipped_fallback');
+                    }
+                } else {
+                    // 完全找不到安全点时降级，不放弃整个切分
+                    pointWarnings.push('cut_quote_protection_skipped_fallback');
                 }
-                cut = adjusted;
-                if (isInsideQuoteOrBracket(source, cut)) return null;
             }
 
             if ((cut - prev) > maxLen) {
                 const hardMax = Math.min(maxCut, prev + maxLen);
                 const adjusted = findNearestSafeBoundaryCut(source, hardMax, minCut, hardMax, 240);
-                if (!Number.isInteger(adjusted)) return null;
-                if (adjusted !== cut) {
-                    pointWarnings.push('cut_shifted_for_max_length_constraint');
+                if (Number.isInteger(adjusted)) {
+                    if (adjusted !== cut) pointWarnings.push('cut_shifted_for_max_length_constraint');
+                    cut = adjusted;
+                } else {
+                    cut = hardMax;
+                    pointWarnings.push('cut_max_length_forced');
                 }
-                cut = adjusted;
             }
 
             if (cut <= prev || cut < minCut || cut > maxCut) return null;
