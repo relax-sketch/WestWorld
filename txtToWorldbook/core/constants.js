@@ -444,6 +444,7 @@ export const defaultDirectorInjectionPrompt = `# WestWorld 导演->演员执行�
 
 export const defaultSettings = {
     chunkSize: 8000,
+    minChunkSize: 1500,
     enablePlotOutline: false,
     enableLiteraryStyle: false,
     language: 'zh',

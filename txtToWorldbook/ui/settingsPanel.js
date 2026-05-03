@@ -88,7 +88,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
-const PLUGIN_VERSION = 'v3.10.1';
+const PLUGIN_VERSION = 'v3.10.2';
 
 function buildPluginUpdateHtml() {
     return '';
@@ -158,6 +158,10 @@ function buildBasicSettingsHtml() {
         <div style="flex:1;">
             <label class="ttw-label">每块字数</label>
             <input type="number" id="ttw-chunk-size" value="8000" min="1000" max="500000" class="ttw-input">
+        </div>
+        <div style="flex:1;">
+            <label class="ttw-label">最短字数</label>
+            <input type="number" id="ttw-min-chunk-size" value="1500" min="0" max="500000" class="ttw-input">
         </div>
         <div style="flex:1;">
             <label class="ttw-label">API超时(秒)</label>
@@ -783,6 +787,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const chunkSizeEl = document.getElementById('ttw-chunk-size');
     if (chunkSizeEl) chunkSizeEl.value = AppState.settings.chunkSize;
+
+    const minChunkSizeEl = document.getElementById('ttw-min-chunk-size');
+    if (minChunkSizeEl) minChunkSizeEl.value = AppState.settings.minChunkSize ?? 1500;
 
     const apiTimeoutEl = document.getElementById('ttw-api-timeout');
     if (apiTimeoutEl) apiTimeoutEl.value = Math.round((AppState.settings.apiTimeout || 120000) / 1000);

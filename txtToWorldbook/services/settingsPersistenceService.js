@@ -68,6 +68,13 @@ export function createSettingsPersistenceService(deps) {
         } = options;
 
         AppState.settings.chunkSize = parseInt(document.getElementById('ttw-chunk-size')?.value) || 8000;
+        AppState.settings.minChunkSize = Math.max(0, parseInt(
+            document.getElementById('ttw-min-chunk-size')?.value
+            ?? AppState.settings.minChunkSize
+            ?? defaultSettings.minChunkSize
+            ?? 1500,
+            10
+        ) || 0);
         AppState.settings.apiTimeout = (parseInt(document.getElementById('ttw-api-timeout')?.value) || 120) * 1000;
         AppState.processing.incrementalMode = document.getElementById('ttw-incremental-mode')?.checked ?? true;
         AppState.processing.volumeMode = document.getElementById('ttw-volume-mode')?.checked ?? false;

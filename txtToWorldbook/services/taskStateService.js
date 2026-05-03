@@ -23,7 +23,6 @@ export function createTaskStateService(deps = {}) {
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
     const TASK_STATE_VERSION = '3.5.1';
-    const SHORT_CHUNK_MERGE_THRESHOLD = 1500;
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
@@ -171,7 +170,7 @@ export function createTaskStateService(deps = {}) {
     }
 
     function mergeShortUnprocessedChunks(queue, threshold) {
-        if (!Array.isArray(queue) || queue.length <= 1) return queue;
+        if (!Array.isArray(queue) || queue.length <= 1 || threshold <= 0) return queue;
         const hasProcessedState = queue.some((memory) => (
             memory?.processed === true
             || memory?.failed === true
@@ -214,7 +213,8 @@ export function createTaskStateService(deps = {}) {
     function normalizeMemoryQueue(queue = []) {
         if (!Array.isArray(queue)) return [];
         const normalized = queue.map((memory, index) => normalizeMemoryItem(memory, index));
-        mergeShortUnprocessedChunks(normalized, SHORT_CHUNK_MERGE_THRESHOLD);
+        const threshold = Math.max(0, parseInt(AppState.settings?.minChunkSize, 10) || 0);
+        mergeShortUnprocessedChunks(normalized, threshold);
         return normalized.map((memory, index) => normalizeMemoryItem(memory, index));
     }
 
@@ -305,6 +305,7 @@ export function createTaskStateService(deps = {}) {
                 }
                 if (!state.memoryQueue || !Array.isArray(state.memoryQueue)) throw new Error('无效的任务状态文件');
 
+                if (state.settings) AppState.settings = { ...defaultSettings, ...state.settings };
                 const normalizedQueue = normalizeMemoryQueue(state.memoryQueue);
                 AppState.memory.queue = normalizedQueue;
                 AppState.worldbook.generated = state.generatedWorldbook && typeof state.generatedWorldbook === 'object'
@@ -314,7 +315,6 @@ export function createTaskStateService(deps = {}) {
                 AppState.worldbook.currentVolumeIndex = clampStartIndex(state.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
                 AppState.file.hash = state.fileHash || null;
 
-                if (state.settings) AppState.settings = { ...defaultSettings, ...state.settings };
                 if (state.parallelConfig) AppState.config.parallel = { ...AppState.config.parallel, ...state.parallelConfig };
                 if (state.categoryLightSettings) AppState.config.categoryLight = { ...AppState.config.categoryLight, ...state.categoryLightSettings };
                 if (state.customWorldbookCategories) AppState.persistent.customCategories = state.customWorldbookCategories;
@@ -478,6 +478,7 @@ export function createTaskStateService(deps = {}) {
                 return false;
             }
 
+            if (savedState.settings) AppState.settings = { ...defaultSettings, ...savedState.settings };
             AppState.memory.queue = normalizeMemoryQueue(savedState.memoryQueue);
             AppState.worldbook.generated = savedState.generatedWorldbook && typeof savedState.generatedWorldbook === 'object'
                 ? savedState.generatedWorldbook

@@ -18,8 +18,6 @@ export function createFileImportService(deps = {}) {
 
     const INLINE_CHAPTER_MARKER_REGEX = /第\s*[零一二三四五六七八九十百千万两〇0-9]+\s*[章回卷节部篇]/giu;
     const INLINE_CHAPTER_BOUNDARY_CHAR_REGEX = /[。！？!?；;，,、”’」』）)\]】》〉]/u;
-    const SHORT_CHUNK_MERGE_THRESHOLD = 1500;
-
     async function handleFileSelect(file) {
         if (!file.name.endsWith('.txt')) {
             ErrorHandler.showUserError('请选择TXT文件');
@@ -207,8 +205,7 @@ export function createFileImportService(deps = {}) {
 
     function splitContentIntoMemory(content) {
         const chunkSize = AppState.settings.chunkSize;
-        const minChunkSize = Math.max(chunkSize * 0.3, 5000);
-        let shouldMergeTinyChunks = true;
+        const shortChunkMergeThreshold = Math.max(0, parseInt(AppState.settings.minChunkSize, 10) || 0);
         AppState.memory.queue = [];
 
         // Normalize inline chapter markers like “……」第二章” into line-start chapter headers.
@@ -217,7 +214,6 @@ export function createFileImportService(deps = {}) {
         const matches = detectChapterMatches(normalizedContent, AppState.config.chapterRegex.pattern);
 
         if (matches.length > 0) {
-            shouldMergeTinyChunks = false;
             const chapters = [];
 
             for (let i = 0; i < matches.length; i++) {
@@ -285,19 +281,7 @@ export function createFileImportService(deps = {}) {
             }
         }
 
-        mergeShortAdjacentChunks(SHORT_CHUNK_MERGE_THRESHOLD);
-
-        if (shouldMergeTinyChunks) {
-            for (let i = AppState.memory.queue.length - 1; i > 0; i--) {
-                if (AppState.memory.queue[i].content.length < minChunkSize) {
-                    const prevMemory = AppState.memory.queue[i - 1];
-                    if (prevMemory.content.length + AppState.memory.queue[i].content.length <= chunkSize * 1.2) {
-                        prevMemory.content += AppState.memory.queue[i].content;
-                        AppState.memory.queue.splice(i, 1);
-                    }
-                }
-            }
-        }
+        mergeShortAdjacentChunks(shortChunkMergeThreshold);
 
         AppState.memory.queue.forEach((memory, index) => {
             memory.title = `记忆${index + 1}`;
@@ -319,7 +303,7 @@ export function createFileImportService(deps = {}) {
 
     function mergeShortAdjacentChunks(threshold) {
         const queue = AppState.memory.queue;
-        if (!Array.isArray(queue) || queue.length <= 1) return;
+        if (!Array.isArray(queue) || queue.length <= 1 || threshold <= 0) return;
 
         let i = 0;
         while (i < queue.length) {
