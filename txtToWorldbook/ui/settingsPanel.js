@@ -1,5 +1,6 @@
 ﻿import {
     DEFAULT_WORLDBOOK_CATEGORIES,
+    defaultChapterAssetsPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -326,6 +327,31 @@ function buildConsolidatePromptSectionHtml() {
     </div>`;
 }
 
+function buildChapterAssetsPromptSectionHtml() {
+    return `
+    <div class="ttw-prompt-section">
+        <div class="ttw-prompt-header" data-target="ttw-chapter-assets-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span>✂️</span><span style="font-weight:500;">导演切拍章节资产提示词</span>
+                <span class="ttw-badge ttw-badge-blue">必需</span>
+            </div>
+            <span class="ttw-collapse-icon">▼</span>
+        </div>
+        <div id="ttw-chapter-assets-content" class="ttw-prompt-content" style="display:block;">
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">仅导演切拍/章节资产生成时使用的提示词模板。修改时建议保留正文与锚点相关占位符。</div>
+            <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
+                <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
+                <code>{CHAPTER_TITLE}</code> <code>{CHAPTER_CONTENT}</code> <code>{MIN_ANCHOR_LEN}</code> <code>{MAX_ANCHOR_LEN}</code> <code>{RETRY_BLOCK}</code>
+            </div>
+            <textarea id="ttw-chapter-assets-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="chapter-assets">🔄 恢复默认</button>
+                <button class="ttw-btn ttw-btn-small" id="ttw-save-chapter-assets-prompt">💾 保存</button>
+            </div>
+        </div>
+    </div>`;
+}
+
 function buildDirectorFrameworkPromptSectionHtml() {
     return `
     <div class="ttw-prompt-section">
@@ -510,6 +536,7 @@ function buildPromptEditorSectionHtml() {
             ${buildCategoryGuidePromptSectionHtml()}
             ${buildWorldbookPromptSectionHtml()}
             ${buildConsolidatePromptSectionHtml()}
+            ${buildChapterAssetsPromptSectionHtml()}
             ${buildDirectorFrameworkPromptSectionHtml()}
             ${buildDirectorInjectionPromptSectionHtml()}
         </div>
@@ -787,6 +814,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const consolidatePromptEl = document.getElementById('ttw-consolidate-prompt');
     if (consolidatePromptEl) consolidatePromptEl.value = AppState.settings.customConsolidatePrompt || defaultConsolidatePrompt;
+
+    const chapterAssetsPromptEl = document.getElementById('ttw-chapter-assets-prompt');
+    if (chapterAssetsPromptEl) chapterAssetsPromptEl.value = AppState.settings.customChapterAssetsPrompt || defaultChapterAssetsPrompt;
 
     const directorFrameworkPromptEl = document.getElementById('ttw-director-framework-prompt');
     if (directorFrameworkPromptEl) {

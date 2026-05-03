@@ -1,5 +1,6 @@
 ﻿import {
     DEFAULT_WORLDBOOK_CATEGORIES,
+    defaultChapterAssetsPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -529,6 +530,7 @@ export function bindSettingEvents(deps = {}) {
     const getPromptDefaultValue = (type) => {
         if (type === 'worldbook') return defaultWorldbookPrompt;
         if (type === 'consolidate') return defaultConsolidatePrompt;
+        if (type === 'chapter-assets') return defaultChapterAssetsPrompt;
         if (type === 'director-framework') return defaultDirectorFrameworkPrompt;
         if (type === 'director-injection') return defaultDirectorInjectionPrompt;
         return '';
@@ -542,6 +544,8 @@ export function bindSettingEvents(deps = {}) {
             AppState.settings.customWorldbookPrompt = textarea.value || '';
         } else if (type === 'consolidate') {
             AppState.settings.customConsolidatePrompt = textarea.value || '';
+        } else if (type === 'chapter-assets') {
+            AppState.settings.customChapterAssetsPrompt = textarea.value || '';
         } else if (type === 'director-framework') {
             AppState.settings.customDirectorFrameworkPrompt = textarea.value || '';
         } else if (type === 'director-injection') {
@@ -613,7 +617,7 @@ export function bindSettingEvents(deps = {}) {
                 const textarea = document.getElementById(`ttw-${type}-prompt`);
                 if (!textarea) return;
 
-                if (type === 'worldbook' || type === 'consolidate' || type === 'director-framework' || type === 'director-injection') {
+                if (type === 'worldbook' || type === 'consolidate' || type === 'chapter-assets' || type === 'director-framework' || type === 'director-injection') {
                     textarea.value = getPromptDefaultValue(type);
                     if (ErrorHandler && typeof ErrorHandler.showUserSuccess === 'function') {
                         ErrorHandler.showUserSuccess('已恢复默认内容，请点击保存按钮生效');
@@ -627,6 +631,7 @@ export function bindSettingEvents(deps = {}) {
         },
         '#ttw-save-worldbook-prompt': { click: () => savePromptByType('worldbook') },
         '#ttw-save-consolidate-prompt': { click: () => savePromptByType('consolidate') },
+        '#ttw-save-chapter-assets-prompt': { click: () => savePromptByType('chapter-assets') },
         '#ttw-save-director-framework-prompt': { click: () => savePromptByType('director-framework') },
         '#ttw-save-director-injection-prompt': { click: () => savePromptByType('director-injection') }
     });

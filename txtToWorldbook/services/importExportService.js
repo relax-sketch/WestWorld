@@ -185,6 +185,7 @@ export function createImportExportService(deps = {}) {
             prompts: {
                 worldbookPrompt: AppState.settings.customWorldbookPrompt,
                 consolidatePrompt: AppState.settings.customConsolidatePrompt,
+                chapterAssetsPrompt: AppState.settings.customChapterAssetsPrompt,
                 directorFrameworkPrompt: AppState.settings.customDirectorFrameworkPrompt,
                 directorInjectionPrompt: AppState.settings.customDirectorInjectionPrompt,
                 plotPrompt: AppState.settings.customPlotPrompt,
@@ -269,6 +270,9 @@ export function createImportExportService(deps = {}) {
                     }
                     if (data.prompts.consolidatePrompt !== undefined) {
                         AppState.settings.customConsolidatePrompt = data.prompts.consolidatePrompt;
+                    }
+                    if (data.prompts.chapterAssetsPrompt !== undefined) {
+                        AppState.settings.customChapterAssetsPrompt = data.prompts.chapterAssetsPrompt;
                     }
                     if (data.prompts.directorFrameworkPrompt !== undefined) {
                         AppState.settings.customDirectorFrameworkPrompt = data.prompts.directorFrameworkPrompt;

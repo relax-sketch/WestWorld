@@ -75,6 +75,7 @@ import {
     defaultStylePrompt,
     defaultMergePrompt,
     defaultConsolidatePrompt,
+    defaultChapterAssetsPrompt,
     defaultSettings
 } from './core/constants.js';
 import { Logger } from './core/logger.js';
@@ -694,6 +695,7 @@ const coreServices = createCoreServices({
         handleRepairMemoryWithSplit,
         setProcessingStatus,
         getProcessingStatus,
+        defaultChapterAssetsPrompt,
     }),
     rerollDeps: ({ apiService, parserService }) => ({
         AppState,
