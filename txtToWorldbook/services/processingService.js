@@ -702,9 +702,184 @@ ${snippets}
         return normalized.slice(0, 8).map((beat, idx) => normalizeBeatItem(beat, idx));
     }
 
-    function extractJsonObject(text) {
+    function findNextNonWhitespaceChar(source, startIndex) {
+        const text = String(source || '');
+        const start = Math.max(0, Number(startIndex) || 0);
+        for (let i = start; i < text.length; i++) {
+            const ch = text[i];
+            if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') return ch;
+        }
+        return '';
+    }
+
+    function repairJsonStringValues(raw) {
+        const text = String(raw || '');
+        if (!text) {
+            return { text, repairedCount: 0, changed: false };
+        }
+
+        const out = [];
+        const stack = [];
+        let inString = false;
+        let escaped = false;
+        let stringRole = 'value';
+        let inPrimitive = false;
+        let repairedCount = 0;
+
+        const isWhitespace = (ch) => ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t';
+        const top = () => (stack.length ? stack[stack.length - 1] : null);
+        const pushContext = (type) => {
+            stack.push({ type, state: type === 'object' ? 'expectKey' : 'expectValue' });
+        };
+        const popContext = () => {
+            stack.pop();
+            const parent = top();
+            if (parent) parent.state = 'expectCommaOrEnd';
+        };
+        const setAfterValue = () => {
+            const ctx = top();
+            if (ctx) ctx.state = 'expectCommaOrEnd';
+        };
+        const setAfterKey = () => {
+            const ctx = top();
+            if (ctx && ctx.type === 'object') ctx.state = 'expectColon';
+        };
+        const setAfterColon = () => {
+            const ctx = top();
+            if (ctx && ctx.type === 'object') ctx.state = 'expectValue';
+        };
+        const setAfterComma = () => {
+            const ctx = top();
+            if (!ctx) return;
+            ctx.state = ctx.type === 'object' ? 'expectKey' : 'expectValue';
+        };
+
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+
+            if (inString) {
+                if (escaped) {
+                    out.push(ch);
+                    escaped = false;
+                    continue;
+                }
+                if (ch === '\\') {
+                    out.push(ch);
+                    escaped = true;
+                    continue;
+                }
+                if (ch === '"') {
+                    if (stringRole === 'value') {
+                        const next = findNextNonWhitespaceChar(text, i + 1);
+                        const looksClosed = next === '' || next === ',' || next === '}' || next === ']' || next === ':';
+                        if (!looksClosed) {
+                            // Escape quote inside value string when it does not close the string.
+                            out.push('\\', '"');
+                            repairedCount++;
+                            continue;
+                        }
+                    }
+                    inString = false;
+                    out.push(ch);
+                    if (stringRole === 'key') {
+                        setAfterKey();
+                    } else {
+                        setAfterValue();
+                    }
+                    stringRole = 'value';
+                    continue;
+                }
+                out.push(ch);
+                continue;
+            }
+
+            if (inPrimitive) {
+                if (ch === ',' || ch === '}' || ch === ']') {
+                    inPrimitive = false;
+                    setAfterValue();
+                } else {
+                    out.push(ch);
+                    continue;
+                }
+            }
+
+            if (ch === '"') {
+                const ctx = top();
+                const role = ctx && ctx.type === 'object' && ctx.state === 'expectKey' ? 'key' : 'value';
+                inString = true;
+                stringRole = role;
+                out.push(ch);
+                continue;
+            }
+
+            if (ch === '{') {
+                out.push(ch);
+                pushContext('object');
+                continue;
+            }
+            if (ch === '[') {
+                out.push(ch);
+                pushContext('array');
+                continue;
+            }
+            if (ch === '}') {
+                out.push(ch);
+                popContext();
+                continue;
+            }
+            if (ch === ']') {
+                out.push(ch);
+                popContext();
+                continue;
+            }
+            if (ch === ':') {
+                out.push(ch);
+                setAfterColon();
+                continue;
+            }
+            if (ch === ',') {
+                out.push(ch);
+                setAfterComma();
+                continue;
+            }
+
+            if (!isWhitespace(ch)) {
+                const ctx = top();
+                if (ctx && ctx.state === 'expectValue') {
+                    inPrimitive = true;
+                }
+            }
+
+            out.push(ch);
+        }
+
+        if (inPrimitive) {
+            setAfterValue();
+        }
+
+        return { text: out.join(''), repairedCount, changed: repairedCount > 0 };
+    }
+
+    function extractJsonObject(text, meta = null) {
         const raw = String(text || '').trim();
         if (!raw) return null;
+
+        const repairMeta = meta && typeof meta === 'object' ? meta : null;
+        if (repairMeta) {
+            repairMeta.repairApplied = false;
+            repairMeta.repairCount = 0;
+            repairMeta.repairTried = false;
+        }
+
+        const tryParseJson = (candidate) => {
+            try {
+                const parsed = JSON.parse(candidate);
+                if (parsed && typeof parsed === 'object') return parsed;
+            } catch (_) {
+                // continue
+            }
+            return null;
+        };
 
         const maybeParseJson = (candidate) => {
             const body = String(candidate || '').trim();
@@ -716,11 +891,21 @@ ${snippets}
             ];
 
             for (const item of variants) {
-                try {
-                    const parsed = JSON.parse(item);
-                    if (parsed && typeof parsed === 'object') return parsed;
-                } catch (_) {
-                    // continue
+                const parsed = tryParseJson(item);
+                if (parsed) return parsed;
+            }
+
+            for (const item of variants) {
+                const repaired = repairJsonStringValues(item);
+                if (!repaired.changed) continue;
+                if (repairMeta) repairMeta.repairTried = true;
+                const parsed = tryParseJson(repaired.text);
+                if (parsed) {
+                    if (repairMeta) {
+                        repairMeta.repairApplied = true;
+                        repairMeta.repairCount = repaired.repairedCount;
+                    }
+                    return parsed;
                 }
             }
             return null;
@@ -1178,7 +1363,7 @@ ${snippets}
                 : [];
             const splitType = normalizeSplitType(point?.split_rule?.primary || 'goal_shift');
             const splitRule = normalizeStrategySplitRule(point?.split_rule, splitType);
-            return normalizeBeatItem({
+            const beat = normalizeBeatItem({
                 id: `b${idx + 1}`,
                 summary,
                 event_summary: point?.event_summary || summary,
@@ -1201,6 +1386,9 @@ ${snippets}
                 split_rule: splitRule,
                 self_review: normalizeSelfCheck(point?.self_check || point?.selfCheck || point?.reflection || null, pointWarnings),
             }, idx, summary);
+            beat._debug_anchor = point?.anchor || '';
+            beat._debug_warnings = pointWarnings.length ? pointWarnings : undefined;
+            return beat;
         });
     }
 
@@ -1814,11 +2002,28 @@ ${snippets}
             const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
             const len = originalText.length;
             if (len <= 0) {
+                const debugBeats = beats.map((b, j) => ({
+                    index: j + 1,
+                    original_text_length: (b.original_text || '').length,
+                    original_text_preview: String(b.original_text || '').slice(0, 80),
+                    anchor: b._debug_anchor || '',
+                    warnings: b._debug_warnings || [],
+                }));
+                const debugJson = JSON.stringify({
+                    error: 'empty_original_text',
+                    emptyBeatIndices: beatSummary.emptyBeatIndices,
+                    lengths: beatSummary.lengths,
+                    beats: debugBeats,
+                }, null, 2);
+                if (typeof updateStreamContent === 'function') {
+                    updateStreamContent(`⚠️ [第${index + 1}章][导演API] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
+                }
                 throw createChapterAssetsValidationError(index, `第${i + 1}个节拍原文为空`, {
                     beatIndex: i + 1,
                     beatCount: beatSummary.count,
                     emptyBeatIndices: beatSummary.emptyBeatIndices,
                     lengths: beatSummary.lengths,
+                    debugBeats,
                 });
             }
 
@@ -2049,12 +2254,19 @@ ${snippets}
         const rawLength = String(response || '').length;
         const rawPreview = String(response || '').replace(/\s+/g, ' ').slice(0, 180);
         const rawDebugPreview = String(response || '').trim().slice(0, 4000);
-        const parsed = extractJsonObject(response);
+        const repairMeta = {};
+        const parsed = extractJsonObject(response, repairMeta);
+        const repairInfo = repairMeta?.repairApplied
+            ? { repaired: true, escapedQuotes: repairMeta.repairCount }
+            : null;
         if (!parsed) {
             throw createChapterAssetsContractError(index, `导演响应不是有效JSON（响应长度=${rawLength}）`, {
                 rawLength,
                 rawPreview,
                 rawDebugPreview,
+                repairTried: repairMeta.repairTried,
+                repairApplied: repairMeta.repairApplied,
+                repairCount: repairMeta.repairCount,
             });
         }
 
@@ -2073,6 +2285,7 @@ ${snippets}
                     rawPreview,
                     source: 'legacy-script',
                     compatibility: normalized.compatibility,
+                    ...(repairInfo ? { repair: repairInfo } : {}),
                 },
             };
         }
@@ -2097,6 +2310,7 @@ ${snippets}
             rawPreview,
             source: 'anchor-strategy',
             compatibility: normalized.compatibility,
+            ...(repairInfo ? { repair: repairInfo } : {}),
         });
     }
 
@@ -2230,6 +2444,23 @@ ${snippets}
                 const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
                 const sourceTag = assets?.meta?.source || 'director-unknown';
                 updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
+                if (beatSummary.emptyBeatIndices.length > 0) {
+                    const beats = assets?.script?.beats || [];
+                    const debugBeats = beats.map((b, i) => ({
+                        index: i + 1,
+                        original_text_length: (b.original_text || '').length,
+                        original_text_preview: String(b.original_text || '').slice(0, 80),
+                        anchor: b._debug_anchor || '',
+                        warnings: b._debug_warnings || [],
+                    }));
+                    const debugJson = JSON.stringify({
+                        emptyBeatIndices: beatSummary.emptyBeatIndices,
+                        lengths: beatSummary.lengths,
+                        beats: debugBeats,
+                        meta: assets?.meta || {},
+                    }, null, 2);
+                    updateStreamContent(`⚠️ [第${index + 1}章][导演API] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
+                }
                 validateChapterAssetsOrThrow(assets, memory, index);
                 throwIfRunInactive(runId);
                 return commitAssets(assets, sourceTag);
