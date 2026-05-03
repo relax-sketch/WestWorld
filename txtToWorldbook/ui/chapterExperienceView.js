@@ -2,6 +2,7 @@ export function createChapterExperienceView(deps = {}) {
     const {
         AppState,
         ErrorHandler,
+        confirmAction,
         callAPI,
         getLanguagePrefix,
         ModalFactory,
@@ -387,6 +388,99 @@ export function createChapterExperienceView(deps = {}) {
         } catch (error) {
             ErrorHandler.showUserError(`状态落盘失败：${error?.message || error}`);
         }
+    }
+
+    async function confirmDirectorReset(message, options = {}) {
+        if (typeof confirmAction === 'function') {
+            return confirmAction(message, options);
+        }
+        return window.confirm(message);
+    }
+
+    function guardDirectorReset() {
+        if (AppState?.processing?.isRunning) {
+            ErrorHandler.showUserError('当前仍在处理流程中，请先停止任务再重置导演切拍。');
+            return false;
+        }
+        return true;
+    }
+
+    function resetDirectorAssetsForMemory(memory, index) {
+        if (!memory) return;
+        ensureMemoryRuntime(memory, index);
+        memory.processing = false;
+        memory.chapterOutline = '';
+        memory.chapterOutlineStatus = 'pending';
+        memory.chapterOutlineError = '';
+        memory.chapterScript = { keyNodes: [], beats: [] };
+        memory.chapterCurrentBeatIndex = 0;
+        memory.directorDecision = null;
+        memory.chapterOpeningPreview = '';
+        memory.chapterOpeningSent = false;
+        memory.chapterOpeningError = '';
+        memory.chapterOpeningGenerating = false;
+    }
+
+    function resetExperienceAfterDirectorReset(index, force = false) {
+        ensureState();
+        const currentIndex = Number.isInteger(AppState.experience.currentChapterIndex)
+            ? AppState.experience.currentChapterIndex
+            : 0;
+        const isCurrent = currentIndex === index;
+        const shouldClearDecision = force || isCurrent || AppState.experience.lastChapterIdx === index;
+
+        if (isCurrent) {
+            AppState.experience.currentBeatIndex = 0;
+        }
+        if (shouldClearDecision) {
+            AppState.experience.lastBeatIdx = 0;
+            AppState.experience.lastChapterIdx = currentIndex;
+            AppState.experience.directorLastDecision = null;
+            AppState.experience.directorLastDecisionAt = 0;
+        }
+    }
+
+    async function resetDirectorAssetsForChapter(index) {
+        if (!guardDirectorReset()) return;
+        const memory = getMemory(index);
+        if (!memory) {
+            ErrorHandler.showUserError('重置失败：未找到对应章节');
+            return;
+        }
+
+        const ok = await confirmDirectorReset(
+            `确定要重置第${index + 1}章的导演切拍吗？\n\n将清空大纲、节拍、当前节拍、导演决策和开场白状态。`,
+            { title: '重置导演切拍', danger: true },
+        );
+        if (!ok) return;
+
+        resetDirectorAssetsForMemory(memory, index);
+        resetExperienceAfterDirectorReset(index);
+        renderOutlineList();
+        renderCurrentPanel();
+        await persistCurrentState();
+        ErrorHandler.showUserSuccess(`第${index + 1}章导演切拍已重置。`);
+    }
+
+    async function resetAllDirectorAssets() {
+        if (!guardDirectorReset()) return;
+        if (AppState.memory.queue.length === 0) {
+            ErrorHandler.showUserError('暂无章节数据可重置。');
+            return;
+        }
+
+        const ok = await confirmDirectorReset(
+            `确定要重置全部章节的导演切拍吗？\n\n将清空所有章节的大纲、节拍、当前节拍、导演决策和开场白状态。`,
+            { title: '重置导演切拍', danger: true },
+        );
+        if (!ok) return;
+
+        AppState.memory.queue.forEach((memory, idx) => resetDirectorAssetsForMemory(memory, idx));
+        resetExperienceAfterDirectorReset(AppState.experience.currentChapterIndex || 0, true);
+        renderOutlineList();
+        renderCurrentPanel();
+        await persistCurrentState();
+        ErrorHandler.showUserSuccess(`已重置 ${AppState.memory.queue.length} 章导演切拍。`);
     }
 
     async function switchCurrentBeat(offset = 0) {
@@ -904,6 +998,8 @@ export function createChapterExperienceView(deps = {}) {
             const isGenerating = memory.chapterOutlineStatus === 'generating';
             const rerollLabel = isGenerating ? '⏳ 本章生成中...' : '🔄 重roll本章';
             const rerollDisabledAttr = isGenerating ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : '';
+            const resetLabel = isGenerating ? '⏳ 本章生成中...' : '🧹 重置本章导演切拍';
+            const resetDisabledAttr = isGenerating ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : '';
 
             return `
 <div class="ttw-outline-item" data-index="${index}">
@@ -914,6 +1010,7 @@ export function createChapterExperienceView(deps = {}) {
     <div class="ttw-outline-body" id="ttw-outline-body-${index}" style="display:none;">
         <div class="ttw-outline-summary">${escapeHtml(outlineText)}</div>
         <button class="ttw-btn ttw-btn-small" data-action="reroll-chapter-assets" data-index="${index}" ${rerollDisabledAttr}>${rerollLabel}</button>
+        <button class="ttw-btn ttw-btn-small ttw-btn-warning" data-action="reset-director-assets" data-index="${index}" ${resetDisabledAttr}>${resetLabel}</button>
         <button class="ttw-btn ttw-btn-small" data-action="view-chapter" data-index="${index}">📖 查看当前章节概览</button>
     </div>
 </div>`;
@@ -1387,6 +1484,11 @@ export function createChapterExperienceView(deps = {}) {
             return;
         }
 
+        if (action === 'reset-director-assets') {
+            await resetDirectorAssetsForChapter(index);
+            return;
+        }
+
         if (action === 'view-chapter') {
             await enterChapter(index, { triggerOpening: false });
             await showCurrentChapterPanelInternal();
@@ -1414,6 +1516,14 @@ export function createChapterExperienceView(deps = {}) {
             startBtn.addEventListener('click', async () => {
                 await enterChapter(0);
                 await showCurrentChapterPanelInternal();
+            });
+        }
+
+        const resetAllBtn = document.getElementById(selectors.resetAllDirectorButton);
+        if (resetAllBtn && !resetAllBtn.dataset.bound) {
+            resetAllBtn.dataset.bound = '1';
+            resetAllBtn.addEventListener('click', async () => {
+                await resetAllDirectorAssets();
             });
         }
     }
