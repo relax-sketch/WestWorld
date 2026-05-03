@@ -2227,10 +2227,11 @@ ${snippets}
     }
 
     function buildChapterAssetsFromSplit(memory, index, outline, strategy, applied, meta = {}) {
+        const splitPoints = applied?.splitPoints || strategy?.split_points || [];
         const beats = buildBeatsFromSegments(
             applied?.segments || [],
             index + 1,
-            applied?.splitPoints || strategy?.split_points || [],
+            splitPoints,
             applied?.cutWarnings || []
         );
         const script = normalizeScript({
@@ -2245,6 +2246,11 @@ ${snippets}
                 cutWarningCount: Array.isArray(applied?.cutWarnings)
                     ? applied.cutWarnings.reduce((sum, item) => sum + (Array.isArray(item) ? item.length : 0), 0)
                     : 0,
+                anchorStarts: Array.isArray(applied?.anchorStarts) ? applied.anchorStarts : [],
+                appliedCuts: Array.isArray(applied?.appliedCuts) ? applied.appliedCuts : [],
+                splitPointAnchors: Array.isArray(splitPoints)
+                    ? splitPoints.map((p) => String(p?.anchor || '').trim())
+                    : [],
                 ...meta,
             },
         };
@@ -2445,6 +2451,15 @@ ${snippets}
                 const sourceTag = assets?.meta?.source || 'director-unknown';
                 updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
                 if (beatSummary.emptyBeatIndices.length > 0) {
+                    const rawLen = String(response || '').length;
+                    const rawText = String(response || '').trim().slice(0, 4000);
+                    const truncatedNote = rawLen > 4000 ? `\n...（已截断，完整响应 ${rawLen} 字符）` : '';
+                    updateStreamContent(
+                        `📄 [第${index + 1}章][导演API] AI原始响应（${rawLen} 字符）:\n`
+                        + '```text\n'
+                        + `${rawText}${truncatedNote}\n`
+                        + '```\n'
+                    );
                     const beats = assets?.script?.beats || [];
                     const debugBeats = beats.map((b, i) => ({
                         index: i + 1,
@@ -2456,6 +2471,9 @@ ${snippets}
                     const debugJson = JSON.stringify({
                         emptyBeatIndices: beatSummary.emptyBeatIndices,
                         lengths: beatSummary.lengths,
+                        anchorStarts: assets?.meta?.anchorStarts || [],
+                        appliedCuts: assets?.meta?.appliedCuts || [],
+                        splitPointAnchors: assets?.meta?.splitPointAnchors || [],
                         beats: debugBeats,
                         meta: assets?.meta || {},
                     }, null, 2);
