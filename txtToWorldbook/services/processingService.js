@@ -2440,6 +2440,15 @@ ${snippets}
                     throw apiError;
                 }
                 throwIfRunInactive(runId);
+                const rawLen = String(response || '').length;
+                const rawText = String(response || '').trim().slice(0, 4000);
+                const truncatedNote = rawLen > 4000 ? `\n...（已截断，完整响应 ${rawLen} 字符）` : '';
+                updateStreamContent(
+                    `📄 [第${index + 1}章][导演API] AI原始响应（${rawLen} 字符）:\n`
+                    + '```text\n'
+                    + `${rawText}${truncatedNote}\n`
+                    + '```\n'
+                );
                 const assets = parseChapterAssetsResponse(response, memory, index);
 
                 // 新增：用AI从每个节拍前40字精炼入场事件
@@ -2451,15 +2460,6 @@ ${snippets}
                 const sourceTag = assets?.meta?.source || 'director-unknown';
                 updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
                 if (beatSummary.emptyBeatIndices.length > 0) {
-                    const rawLen = String(response || '').length;
-                    const rawText = String(response || '').trim().slice(0, 4000);
-                    const truncatedNote = rawLen > 4000 ? `\n...（已截断，完整响应 ${rawLen} 字符）` : '';
-                    updateStreamContent(
-                        `📄 [第${index + 1}章][导演API] AI原始响应（${rawLen} 字符）:\n`
-                        + '```text\n'
-                        + `${rawText}${truncatedNote}\n`
-                        + '```\n'
-                    );
                     const beats = assets?.script?.beats || [];
                     const debugBeats = beats.map((b, i) => ({
                         index: i + 1,
