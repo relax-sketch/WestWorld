@@ -18,6 +18,7 @@ export function createFileImportService(deps = {}) {
 
     const INLINE_CHAPTER_MARKER_REGEX = /第\s*[零一二三四五六七八九十百千万两〇0-9]+\s*[章回卷节部篇]/giu;
     const INLINE_CHAPTER_BOUNDARY_CHAR_REGEX = /[。！？!?；;，,、”’」』）)\]】》〉]/u;
+    const SHORT_CHUNK_MERGE_THRESHOLD = 1500;
 
     async function handleFileSelect(file) {
         if (!file.name.endsWith('.txt')) {
@@ -284,6 +285,8 @@ export function createFileImportService(deps = {}) {
             }
         }
 
+        mergeShortAdjacentChunks(SHORT_CHUNK_MERGE_THRESHOLD);
+
         if (shouldMergeTinyChunks) {
             for (let i = AppState.memory.queue.length - 1; i > 0; i--) {
                 if (AppState.memory.queue[i].content.length < minChunkSize) {
@@ -312,6 +315,42 @@ export function createFileImportService(deps = {}) {
             memory.chapterOpeningSent = memory.chapterOpeningSent === true;
             memory.chapterOpeningError = memory.chapterOpeningError || '';
         });
+    }
+
+    function mergeShortAdjacentChunks(threshold) {
+        const queue = AppState.memory.queue;
+        if (!Array.isArray(queue) || queue.length <= 1) return;
+
+        let i = 0;
+        while (i < queue.length) {
+            const current = queue[i];
+            const currentLength = String(current?.content || '').length;
+            if (currentLength <= 0 || currentLength >= threshold || queue.length <= 1) {
+                i++;
+                continue;
+            }
+
+            const prev = i > 0 ? queue[i - 1] : null;
+            const next = i < queue.length - 1 ? queue[i + 1] : null;
+            if (!prev && !next) {
+                i++;
+                continue;
+            }
+
+            const mergeToPrevious = !next
+                || (prev && String(prev.content || '').length <= String(next.content || '').length);
+
+            if (mergeToPrevious) {
+                prev.content = String(prev.content || '') + String(current.content || '');
+            } else {
+                next.content = String(current.content || '') + String(next.content || '');
+            }
+
+            queue.splice(i, 1);
+            if (mergeToPrevious) {
+                i = Math.max(0, i - 1);
+            }
+        }
     }
 
     async function handleClearFile() {
