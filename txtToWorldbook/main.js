@@ -417,7 +417,7 @@ const {
 
         const updateBtn = document.getElementById('ttw-update-plugin-btn');
         const oldText = updateBtn ? updateBtn.textContent : '';
-        const repoUrl = 'https://github.com/lokenpee/WestWorld';
+        const repoUrl = 'https://github.com/relax-sketch/WestWorld';
         const updater = (typeof window !== 'undefined')
             ? (window.WestWorld?.updateSelfFromRepo || window.StoryWeaver?.updateSelfFromRepo)
             : null;
@@ -436,7 +436,8 @@ const {
         try {
             const result = await updater(repoUrl);
             if (result?.mode === 'install') {
-                ErrorHandler.showUserSuccess('插件安装完成，请刷新页面加载新版本。');
+                ErrorHandler.showUserSuccess('插件安装完成，页面即将刷新以加载新版本。');
+                setTimeout(() => location.reload(), 1200);
                 return;
             }
             if (result?.isUpToDate) {
@@ -444,7 +445,8 @@ const {
                 return;
             }
             const commitSuffix = result?.shortCommitHash ? ` (${result.shortCommitHash})` : '';
-            ErrorHandler.showUserSuccess(`插件更新成功${commitSuffix}，请刷新页面生效。`);
+            ErrorHandler.showUserSuccess(`插件更新成功${commitSuffix}，页面即将刷新以加载新版本。`);
+            setTimeout(() => location.reload(), 1200);
         } catch (error) {
             ErrorHandler.showUserError(error?.message || '插件更新失败，请稍后重试。');
         } finally {
