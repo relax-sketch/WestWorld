@@ -1888,6 +1888,7 @@ ${snippets}
 
             const expected = expectedPositions[i];
             let foundAt = findBestExactAnchorStartNearExpected(source, anchor, expected, searchCursor);
+            if (foundAt === null || foundAt === undefined) foundAt = -1;
             if (foundAt < 0) {
                 const fuzzyStart = findBestAnchorStartByFuzzy(source, anchor, expected);
                 if (Number.isInteger(fuzzyStart) && fuzzyStart >= searchCursor) {
