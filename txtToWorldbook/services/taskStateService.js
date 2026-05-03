@@ -23,6 +23,7 @@ export function createTaskStateService(deps = {}) {
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
     const TASK_STATE_VERSION = '3.5.1';
+    const SHORT_CHUNK_MERGE_THRESHOLD = 1500;
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
@@ -169,9 +170,52 @@ export function createTaskStateService(deps = {}) {
         return normalized;
     }
 
+    function mergeShortUnprocessedChunks(queue, threshold) {
+        if (!Array.isArray(queue) || queue.length <= 1) return queue;
+        const hasProcessedState = queue.some((memory) => (
+            memory?.processed === true
+            || memory?.failed === true
+            || memory?.result
+        ));
+        if (hasProcessedState) return queue;
+
+        let i = 0;
+        while (i < queue.length) {
+            const current = queue[i];
+            const currentLength = String(current?.content || '').length;
+            if (currentLength <= 0 || currentLength >= threshold || queue.length <= 1) {
+                i++;
+                continue;
+            }
+
+            const prev = i > 0 ? queue[i - 1] : null;
+            const next = i < queue.length - 1 ? queue[i + 1] : null;
+            if (!prev && !next) {
+                i++;
+                continue;
+            }
+
+            const mergeToPrevious = !next
+                || (prev && String(prev.content || '').length <= String(next.content || '').length);
+
+            if (mergeToPrevious) {
+                prev.content = String(prev.content || '') + String(current.content || '');
+            } else {
+                next.content = String(current.content || '') + String(next.content || '');
+            }
+            queue.splice(i, 1);
+            if (mergeToPrevious) {
+                i = Math.max(0, i - 1);
+            }
+        }
+        return queue;
+    }
+
     function normalizeMemoryQueue(queue = []) {
         if (!Array.isArray(queue)) return [];
-        return queue.map((memory, index) => normalizeMemoryItem(memory, index));
+        const normalized = queue.map((memory, index) => normalizeMemoryItem(memory, index));
+        mergeShortUnprocessedChunks(normalized, SHORT_CHUNK_MERGE_THRESHOLD);
+        return normalized.map((memory, index) => normalizeMemoryItem(memory, index));
     }
 
     function normalizeExperience(experience, queueLength) {
