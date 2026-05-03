@@ -1354,10 +1354,33 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
+    function chatHasOpeningForChapter(index) {
+        try {
+            const st = typeof SillyTavern !== 'undefined' ? SillyTavern : null;
+            if (!st || typeof st.getContext !== 'function') return false;
+            const context = st.getContext();
+            if (!context || !Array.isArray(context.chat)) return false;
+            return context.chat.some(
+                (msg) => (msg._westworld_auto_opening === true || msg._storyweaver_auto_opening === true)
+                    && (msg._westworld_chapter === index + 1 || msg._storyweaver_chapter === index + 1)
+            );
+        } catch {
+            return false;
+        }
+    }
+
     async function ensureOpeningForChapter(index) {
         const memory = getMemory(index);
         if (!memory) return;
         ensureMemoryRuntime(memory, index);
+        // 以聊天记录为准同步标志，防止工程包状态与实际聊天不一致
+        const alreadyInChat = chatHasOpeningForChapter(index);
+        if (alreadyInChat) {
+            memory.chapterOpeningSent = true;
+        } else {
+            // 聊天里没有开场白（对话被删除或新聊天），强制重置，允许重新发送
+            memory.chapterOpeningSent = false;
+        }
         if (memory.chapterOpeningSent || memory.chapterOpeningGenerating) {
             return;
         }
