@@ -1325,8 +1325,10 @@ export function createChapterExperienceView(deps = {}) {
             throw new Error('当前聊天上下文不可用');
         }
 
+        const charName = context.name2 || context.characters?.[context.characterId]?.name || 'Assistant';
         const openingMessage = {
             is_user: false,
+            name: charName,
             mes: text,
             _westworld_auto_opening: true,
             _westworld_chapter: index + 1,
@@ -1336,7 +1338,7 @@ export function createChapterExperienceView(deps = {}) {
         };
 
         if (typeof context.addOneMessage === 'function') {
-            await context.addOneMessage(openingMessage);
+            await context.addOneMessage(openingMessage, { scroll: true });
             return;
         }
 
@@ -1514,8 +1516,8 @@ export function createChapterExperienceView(deps = {}) {
         if (startBtn && !startBtn.dataset.bound) {
             startBtn.dataset.bound = '1';
             startBtn.addEventListener('click', async () => {
-                await enterChapter(0);
                 await showCurrentChapterPanelInternal();
+                await enterChapter(0);
             });
         }
 
