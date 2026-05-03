@@ -998,6 +998,7 @@ const {
 const chapterExperienceView = createChapterExperienceView({
     AppState,
     ErrorHandler,
+    confirmAction,
     callAPI,
     getLanguagePrefix,
     ModalFactory,
