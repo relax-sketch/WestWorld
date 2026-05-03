@@ -1508,9 +1508,12 @@ ${snippets}
     function normalizeForFuzzyMatch(text) {
         return String(text || '')
             .toLowerCase()
-            .replace(/[\s\u3000]+/g, '')
+            // 全角ASCII转半角
+            .replace(/[！-～]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/　/g, ' ')
+            .replace(/[\s　]+/g, '')
             // drop common punctuation (keep CJK/latin/digits)
-            .replace(/[\u2000-\u206F\u2E00-\u2E7F'"`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?，。！？；：、“”‘’（）【】《》…—\n\r\t]+/g, '');
+            .replace(/[\u2000-\u206F\u2E00-\u2E7F'"`~!@#$%^&*()\-_=+\[\]{}\\|;:,.<>/?\uff0c\u3002\uff01\uff1f\uff1b\uff1a\u3001\u201c\u201d\u2018\u2019\uff08\uff09\u3010\u3011\u300a\u300b\u2026\u2014\n\r\t\u300c\u300d\u300e\u300f]+/g, '')
     }
 
     function buildNGramSet(text, n = 2) {
