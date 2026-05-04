@@ -236,6 +236,16 @@ export function createSettingsPersistenceService(deps) {
             }
         } catch (e) { }
 
+        // Sync directorSuffixEnabled from extension_settings (set by quick-toggle) into AppState.settings
+        try {
+            if (typeof extension_settings !== 'undefined') {
+                const extSettings = extension_settings.westworld || extension_settings.storyweaver;
+                if (extSettings && typeof extSettings.directorSuffixEnabled === 'boolean') {
+                    AppState.settings.directorSuffixEnabled = extSettings.directorSuffixEnabled;
+                }
+            }
+        } catch (_) {}
+
         updateSettingsUI();
         updateChapterRegexUI();
         handleProviderChange('main');
