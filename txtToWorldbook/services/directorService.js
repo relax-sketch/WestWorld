@@ -691,7 +691,11 @@ export function createDirectorService(deps = {}) {
             FIXED_STAGE_IDX: String(currentBeatIdx),
         });
         const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        const suffix = String(AppState?.settings?.customDirectorFrameworkSuffix || '').trim();
+        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
+            && (typeof extension_settings !== 'undefined'
+                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
+                : true);
+        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorFrameworkSuffix || '').trim() : '';
         const suffixBlock = suffix ? `\n\n${suffix}` : '';
         return `${prefix}${promptBody}${suffixBlock}`;
     }
@@ -1013,7 +1017,11 @@ export function createDirectorService(deps = {}) {
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
         });
-        const suffix = String(AppState?.settings?.customDirectorInjectionSuffix || '').trim();
+        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
+            && (typeof extension_settings !== 'undefined'
+                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
+                : true);
+        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorInjectionSuffix || '').trim() : '';
         return suffix ? `${injectionBody}\n\n${suffix}` : injectionBody;
     }
 

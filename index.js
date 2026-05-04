@@ -15,6 +15,7 @@ const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 
 const defaultSettings = {
     panelCollapsed: true,
+    directorSuffixEnabled: true,
 };
 
 let settings = {};

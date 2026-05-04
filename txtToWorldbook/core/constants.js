@@ -494,6 +494,7 @@ export const defaultSettings = {
     customDirectorFrameworkSuffix: '',
     customDirectorInjectionPrompt: '',
     customDirectorInjectionSuffix: '',
+    directorSuffixEnabled: true,
     consolidatePromptPresets: [],
     consolidateCategoryPresetMap: {},
     categoryLightSettings: null,
