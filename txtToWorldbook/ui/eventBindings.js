@@ -827,6 +827,9 @@ function writeApiConfigToDom(target, config = {}) {
     setVal([`ttw-api-max-tokens-${suffix}`, 'ttw-api-max-tokens'], String(config.maxTokens || 2048));
 }
 
+const PREFIX_PRESETS_KEY = 'westworldPromptPrefixPresets';
+const PREFIX_SELECTED_KEY = 'westworldSelectedPromptPrefixPreset';
+
 function bindPromptPrefixPresetEvents(deps) {
     const { AppState, saveCurrentSettings, ErrorHandler, modalContainer } = deps;
     const select = modalContainer.querySelector('#ttw-prefix-preset-select');
@@ -836,9 +839,22 @@ function bindPromptPrefixPresetEvents(deps) {
     const deleteBtn = modalContainer.querySelector('#ttw-prefix-preset-delete');
     if (!select || !textarea || !loadBtn || !saveBtn || !deleteBtn) return;
 
+    const getPresets = () => {
+        try { return JSON.parse(localStorage.getItem(PREFIX_PRESETS_KEY)) || []; } catch (_) { return []; }
+    };
+    const setPresets = (arr) => {
+        localStorage.setItem(PREFIX_PRESETS_KEY, JSON.stringify(arr));
+    };
+    const getSelected = () => {
+        try { return localStorage.getItem(PREFIX_SELECTED_KEY) || ''; } catch (_) { return ''; }
+    };
+    const setSelected = (name) => {
+        localStorage.setItem(PREFIX_SELECTED_KEY, name);
+    };
+
     function renderDropdown() {
-        const presets = AppState.settings.promptPrefixPresets || [];
-        const selected = AppState.settings.selectedPromptPrefixPreset || '';
+        const presets = getPresets();
+        const selected = getSelected();
         select.innerHTML = '<option value="">-- 选择预设 --</option>';
         presets.forEach((p, i) => {
             const sel = p.name === selected ? ' selected' : '';
@@ -860,19 +876,19 @@ function bindPromptPrefixPresetEvents(deps) {
     loadBtn.addEventListener('click', () => {
         const idx = parseInt(select.value, 10);
         if (!Number.isFinite(idx) || idx < 0) return;
-        const preset = (AppState.settings.promptPrefixPresets || [])[idx];
+        const preset = getPresets()[idx];
         if (!preset) return;
         AppState.settings.promptPrefixPreset = preset.prefix;
-        AppState.settings.selectedPromptPrefixPreset = preset.name;
+        setSelected(preset.name);
         textarea.value = preset.prefix;
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已加载提示词开头预设：${preset.name}`);
     });
 
     saveBtn.addEventListener('click', () => {
-        const name = window.prompt('请输入预设名称：', AppState.settings.selectedPromptPrefixPreset || '');
+        const name = window.prompt('请输入预设名称：', getSelected() || '');
         if (!name || !name.trim()) return;
-        const presets = AppState.settings.promptPrefixPresets || [];
+        const presets = getPresets();
         const existingIdx = presets.findIndex(p => p.name === name.trim());
         const prefix = textarea.value;
         if (existingIdx >= 0) {
@@ -880,8 +896,8 @@ function bindPromptPrefixPresetEvents(deps) {
         } else {
             presets.push({ name: name.trim(), prefix });
         }
-        AppState.settings.promptPrefixPresets = presets;
-        AppState.settings.selectedPromptPrefixPreset = name.trim();
+        setPresets(presets);
+        setSelected(name.trim());
         renderDropdown();
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已保存提示词开头预设：${name.trim()}`);
@@ -890,16 +906,18 @@ function bindPromptPrefixPresetEvents(deps) {
     deleteBtn.addEventListener('click', async () => {
         const idx = parseInt(select.value, 10);
         if (!Number.isFinite(idx) || idx < 0) return;
-        const preset = (AppState.settings.promptPrefixPresets || [])[idx];
+        const presets = getPresets();
+        const preset = presets[idx];
         if (!preset) return;
         const confirmed = typeof confirmAction === 'function'
             ? await confirmAction(`确定删除预设「${preset.name}」吗？`, { title: '删除预设', danger: true })
             : window.confirm(`确定删除预设「${preset.name}」吗？`);
         if (!confirmed) return;
-        AppState.settings.promptPrefixPresets.splice(idx, 1);
-        if (AppState.settings.selectedPromptPrefixPreset === preset.name) {
-            AppState.settings.selectedPromptPrefixPreset = '';
+        presets.splice(idx, 1);
+        if (getSelected() === preset.name) {
+            setSelected('');
         }
+        setPresets(presets);
         renderDropdown();
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已删除预设：${preset.name}`);
@@ -907,6 +925,9 @@ function bindPromptPrefixPresetEvents(deps) {
 
     renderDropdown();
 }
+
+const ROUTE_PRESETS_KEY = 'westworldAiRoutePresets';
+const ROUTE_SELECTED_KEY = 'westworldSelectedAiRoutePreset';
 
 function bindAiRoutePresetEvents(deps) {
     const { AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer, handleProviderChange } = deps;
@@ -916,9 +937,22 @@ function bindAiRoutePresetEvents(deps) {
     const deleteBtn = modalContainer.querySelector('#ttw-route-preset-delete');
     if (!select || !loadBtn || !saveBtn || !deleteBtn) return;
 
+    const getPresets = () => {
+        try { return JSON.parse(localStorage.getItem(ROUTE_PRESETS_KEY)) || []; } catch (_) { return []; }
+    };
+    const setPresets = (arr) => {
+        localStorage.setItem(ROUTE_PRESETS_KEY, JSON.stringify(arr));
+    };
+    const getSelected = () => {
+        try { return localStorage.getItem(ROUTE_SELECTED_KEY) || ''; } catch (_) { return ''; }
+    };
+    const setSelected = (name) => {
+        localStorage.setItem(ROUTE_SELECTED_KEY, name);
+    };
+
     function renderDropdown() {
-        const presets = AppState.settings.aiRoutePresets || [];
-        const selected = AppState.settings.selectedAiRoutePreset || '';
+        const presets = getPresets();
+        const selected = getSelected();
         select.innerHTML = '<option value="">-- 选择预设 --</option>';
         presets.forEach((p, i) => {
             const sel = p.name === selected ? ' selected' : '';
@@ -934,11 +968,11 @@ function bindAiRoutePresetEvents(deps) {
     loadBtn.addEventListener('click', () => {
         const idx = parseInt(select.value, 10);
         if (!Number.isFinite(idx) || idx < 0) return;
-        const preset = (AppState.settings.aiRoutePresets || [])[idx];
+        const preset = getPresets()[idx];
         if (!preset) return;
         AppState.settings.mainApi = { ...(preset.mainApi || {}) };
         AppState.settings.directorApi = { ...(preset.directorApi || {}) };
-        AppState.settings.selectedAiRoutePreset = preset.name;
+        setSelected(preset.name);
         // Sync backward compatibility fields
         AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
         AppState.settings.customApiKey = AppState.settings.mainApi.apiKey;
@@ -956,9 +990,9 @@ function bindAiRoutePresetEvents(deps) {
     });
 
     saveBtn.addEventListener('click', () => {
-        const name = window.prompt('请输入预设名称：', AppState.settings.selectedAiRoutePreset || '');
+        const name = window.prompt('请输入预设名称：', getSelected() || '');
         if (!name || !name.trim()) return;
-        const presets = AppState.settings.aiRoutePresets || [];
+        const presets = getPresets();
         const existingIdx = presets.findIndex(p => p.name === name.trim());
         const mainApi = readApiConfigFromDomForPreset('main');
         const directorApi = readApiConfigFromDomForPreset('director');
@@ -968,8 +1002,8 @@ function bindAiRoutePresetEvents(deps) {
         } else {
             presets.push({ name: name.trim(), mainApi, directorApi });
         }
-        AppState.settings.aiRoutePresets = presets;
-        AppState.settings.selectedAiRoutePreset = name.trim();
+        setPresets(presets);
+        setSelected(name.trim());
         renderDropdown();
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已保存AI路由预设：${name.trim()}`);
@@ -978,16 +1012,18 @@ function bindAiRoutePresetEvents(deps) {
     deleteBtn.addEventListener('click', async () => {
         const idx = parseInt(select.value, 10);
         if (!Number.isFinite(idx) || idx < 0) return;
-        const preset = (AppState.settings.aiRoutePresets || [])[idx];
+        const presets = getPresets();
+        const preset = presets[idx];
         if (!preset) return;
         const confirmed = typeof confirmAction === 'function'
             ? await confirmAction(`确定删除预设「${preset.name}」吗？`, { title: '删除预设', danger: true })
             : window.confirm(`确定删除预设「${preset.name}」吗？`);
         if (!confirmed) return;
-        AppState.settings.aiRoutePresets.splice(idx, 1);
-        if (AppState.settings.selectedAiRoutePreset === preset.name) {
-            AppState.settings.selectedAiRoutePreset = '';
+        presets.splice(idx, 1);
+        if (getSelected() === preset.name) {
+            setSelected('');
         }
+        setPresets(presets);
         renderDropdown();
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已删除预设：${preset.name}`);
