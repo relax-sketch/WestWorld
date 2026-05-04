@@ -89,7 +89,9 @@ export function createSettingsPersistenceService(deps) {
             AppState.settings.customAliasMergePrompt = document.getElementById('ttw-alias-merge-prompt')?.value || '';
             AppState.settings.customChapterAssetsPrompt = document.getElementById('ttw-chapter-assets-prompt')?.value || '';
             AppState.settings.customDirectorFrameworkPrompt = document.getElementById('ttw-director-framework-prompt')?.value || '';
+            AppState.settings.customDirectorFrameworkSuffix = document.getElementById('ttw-director-framework-suffix')?.value || '';
             AppState.settings.customDirectorInjectionPrompt = document.getElementById('ttw-director-injection-prompt')?.value || '';
+            AppState.settings.customDirectorInjectionSuffix = document.getElementById('ttw-director-injection-suffix')?.value || '';
             AppState.settings.promptPrefixPreset = document.getElementById('ttw-prefix-prompt')?.value || '';
         }
         AppState.settings.useTavernApi = document.getElementById('ttw-use-tavern-api')?.checked ?? true;

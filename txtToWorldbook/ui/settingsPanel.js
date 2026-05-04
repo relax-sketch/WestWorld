@@ -408,6 +408,8 @@ function buildDirectorFrameworkPromptSectionHtml() {
                 <code>{CHAPTER_TITLE}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{COMPACT_BEATS_JSON}</code> <code>{FIXED_STAGE_IDX}</code>
             </div>
             <textarea id="ttw-director-framework-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
+            <div class="ttw-setting-hint" style="margin-top:8px;margin-bottom:4px;">📎 自由附加内容（将追加到提示词末尾，与提示词捆绑生效）</div>
+            <textarea id="ttw-director-framework-suffix" rows="2" placeholder="可选，附加的自由内容..." class="ttw-textarea-small"></textarea>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="director-framework">🔄 恢复默认</button>
                 <button class="ttw-btn ttw-btn-small" id="ttw-save-director-framework-prompt">💾 保存</button>
@@ -433,6 +435,8 @@ function buildDirectorInjectionPromptSectionHtml() {
                 <code>{CURRENT_BEAT_SUMMARY}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
             </div>
             <textarea id="ttw-director-injection-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
+            <div class="ttw-setting-hint" style="margin-top:8px;margin-bottom:4px;">📎 自由附加内容（将追加到提示词末尾，与提示词捆绑生效）</div>
+            <textarea id="ttw-director-injection-suffix" rows="2" placeholder="可选，附加的自由内容..." class="ttw-textarea-small"></textarea>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="director-injection">🔄 恢复默认</button>
                 <button class="ttw-btn ttw-btn-small" id="ttw-save-director-injection-prompt">💾 保存</button>
@@ -918,11 +922,15 @@ export function hydrateSettingsFromState(deps = {}) {
     if (directorFrameworkPromptEl) {
         directorFrameworkPromptEl.value = AppState.settings.customDirectorFrameworkPrompt || defaultDirectorFrameworkPrompt;
     }
+    const directorFrameworkSuffixEl = document.getElementById('ttw-director-framework-suffix');
+    if (directorFrameworkSuffixEl) directorFrameworkSuffixEl.value = AppState.settings.customDirectorFrameworkSuffix || '';
 
     const directorInjectionPromptEl = document.getElementById('ttw-director-injection-prompt');
     if (directorInjectionPromptEl) {
         directorInjectionPromptEl.value = AppState.settings.customDirectorInjectionPrompt || defaultDirectorInjectionPrompt;
     }
+    const directorInjectionSuffixEl = document.getElementById('ttw-director-injection-suffix');
+    if (directorInjectionSuffixEl) directorInjectionSuffixEl.value = AppState.settings.customDirectorInjectionSuffix || '';
 
     const parallelEnabledEl = document.getElementById('ttw-parallel-enabled');
     if (parallelEnabledEl) parallelEnabledEl.checked = AppState.config.parallel.enabled;

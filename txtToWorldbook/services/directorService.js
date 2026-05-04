@@ -691,7 +691,9 @@ export function createDirectorService(deps = {}) {
             FIXED_STAGE_IDX: String(currentBeatIdx),
         });
         const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        return `${prefix}${promptBody}`;
+        const suffix = String(AppState?.settings?.customDirectorFrameworkSuffix || '').trim();
+        const suffixBlock = suffix ? `\n\n${suffix}` : '';
+        return `${prefix}${promptBody}${suffixBlock}`;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
@@ -996,7 +998,7 @@ export function createDirectorService(deps = {}) {
             : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
 
         const template = String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt;
-        return renderPromptTemplate(template, {
+        const injectionBody = renderPromptTemplate(template, {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
@@ -1011,6 +1013,8 @@ export function createDirectorService(deps = {}) {
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
         });
+        const suffix = String(AppState?.settings?.customDirectorInjectionSuffix || '').trim();
+        return suffix ? `${injectionBody}\n\n${suffix}` : injectionBody;
     }
 
     async function runDirectorBeforeGeneration(eventData) {
