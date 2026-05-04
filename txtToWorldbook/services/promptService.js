@@ -9,7 +9,10 @@ export function createPromptService(deps = {}) {
     } = deps;
 
     function getLanguagePrefix() {
-        return AppState.settings.language === 'zh' ? '请用中文回复。\n\n' : '';
+        const langPrefix = AppState.settings.language === 'zh' ? '请用中文回复。\n\n' : '';
+        const customPrefix = AppState.settings.promptPrefixPreset || '';
+        if (!customPrefix.trim()) return langPrefix;
+        return langPrefix + customPrefix.trim() + '\n\n';
     }
 
     function messagesToString(messages) {

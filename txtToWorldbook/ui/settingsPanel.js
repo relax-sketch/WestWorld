@@ -65,6 +65,7 @@ function buildCustomApiSectionHtml() {
 
     return `
 <div id="ttw-custom-api-section" style="display:none;margin-bottom:16px;padding:12px;border:1px solid rgba(52,152,219,0.3);border-radius:8px;background:rgba(52,152,219,0.1);">
+${buildAiRoutePresetsHtml()}
 <div style="font-weight:bold;color:#3498db;margin-bottom:12px;">🔧 AI路由配置</div>
 <div style="display:flex;gap:8px;margin-bottom:12px;">
     <button type="button" id="ttw-api-tab-main" class="ttw-btn ttw-btn-small ttw-api-tab active" data-api-tab="main">主AI</button>
@@ -564,6 +565,52 @@ function buildPromptConfigHtml() {
     </div>`;
 }
 
+function buildPromptPrefixPresetsHtml() {
+    return `
+    <div class="ttw-prompt-section" style="margin-bottom:16px;">
+        <div class="ttw-prompt-header" data-target="ttw-prefix-presets-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span>📝</span><span style="font-weight:500;">提示词开头（所有提示词共享前缀）</span>
+                <span class="ttw-badge ttw-badge-gray">可选</span>
+            </div>
+            <span class="ttw-collapse-icon">▼</span>
+        </div>
+        <div id="ttw-prefix-presets-content" class="ttw-prompt-content" style="display:block;">
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">
+                设置一个共享前缀，将自动添加到<strong>所有</strong>AI请求的提示词开头。支持保存多个预设。
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+                <select id="ttw-prefix-preset-select" class="ttw-input" style="flex:1;min-width:120px;">
+                    <option value="">-- 选择预设 --</option>
+                </select>
+                <button id="ttw-prefix-preset-load" class="ttw-btn ttw-btn-small">📥 加载</button>
+                <button id="ttw-prefix-preset-save-as" class="ttw-btn ttw-btn-small" style="background:#27ae60;">💾 另存为</button>
+                <button id="ttw-prefix-preset-delete" class="ttw-btn ttw-btn-small ttw-btn-warning" style="display:none;">🗑️ 删除</button>
+            </div>
+            <textarea id="ttw-prefix-prompt" rows="3" class="ttw-textarea-small" placeholder="例如：你是专业的小说分析专家，请保持分析中文表述，注意保持前后分析的一致性。"></textarea>
+            <div style="font-size:11px;color:var(--ttw-text-muted);margin-top:4px;">留空则不添加前缀。此前缀将在 <code>getLanguagePrefix()</code> 之后被附加。</div>
+        </div>
+    </div>`;
+}
+
+function buildAiRoutePresetsHtml() {
+    return `
+    <div style="margin-bottom:10px;padding:10px;background:rgba(52,152,219,0.08);border-radius:6px;border:1px solid rgba(52,152,219,0.2);">
+        <div style="font-weight:bold;color:#3498db;margin-bottom:6px;font-size:12px;">💾 AI路由预设</div>
+        <div class="ttw-setting-hint" style="margin-bottom:6px;">
+            将当前主AI+导演AI配置保存为预设，方便在不同模型间快速切换。
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <select id="ttw-route-preset-select" class="ttw-input" style="flex:1;min-width:120px;font-size:12px;">
+                <option value="">-- 选择预设 --</option>
+            </select>
+            <button id="ttw-route-preset-load" class="ttw-btn ttw-btn-small" style="font-size:11px;">📥 加载</button>
+            <button id="ttw-route-preset-save-as" class="ttw-btn ttw-btn-small" style="background:#27ae60;font-size:11px;">💾 另存为</button>
+            <button id="ttw-route-preset-delete" class="ttw-btn ttw-btn-small ttw-btn-warning" style="display:none;font-size:11px;">🗑️</button>
+        </div>
+    </div>`;
+}
+
 function buildPromptEditorSectionHtml() {
     return `
     <div class="ttw-section" id="ttw-prompt-editor-section" style="display:none;">
@@ -571,6 +618,7 @@ function buildPromptEditorSectionHtml() {
             <span>🛠️ 提示词编辑</span>
         </div>
         <div class="ttw-section-content ttw-prompt-config-content">
+            ${buildPromptPrefixPresetsHtml()}
             ${buildCategoryGuidePromptSectionHtml()}
             ${buildWorldbookPromptSectionHtml()}
             ${buildConsolidatePromptSectionHtml()}

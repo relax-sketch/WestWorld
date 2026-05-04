@@ -432,19 +432,7 @@ export function createApiService(deps = {}) {
 
     async function callCustomAPI(messages, target = 'main', taskId = null) {
         const maxRetries = 3;
-        const baseTimeout = AppState.settings.apiTimeout || 120000;
-        const parseTimeout = (value, fallback) => {
-            const parsed = parseInt(value, 10);
-            if (!Number.isFinite(parsed)) return fallback;
-            return Math.max(3000, Math.min(120000, parsed));
-        };
-        const directorTimeoutCap = parseTimeout(
-            AppState.settings?.directorApi?.timeout ?? AppState.settings?.directorApiTimeout,
-            20000
-        );
-        const timeout = target === 'director'
-            ? Math.min(baseTimeout, directorTimeoutCap)
-            : baseTimeout;
+        const timeout = AppState.settings.apiTimeout || 120000;
         const requestConfig = buildCustomApiRequest(messages, target);
         const combinedPrompt = messagesToString(messages);
 

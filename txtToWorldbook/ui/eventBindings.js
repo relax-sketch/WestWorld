@@ -693,6 +693,16 @@ export function bindSettingEvents(deps = {}) {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
+
+    // --- Prompt Prefix Presets ---
+    bindPromptPrefixPresetEvents({
+        AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer,
+    });
+
+    // --- AI Route Presets ---
+    bindAiRoutePresetEvents({
+        AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer, handleProviderChange,
+    });
 }
 
 export function bindPromptEvents(deps = {}) {
@@ -756,6 +766,222 @@ export function bindCollapsePanelEvents() {
             toggleCollapsePanel(targetId, header);
         });
     });
+}
+
+function escapeHtmlForPresets(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function readApiConfigFromDomForPreset(target) {
+    const suffix = target === 'director' ? 'director' : 'main';
+    const provider = document.getElementById(`ttw-api-provider-${suffix}`)?.value
+        || document.getElementById('ttw-api-provider')?.value
+        || 'openai-compatible';
+    const apiKey = document.getElementById(`ttw-api-key-${suffix}`)?.value
+        || (suffix === 'main' ? document.getElementById('ttw-api-key')?.value : '')
+        || '';
+    const endpoint = document.getElementById(`ttw-api-endpoint-${suffix}`)?.value
+        || (suffix === 'main' ? document.getElementById('ttw-api-endpoint')?.value : '')
+        || '';
+    const model = document.getElementById(`ttw-api-model-${suffix}`)?.value
+        || (suffix === 'main' ? document.getElementById('ttw-api-model')?.value : '')
+        || 'gemini-2.5-flash';
+    const maxTokensRaw = parseInt(
+        document.getElementById(`ttw-api-max-tokens-${suffix}`)?.value
+            || (suffix === 'main' ? document.getElementById('ttw-api-max-tokens')?.value : ''),
+        10
+    );
+    const maxTokens = Number.isFinite(maxTokensRaw) ? Math.max(1, Math.min(8192, maxTokensRaw)) : 2048;
+    return { provider, apiKey, endpoint, model, maxTokens };
+}
+
+function writeApiConfigToDom(target, config = {}) {
+    const suffix = target === 'director' ? 'director' : 'main';
+    const setVal = (idList, value) => {
+        for (const id of idList) {
+            const el = document.getElementById(id);
+            if (el) { el.value = value; break; }
+        }
+    };
+    setVal([`ttw-api-provider-${suffix}`, 'ttw-api-provider'], config.provider || 'openai-compatible');
+    setVal([`ttw-api-key-${suffix}`, 'ttw-api-key'], config.apiKey || '');
+    setVal([`ttw-api-endpoint-${suffix}`, 'ttw-api-endpoint'], config.endpoint || '');
+    setVal([`ttw-api-model-${suffix}`, 'ttw-api-model'], config.model || 'gemini-2.5-flash');
+    setVal([`ttw-api-max-tokens-${suffix}`, 'ttw-api-max-tokens'], String(config.maxTokens || 2048));
+}
+
+function bindPromptPrefixPresetEvents(deps) {
+    const { AppState, saveCurrentSettings, ErrorHandler, modalContainer } = deps;
+    const select = modalContainer.querySelector('#ttw-prefix-preset-select');
+    const textarea = modalContainer.querySelector('#ttw-prefix-prompt');
+    const loadBtn = modalContainer.querySelector('#ttw-prefix-preset-load');
+    const saveBtn = modalContainer.querySelector('#ttw-prefix-preset-save-as');
+    const deleteBtn = modalContainer.querySelector('#ttw-prefix-preset-delete');
+    if (!select || !textarea || !loadBtn || !saveBtn || !deleteBtn) return;
+
+    function renderDropdown() {
+        const presets = AppState.settings.promptPrefixPresets || [];
+        const selected = AppState.settings.selectedPromptPrefixPreset || '';
+        select.innerHTML = '<option value="">-- 选择预设 --</option>';
+        presets.forEach((p, i) => {
+            const sel = p.name === selected ? ' selected' : '';
+            select.innerHTML += `<option value="${i}"${sel}>${escapeHtmlForPresets(p.name)}</option>`;
+        });
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    }
+
+    textarea.value = AppState.settings.promptPrefixPreset || '';
+    textarea.addEventListener('input', () => {
+        AppState.settings.promptPrefixPreset = textarea.value;
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+    });
+
+    select.addEventListener('change', () => {
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    });
+
+    loadBtn.addEventListener('click', () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const preset = (AppState.settings.promptPrefixPresets || [])[idx];
+        if (!preset) return;
+        AppState.settings.promptPrefixPreset = preset.prefix;
+        AppState.settings.selectedPromptPrefixPreset = preset.name;
+        textarea.value = preset.prefix;
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已加载提示词开头预设：${preset.name}`);
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const name = window.prompt('请输入预设名称：', AppState.settings.selectedPromptPrefixPreset || '');
+        if (!name || !name.trim()) return;
+        const presets = AppState.settings.promptPrefixPresets || [];
+        const existingIdx = presets.findIndex(p => p.name === name.trim());
+        const prefix = textarea.value;
+        if (existingIdx >= 0) {
+            presets[existingIdx].prefix = prefix;
+        } else {
+            presets.push({ name: name.trim(), prefix });
+        }
+        AppState.settings.promptPrefixPresets = presets;
+        AppState.settings.selectedPromptPrefixPreset = name.trim();
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已保存提示词开头预设：${name.trim()}`);
+    });
+
+    deleteBtn.addEventListener('click', async () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const preset = (AppState.settings.promptPrefixPresets || [])[idx];
+        if (!preset) return;
+        const confirmed = typeof confirmAction === 'function'
+            ? await confirmAction(`确定删除预设「${preset.name}」吗？`, { title: '删除预设', danger: true })
+            : window.confirm(`确定删除预设「${preset.name}」吗？`);
+        if (!confirmed) return;
+        AppState.settings.promptPrefixPresets.splice(idx, 1);
+        if (AppState.settings.selectedPromptPrefixPreset === preset.name) {
+            AppState.settings.selectedPromptPrefixPreset = '';
+        }
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已删除预设：${preset.name}`);
+    });
+
+    renderDropdown();
+}
+
+function bindAiRoutePresetEvents(deps) {
+    const { AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer, handleProviderChange } = deps;
+    const select = modalContainer.querySelector('#ttw-route-preset-select');
+    const loadBtn = modalContainer.querySelector('#ttw-route-preset-load');
+    const saveBtn = modalContainer.querySelector('#ttw-route-preset-save-as');
+    const deleteBtn = modalContainer.querySelector('#ttw-route-preset-delete');
+    if (!select || !loadBtn || !saveBtn || !deleteBtn) return;
+
+    function renderDropdown() {
+        const presets = AppState.settings.aiRoutePresets || [];
+        const selected = AppState.settings.selectedAiRoutePreset || '';
+        select.innerHTML = '<option value="">-- 选择预设 --</option>';
+        presets.forEach((p, i) => {
+            const sel = p.name === selected ? ' selected' : '';
+            select.innerHTML += `<option value="${i}"${sel}>${escapeHtmlForPresets(p.name)}</option>`;
+        });
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    }
+
+    select.addEventListener('change', () => {
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    });
+
+    loadBtn.addEventListener('click', () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const preset = (AppState.settings.aiRoutePresets || [])[idx];
+        if (!preset) return;
+        AppState.settings.mainApi = { ...(preset.mainApi || {}) };
+        AppState.settings.directorApi = { ...(preset.directorApi || {}) };
+        AppState.settings.selectedAiRoutePreset = preset.name;
+        // Sync backward compatibility fields
+        AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
+        AppState.settings.customApiKey = AppState.settings.mainApi.apiKey;
+        AppState.settings.customApiEndpoint = AppState.settings.mainApi.endpoint;
+        AppState.settings.customApiModel = AppState.settings.mainApi.model;
+        AppState.settings.customApiMaxTokens = AppState.settings.mainApi.maxTokens;
+        writeApiConfigToDom('main', AppState.settings.mainApi);
+        writeApiConfigToDom('director', AppState.settings.directorApi);
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        if (typeof handleProviderChange === 'function') {
+            handleProviderChange('main');
+            handleProviderChange('director');
+        }
+        ErrorHandler.showUserSuccess(`已加载AI路由预设：${preset.name}`);
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const name = window.prompt('请输入预设名称：', AppState.settings.selectedAiRoutePreset || '');
+        if (!name || !name.trim()) return;
+        const presets = AppState.settings.aiRoutePresets || [];
+        const existingIdx = presets.findIndex(p => p.name === name.trim());
+        const mainApi = readApiConfigFromDomForPreset('main');
+        const directorApi = readApiConfigFromDomForPreset('director');
+        if (existingIdx >= 0) {
+            presets[existingIdx].mainApi = mainApi;
+            presets[existingIdx].directorApi = directorApi;
+        } else {
+            presets.push({ name: name.trim(), mainApi, directorApi });
+        }
+        AppState.settings.aiRoutePresets = presets;
+        AppState.settings.selectedAiRoutePreset = name.trim();
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已保存AI路由预设：${name.trim()}`);
+    });
+
+    deleteBtn.addEventListener('click', async () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const preset = (AppState.settings.aiRoutePresets || [])[idx];
+        if (!preset) return;
+        const confirmed = typeof confirmAction === 'function'
+            ? await confirmAction(`确定删除预设「${preset.name}」吗？`, { title: '删除预设', danger: true })
+            : window.confirm(`确定删除预设「${preset.name}」吗？`);
+        if (!confirmed) return;
+        AppState.settings.aiRoutePresets.splice(idx, 1);
+        if (AppState.settings.selectedAiRoutePreset === preset.name) {
+            AppState.settings.selectedAiRoutePreset = '';
+        }
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已删除预设：${preset.name}`);
+    });
+
+    renderDropdown();
 }
 
 export function bindModalBasicEvents(deps = {}) {

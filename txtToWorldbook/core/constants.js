@@ -538,4 +538,8 @@ export const defaultSettings = {
     filterResponseTags: 'thinking,/think',
     debugMode: false,
     worldbookForceReExtract: false,
+    promptPrefixPresets: [],
+    selectedPromptPrefixPreset: '',
+    aiRoutePresets: [],
+    selectedAiRoutePreset: '',
 };

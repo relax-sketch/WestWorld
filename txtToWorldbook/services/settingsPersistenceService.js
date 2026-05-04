@@ -90,6 +90,7 @@ export function createSettingsPersistenceService(deps) {
             AppState.settings.customChapterAssetsPrompt = document.getElementById('ttw-chapter-assets-prompt')?.value || '';
             AppState.settings.customDirectorFrameworkPrompt = document.getElementById('ttw-director-framework-prompt')?.value || '';
             AppState.settings.customDirectorInjectionPrompt = document.getElementById('ttw-director-injection-prompt')?.value || '';
+            AppState.settings.promptPrefixPreset = document.getElementById('ttw-prefix-prompt')?.value || '';
         }
         AppState.settings.useTavernApi = document.getElementById('ttw-use-tavern-api')?.checked ?? true;
         AppState.settings.parallelEnabled = AppState.config.parallel.enabled;
