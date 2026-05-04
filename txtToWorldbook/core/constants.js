@@ -510,4 +510,5 @@ export const defaultSettings = {
     allowRecursion: false,
     filterResponseTags: 'thinking,/think',
     debugMode: false,
+    worldbookForceReExtract: false,
 };

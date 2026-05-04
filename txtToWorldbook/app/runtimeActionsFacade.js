@@ -2,6 +2,7 @@ export function createRuntimeActionsFacade(deps = {}) {
     const {
         AppState,
         ErrorHandler,
+        confirmAction,
         saveCurrentSettings,
         handleStartProcessing,
         handleStartDirectorProcessing,
@@ -113,6 +114,36 @@ export function createRuntimeActionsFacade(deps = {}) {
                 ErrorHandler.showUserError('请先设置 API Key');
                 return;
             }
+        }
+
+        // Detect re-extract scenario: all chapters are already processed
+        const allProcessed = AppState.memory.queue.length > 0
+            && AppState.memory.queue.every(m => m.processed === true && m.failed !== true);
+
+        if (allProcessed) {
+            const forceReExtract = AppState.settings.worldbookForceReExtract;
+            if (!forceReExtract) {
+                const confirmed = typeof confirmAction === 'function'
+                    ? await confirmAction(
+                        '所有章节已完成提取。将清空已有世界书数据并从头重新提取，是否继续？',
+                        { title: '重新提取世界书' }
+                    )
+                    : window.confirm('所有章节已完成提取。将清空已有世界书数据并从头重新提取，是否继续？');
+                if (!confirmed) return;
+            }
+
+            // Clear worldbook data only (do NOT touch director-related data)
+            AppState.worldbook.generated = { 地图环境: {}, 剧情节点: {}, 角色: {}, 知识书: {} };
+            AppState.worldbook.volumes = [];
+            AppState.worldbook.currentVolumeIndex = 0;
+
+            // Reset worldbook processing states only (do NOT touch director-related states like chapterOutlineStatus)
+            AppState.memory.queue.forEach(m => {
+                m.processed = false;
+                m.failed = false;
+                m.result = undefined;
+                m.error = undefined;
+            });
         }
 
         AppState.memory.startIndex = resolveWorldbookStartIndex();

@@ -204,6 +204,13 @@ function buildCheckboxOptionsHtml() {
                 <div class="ttw-setting-hint">勾选后条目可被其他条目激活，并可触发进一步递归</div>
             </div>
         </label>
+        <label class="ttw-checkbox-label ttw-checkbox-with-hint" style="background:rgba(39,174,96,0.12);border:1px solid rgba(39,174,96,0.3);">
+            <input type="checkbox" id="ttw-worldbook-force-reextract">
+            <div>
+                <span style="color:#27ae60;">🔃 重新提取时清空已有数据</span>
+                <div class="ttw-setting-hint">勾选后点击「重新提取世界书」时将强制清空已有世界书数据并从头重跑</div>
+            </div>
+        </label>
     </div>`;
 }
 
@@ -932,6 +939,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const allowRecursionEl = document.getElementById('ttw-allow-recursion');
     if (allowRecursionEl) allowRecursionEl.checked = AppState.settings.allowRecursion;
+
+    const forceReExtractEl = document.getElementById('ttw-worldbook-force-reextract');
+    if (forceReExtractEl) forceReExtractEl.checked = AppState.settings.worldbookForceReExtract || false;
 
     const filterTagsEl = document.getElementById('ttw-filter-tags');
     if (filterTagsEl) filterTagsEl.value = AppState.settings.filterResponseTags || 'thinking,/think';

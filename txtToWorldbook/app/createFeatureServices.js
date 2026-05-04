@@ -93,6 +93,7 @@ export function createFeatureServices(deps = {}) {
     const runtimeActionsFacade = createRuntimeActionsFacade({
         AppState,
         ErrorHandler,
+        confirmAction,
         saveCurrentSettings,
         handleStartProcessing,
         handleStartDirectorProcessing,
