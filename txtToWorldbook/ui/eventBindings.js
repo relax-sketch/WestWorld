@@ -715,6 +715,34 @@ export function bindSettingEvents(deps = {}) {
     bindAiRoutePresetEvents({
         AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer, handleProviderChange,
     });
+
+    // --- Director Framework Prompt Presets ---
+    bindDirectorPromptPresetEvents({
+        AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer,
+        presetKey: 'westworldDirectorFrameworkPresets',
+        selectedKey: 'westworldSelectedDirectorFrameworkPreset',
+        selectId: 'ttw-director-framework-preset-select',
+        loadBtnId: 'ttw-director-framework-preset-load',
+        saveBtnId: 'ttw-director-framework-preset-save-as',
+        deleteBtnId: 'ttw-director-framework-preset-delete',
+        textareaId: 'ttw-director-framework-prompt',
+        settingKey: 'customDirectorFrameworkPrompt',
+        label: '导演AI框架提示词',
+    });
+
+    // --- Director Injection Prompt Presets ---
+    bindDirectorPromptPresetEvents({
+        AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer,
+        presetKey: 'westworldDirectorInjectionPresets',
+        selectedKey: 'westworldSelectedDirectorInjectionPreset',
+        selectId: 'ttw-director-injection-preset-select',
+        loadBtnId: 'ttw-director-injection-preset-load',
+        saveBtnId: 'ttw-director-injection-preset-save-as',
+        deleteBtnId: 'ttw-director-injection-preset-delete',
+        textareaId: 'ttw-director-injection-prompt',
+        settingKey: 'customDirectorInjectionPrompt',
+        label: '导演注入演员前置提示词',
+    });
 }
 
 export function bindPromptEvents(deps = {}) {
@@ -1027,6 +1055,99 @@ function bindAiRoutePresetEvents(deps) {
         renderDropdown();
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         ErrorHandler.showUserSuccess(`已删除预设：${preset.name}`);
+    });
+
+    renderDropdown();
+}
+
+function bindDirectorPromptPresetEvents(deps) {
+    const {
+        AppState, saveCurrentSettings, confirmAction, ErrorHandler, modalContainer,
+        presetKey, selectedKey, selectId, loadBtnId, saveBtnId, deleteBtnId, textareaId, settingKey, label,
+    } = deps;
+    const select = modalContainer.querySelector('#' + selectId);
+    const textarea = modalContainer.querySelector('#' + textareaId);
+    const loadBtn = modalContainer.querySelector('#' + loadBtnId);
+    const saveBtn = modalContainer.querySelector('#' + saveBtnId);
+    const deleteBtn = modalContainer.querySelector('#' + deleteBtnId);
+    if (!select || !textarea || !loadBtn || !saveBtn || !deleteBtn) return;
+
+    const getPresets = () => {
+        try { return JSON.parse(localStorage.getItem(presetKey)) || []; } catch (_) { return []; }
+    };
+    const setPresets = (arr) => {
+        localStorage.setItem(presetKey, JSON.stringify(arr));
+    };
+    const getSelected = () => {
+        try { return localStorage.getItem(selectedKey) || ''; } catch (_) { return ''; }
+    };
+    const setSelected = (name) => {
+        localStorage.setItem(selectedKey, name);
+    };
+
+    function renderDropdown() {
+        const presets = getPresets();
+        const selected = getSelected();
+        select.innerHTML = '<option value="">-- 选择预设 --</option>';
+        presets.forEach((p, i) => {
+            const sel = p.name === selected ? ' selected' : '';
+            select.innerHTML += `<option value="${i}"${sel}>${escapeHtmlForPresets(p.name)}</option>`;
+        });
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    }
+
+    select.addEventListener('change', () => {
+        deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
+    });
+
+    loadBtn.addEventListener('click', () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const preset = getPresets()[idx];
+        if (!preset) return;
+        AppState.settings[settingKey] = preset.content;
+        setSelected(preset.name);
+        textarea.value = preset.content;
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已加载${label}预设：${preset.name}`);
+    });
+
+    saveBtn.addEventListener('click', () => {
+        const name = window.prompt('请输入预设名称：', getSelected() || '');
+        if (!name || !name.trim()) return;
+        const presets = getPresets();
+        const existingIdx = presets.findIndex(p => p.name === name.trim());
+        const content = textarea.value;
+        if (existingIdx >= 0) {
+            presets[existingIdx].content = content;
+        } else {
+            presets.push({ name: name.trim(), content });
+        }
+        setPresets(presets);
+        setSelected(name.trim());
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已保存${label}预设：${name.trim()}`);
+    });
+
+    deleteBtn.addEventListener('click', async () => {
+        const idx = parseInt(select.value, 10);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const presets = getPresets();
+        const preset = presets[idx];
+        if (!preset) return;
+        const confirmed = typeof confirmAction === 'function'
+            ? await confirmAction(`确定删除预设「${preset.name}」吗？`, { title: '删除预设', danger: true })
+            : window.confirm(`确定删除预设「${preset.name}」吗？`);
+        if (!confirmed) return;
+        presets.splice(idx, 1);
+        if (getSelected() === preset.name) {
+            setSelected('');
+        }
+        setPresets(presets);
+        renderDropdown();
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        ErrorHandler.showUserSuccess(`已删除${label}预设：${preset.name}`);
     });
 
     renderDropdown();

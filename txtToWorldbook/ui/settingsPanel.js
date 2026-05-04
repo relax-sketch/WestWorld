@@ -407,6 +407,14 @@ function buildDirectorFrameworkPromptSectionHtml() {
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
                 <code>{CHAPTER_TITLE}</code> <code>{CURRENT_BEAT_ORIGINAL}</code> <code>{COMPACT_BEATS_JSON}</code> <code>{FIXED_STAGE_IDX}</code>
             </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+                <select id="ttw-director-framework-preset-select" class="ttw-input" style="flex:1;min-width:120px;">
+                    <option value="">-- 选择预设 --</option>
+                </select>
+                <button id="ttw-director-framework-preset-load" class="ttw-btn ttw-btn-small">📥 加载</button>
+                <button id="ttw-director-framework-preset-save-as" class="ttw-btn ttw-btn-small" style="background:#27ae60;">💾 另存为</button>
+                <button id="ttw-director-framework-preset-delete" class="ttw-btn ttw-btn-small ttw-btn-warning" style="display:none;">🗑️</button>
+            </div>
             <textarea id="ttw-director-framework-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div class="ttw-setting-hint" style="margin-top:8px;margin-bottom:4px;">📎 自由附加内容（将追加到提示词末尾，与提示词捆绑生效）</div>
             <textarea id="ttw-director-framework-suffix" rows="2" placeholder="可选，附加的自由内容..." class="ttw-textarea-small"></textarea>
@@ -433,6 +441,14 @@ function buildDirectorInjectionPromptSectionHtml() {
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
                 <code>{CURRENT_BEAT_SUMMARY}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+                <select id="ttw-director-injection-preset-select" class="ttw-input" style="flex:1;min-width:120px;">
+                    <option value="">-- 选择预设 --</option>
+                </select>
+                <button id="ttw-director-injection-preset-load" class="ttw-btn ttw-btn-small">📥 加载</button>
+                <button id="ttw-director-injection-preset-save-as" class="ttw-btn ttw-btn-small" style="background:#27ae60;">💾 另存为</button>
+                <button id="ttw-director-injection-preset-delete" class="ttw-btn ttw-btn-small ttw-btn-warning" style="display:none;">🗑️</button>
             </div>
             <textarea id="ttw-director-injection-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div class="ttw-setting-hint" style="margin-top:8px;margin-bottom:4px;">📎 自由附加内容（将追加到提示词末尾，与提示词捆绑生效）</div>
