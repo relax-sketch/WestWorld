@@ -1,5 +1,6 @@
 ﻿import {
     DEFAULT_WORLDBOOK_CATEGORIES,
+    defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
@@ -338,6 +339,32 @@ function buildConsolidatePromptSectionHtml() {
     </div>`;
 }
 
+function buildAliasMergePromptSectionHtml() {
+    return `
+    <div class="ttw-prompt-section">
+        <div class="ttw-prompt-header" data-target="ttw-alias-merge-content">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span>🔗</span><span style="font-weight:500;">别名合并AI提示词</span>
+                <span class="ttw-badge ttw-badge-blue">必需</span>
+            </div>
+            <span class="ttw-collapse-icon">▼</span>
+        </div>
+        <div id="ttw-alias-merge-content" class="ttw-prompt-content" style="display:block;">
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">别名识别两两判断时使用的AI提示词。已预填默认内容，可直接在此基础上修改。</div>
+            <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
+                <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 必须包含占位符：</span>
+                <code>{pairsContent}</code>
+                <div style="font-size:11px;color:var(--ttw-text-muted);margin-top:4px;">其他可用占位符：<code>{categoryName}</code> <code>{categoryLabel}</code> <code>{entityType}</code> <code>{entityUnit}</code> <code>{entityPerson}</code></div>
+            </div>
+            <textarea id="ttw-alias-merge-prompt" rows="6" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="alias-merge">🔄 恢复默认</button>
+                <button class="ttw-btn ttw-btn-small" id="ttw-save-alias-merge-prompt">💾 保存</button>
+            </div>
+        </div>
+    </div>`;
+}
+
 function buildChapterAssetsPromptSectionHtml() {
     return `
     <div class="ttw-prompt-section">
@@ -547,6 +574,7 @@ function buildPromptEditorSectionHtml() {
             ${buildCategoryGuidePromptSectionHtml()}
             ${buildWorldbookPromptSectionHtml()}
             ${buildConsolidatePromptSectionHtml()}
+            ${buildAliasMergePromptSectionHtml()}
             ${buildChapterAssetsPromptSectionHtml()}
             ${buildDirectorFrameworkPromptSectionHtml()}
             ${buildDirectorInjectionPromptSectionHtml()}
@@ -831,6 +859,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const consolidatePromptEl = document.getElementById('ttw-consolidate-prompt');
     if (consolidatePromptEl) consolidatePromptEl.value = AppState.settings.customConsolidatePrompt || defaultConsolidatePrompt;
+
+    const aliasMergePromptEl = document.getElementById('ttw-alias-merge-prompt');
+    if (aliasMergePromptEl) aliasMergePromptEl.value = AppState.settings.customAliasMergePrompt || defaultAliasMergePrompt;
 
     const chapterAssetsPromptEl = document.getElementById('ttw-chapter-assets-prompt');
     if (chapterAssetsPromptEl) chapterAssetsPromptEl.value = AppState.settings.customChapterAssetsPrompt || defaultChapterAssetsPrompt;

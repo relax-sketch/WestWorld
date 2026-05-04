@@ -86,6 +86,7 @@ export function createSettingsPersistenceService(deps) {
             AppState.settings.customPlotPrompt = document.getElementById('ttw-plot-prompt')?.value || '';
             AppState.settings.customStylePrompt = document.getElementById('ttw-style-prompt')?.value || '';
             AppState.settings.customConsolidatePrompt = document.getElementById('ttw-consolidate-prompt')?.value || '';
+            AppState.settings.customAliasMergePrompt = document.getElementById('ttw-alias-merge-prompt')?.value || '';
             AppState.settings.customChapterAssetsPrompt = document.getElementById('ttw-chapter-assets-prompt')?.value || '';
             AppState.settings.customDirectorFrameworkPrompt = document.getElementById('ttw-director-framework-prompt')?.value || '';
             AppState.settings.customDirectorInjectionPrompt = document.getElementById('ttw-director-injection-prompt')?.value || '';

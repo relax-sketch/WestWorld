@@ -372,8 +372,24 @@ export function createMergeService(deps = {}) {
         };
 
         const categoryLabel = categoryName === '角色' ? '角色' : `「${categoryName}」分类的条目`;
+        const entityType = categoryName === '角色' ? '人物' : '事物';
+        const entityUnit = categoryName === '角色' ? '个人' : '个事物';
+        const entityPerson = categoryName === '角色' ? '人' : '事物';
+
         const buildPrompt = (pairsContent) => {
-            return getLanguagePrefix() + `你是${categoryName}识别专家。请对以下每一对${categoryLabel}进行判断，判断它们是否为同一${categoryName === '角色' ? '人物' : '事物'}。
+            const customPrompt = AppState.settings?.customAliasMergePrompt;
+            if (customPrompt) {
+                let result = customPrompt;
+                result = result.split('{categoryName}').join(categoryName);
+                result = result.split('{categoryLabel}').join(categoryLabel);
+                result = result.split('{entityType}').join(entityType);
+                result = result.split('{entityUnit}').join(entityUnit);
+                result = result.split('{entityPerson}').join(entityPerson);
+                result = result.split('{pairsContent}').join(pairsContent);
+                return getLanguagePrefix() + result;
+            }
+
+            return getLanguagePrefix() + `你是${categoryName}识别专家。请对以下每一对${categoryLabel}进行判断，判断它们是否为同一${entityType}。
 
 ## 待判断的${categoryLabel}配对
 ${pairsContent}
@@ -382,20 +398,20 @@ ${pairsContent}
 - 仔细阅读每个条目的关键词和内容摘要
 - 根据描述的核心特征、身份、背景等信息判断
 - 考虑：全名vs简称、别名、昵称、代号等称呼变化
-- 如果内容描述明显指向同一${categoryName === '角色' ? '个人' : '个事物'}，则判定为相同
+- 如果内容描述明显指向同一${entityUnit}，则判定为相同
 - 【重要】即使名字相似，如果核心特征明显不同，也要判定为不同
 
 ## 要求
 - 对每一对分别判断
-- 如果是同一${categoryName === '角色' ? '人' : '事物'}，选择更完整/更常用的名称作为mainName
-- 如果不是同一${categoryName === '角色' ? '人' : '事物'}，说明原因
+- 如果是同一${entityPerson}，选择更完整/更常用的名称作为mainName
+- 如果不是同一${entityPerson}，说明原因
 - 返回JSON格式
 
 ## 输出格式
 {
     "results": [
         {"pair": 1, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": true, "mainName": "保留的名称", "reason": "判断依据"},
-        {"pair": 2, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": false, "reason": "不是同一${categoryName === '角色' ? '人' : '事物'}的原因"}
+        {"pair": 2, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": false, "reason": "不是同一${entityPerson}的原因"}
     ]
 }`;
         };
