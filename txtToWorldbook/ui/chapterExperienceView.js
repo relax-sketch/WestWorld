@@ -21,6 +21,7 @@ export function createChapterExperienceView(deps = {}) {
         currentOpening: 'ttw-current-opening',
         chapterHint: 'ttw-current-chapter-hint',
         editButton: 'ttw-edit-current-chapter-btn',
+        prevButton: 'ttw-prev-chapter-btn',
         prevBeatButton: 'ttw-prev-beat-btn',
         nextBeatButton: 'ttw-next-beat-btn',
         nextButton: 'ttw-next-chapter-btn',
@@ -1068,6 +1069,7 @@ export function createChapterExperienceView(deps = {}) {
         const scriptEl = document.getElementById(selectors.currentScript);
         const openingEl = document.getElementById(selectors.currentOpening);
         const hintEl = document.getElementById(selectors.chapterHint);
+        const prevBtn = document.getElementById(selectors.prevButton);
         const prevBeatBtn = document.getElementById(selectors.prevBeatButton);
         const nextBeatBtn = document.getElementById(selectors.nextBeatButton);
         const nextBtn = document.getElementById(selectors.nextButton);
@@ -1078,6 +1080,7 @@ export function createChapterExperienceView(deps = {}) {
             if (scriptEl) scriptEl.innerHTML = '<div class="ttw-script-empty">暂无剧本数据</div>';
             if (openingEl) openingEl.textContent = '暂无开场白';
             if (hintEl) hintEl.textContent = '请先完成TXT处理。';
+            if (prevBtn) prevBtn.disabled = true;
             if (prevBeatBtn) prevBeatBtn.disabled = true;
             if (nextBeatBtn) nextBeatBtn.disabled = true;
             if (nextBtn) nextBtn.disabled = true;
@@ -1120,6 +1123,11 @@ export function createChapterExperienceView(deps = {}) {
         }
 
         const isLast = idx >= AppState.memory.queue.length - 1;
+        const isFirst = idx <= 0;
+        if (prevBtn) {
+            prevBtn.disabled = isFirst;
+            prevBtn.textContent = isFirst ? '⏮ 已是第一章' : '⏮ 上一章';
+        }
         if (prevBeatBtn) {
             prevBeatBtn.disabled = beatCount <= 1 || currentBeatIndex <= 0;
         }
@@ -1604,6 +1612,20 @@ export function createChapterExperienceView(deps = {}) {
             nextBeatBtn.dataset.bound = '1';
             nextBeatBtn.addEventListener('click', async () => {
                 await switchCurrentBeat(1);
+            });
+        }
+
+        const prevBtn = document.getElementById(selectors.prevButton);
+        if (prevBtn && !prevBtn.dataset.bound) {
+            prevBtn.dataset.bound = '1';
+            prevBtn.addEventListener('click', async () => {
+                ensureState();
+                const prevIndex = (AppState.experience.currentChapterIndex || 0) - 1;
+                if (prevIndex < 0) {
+                    ErrorHandler.showUserError('已经是第一章');
+                    return;
+                }
+                await enterChapter(prevIndex, { triggerOpening: false });
             });
         }
 
