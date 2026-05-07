@@ -2,15 +2,31 @@ import {
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
 } from '../core/constants.js';
+import {
+    ensureDirectorRuntimeReady,
+    getSillyTavernSessionFingerprint,
+    diffSessionFingerprint,
+    diffBoundDirectorSession,
+    normalizeDirectorBeatState,
+    ensureMemoryDirectorRuntime,
+} from './directorStateService.js';
+import {
+    insertDirectorInjection,
+    inspectDirectorInjection,
+    withDirectorInjectionMarker,
+    hashText,
+} from './directorInjectionService.js';
 
 export function createDirectorService(deps = {}) {
     const {
         AppState,
+        MemoryHistoryDB,
         Logger,
         callDirectorAPI,
         getLanguagePrefix,
         debugLog,
         updateStreamContent,
+        directorTelemetry,
     } = deps;
 
     function directorDebug(msg) {
@@ -1025,35 +1041,263 @@ export function createDirectorService(deps = {}) {
         return suffix ? `${injectionBody}\n\n${suffix}` : injectionBody;
     }
 
+    function getDirectorContext(options = {}) {
+        void options;
+        normalizeDirectorBeatState(AppState);
+        const queue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+        if (queue.length <= 0) {
+            return { ok: false, reason: 'state-missing' };
+        }
+        const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
+            ? Math.max(0, Math.min(AppState.experience.currentChapterIndex, queue.length - 1))
+            : 0;
+        const memory = queue[chapterIndex] || null;
+        if (!memory) return { ok: false, reason: 'chapter-missing' };
+        ensureMemoryDirectorRuntime(memory, chapterIndex);
+        const beats = ensureChapterBeats(memory);
+        const beatCount = Array.isArray(beats) ? beats.length : 0;
+        const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
+            ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beatCount - 1)))
+            : 0;
+        const beat = beats[beatIndex] || null;
+        const decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
+        const directionScript = decision?.direction_script || {};
+
+        return {
+            ok: true,
+            reason: '',
+            session: getSillyTavernSessionFingerprint(),
+            chapter: {
+                index: chapterIndex,
+                title: memory.chapterTitle || `第${chapterIndex + 1}章`,
+                outlinePreview: toShortText(memory.chapterOutline || '', 260),
+            },
+            beat: {
+                index: beatIndex,
+                count: beatCount,
+                id: String(beat?.id || `b${beatIndex + 1}`),
+                summary: toShortText(beat?.summary || beat?.event_summary || '', 220),
+                entryEvent: toShortText(beat?.entryEvent || '', 160),
+                exitCondition: toShortText(beat?.exitCondition || '', 160),
+                originalPreview: toHeadText(beat?.original_text || '', 260),
+            },
+            decision: decision ? {
+                source: AppState.experience?.directorLastInjectionMeta?.source || '',
+                at: decision.at || AppState.experience?.directorLastDecisionAt || 0,
+                isNewBeat: decision.is_new_beat === true,
+                switchDirection: decision.switch_direction || '',
+                directionStart: directionScript.start || '',
+                actionChain: directionScript.action_chain || '',
+                directionEnd: directionScript.end || '',
+            } : null,
+            runtime: directorTelemetry?.getStatus?.() || AppState.experience?.directorRuntime || null,
+        };
+    }
+
+    function getDirectorInjectionPrompt(options = {}) {
+        normalizeDirectorBeatState(AppState);
+        const mode = String(options.mode || 'current');
+        let content = '';
+        let meta = AppState.experience?.directorLastInjectionMeta || {};
+
+        if (mode === 'lastInjected' && AppState.experience?.directorLastInjectionPrompt) {
+            content = AppState.experience.directorLastInjectionPrompt;
+        } else {
+            const queue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+            const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
+                ? Math.max(0, Math.min(AppState.experience.currentChapterIndex, Math.max(0, queue.length - 1)))
+                : 0;
+            const memory = queue[chapterIndex] || null;
+            if (!memory) return { ok: false, reason: 'chapter-missing', content: '', meta: {} };
+            ensureMemoryDirectorRuntime(memory, chapterIndex);
+            const beats = ensureChapterBeats(memory);
+            const decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
+            if (!decision) return { ok: false, reason: 'decision-missing', content: '', meta: {} };
+            const beatIndex = Number.isInteger(decision.stage_idx)
+                ? Math.max(0, Math.min(decision.stage_idx, Math.max(0, beats.length - 1)))
+                : 0;
+            const runId = meta.runId || directorTelemetry?.makeRunId?.('wwd-preview') || `wwd-preview-${Date.now().toString(36)}`;
+            content = withDirectorInjectionMarker(
+                buildInjection(decision, beats),
+                { runId, chapterIndex, beatIndex },
+                { includeMarker: options.includeMarker !== false },
+            );
+            meta = {
+                ...meta,
+                runId,
+                chapterIndex,
+                beatIndex,
+                source: meta.source || 'current-decision',
+            };
+        }
+
+        const maxLength = Math.max(0, Number(options.maxLength || 0));
+        const finalContent = maxLength > 0 && content.length > maxLength
+            ? content.slice(0, maxLength)
+            : content;
+        return {
+            ok: true,
+            reason: '',
+            content: finalContent,
+            meta: {
+                ...meta,
+                contentLength: content.length,
+                contentHash: hashText(content),
+                truncated: finalContent.length < content.length,
+            },
+        };
+    }
+
+    function getDirectorPromptForLittleWhiteBox(options = {}) {
+        const prompt = getDirectorInjectionPrompt(options);
+        if (!prompt.ok) {
+            return {
+                ok: false,
+                reason: prompt.reason,
+            };
+        }
+        return {
+            ok: true,
+            reason: '',
+            injection: {
+                role: 'system',
+                content: prompt.content,
+                identifier: 'westworld-director-current',
+                position: 'IN_PROMPT',
+                depth: 0,
+            },
+            context: getDirectorContext(options),
+            meta: prompt.meta,
+        };
+    }
+
+    function testDirectorInjection(options = {}) {
+        const runId = options.runId || directorTelemetry?.makeRunId?.('wwd-test') || `wwd-test-${Date.now().toString(36)}`;
+        const chat = Array.isArray(options.chat)
+            ? options.chat.map((item) => ({ ...(item || {}) }))
+            : [{ role: 'user', content: 'test user message', mes: 'test user message', is_user: true }];
+        const content = withDirectorInjectionMarker(
+            String(options.content || 'WestWorld director injection test body.'),
+            {
+                runId,
+                chapterIndex: Number.isInteger(options.chapterIndex) ? options.chapterIndex : 0,
+                beatIndex: Number.isInteger(options.beatIndex) ? options.beatIndex : 0,
+            },
+            { includeMarker: options.includeMarker !== false },
+        );
+        const result = insertDirectorInjection(chat, content, {
+            runId,
+            chapterIndex: Number.isInteger(options.chapterIndex) ? options.chapterIndex : 0,
+            beatIndex: Number.isInteger(options.beatIndex) ? options.beatIndex : 0,
+            source: 'test',
+        });
+        return {
+            ok: result.injected === true,
+            result,
+            chat,
+        };
+    }
+
+    function bindDirectorSessionToCurrentChapter() {
+        normalizeDirectorBeatState(AppState);
+        const queue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+        if (queue.length <= 0) {
+            return { ok: false, reason: 'state-missing' };
+        }
+        const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
+            ? Math.max(0, Math.min(AppState.experience.currentChapterIndex, queue.length - 1))
+            : 0;
+        const memory = queue[chapterIndex] || null;
+        if (!memory) return { ok: false, reason: 'chapter-missing' };
+        const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex) ? Math.max(0, memory.chapterCurrentBeatIndex) : 0;
+        const session = getSillyTavernSessionFingerprint();
+        const binding = {
+            ...session,
+            chapterIndex,
+            beatIndex,
+            boundAt: Date.now(),
+        };
+        const runtime = directorTelemetry?.runtime?.() || AppState.experience.directorRuntime;
+        runtime.boundSession = binding;
+        runtime.invalidated = false;
+        runtime.invalidationReason = '';
+        runtime.invalidatedAt = 0;
+        directorTelemetry?.writeLog?.('info', 'bound', 'director session bound to current chapter', binding);
+        return { ok: true, binding };
+    }
+
     async function runDirectorBeforeGeneration(eventData) {
+        normalizeDirectorBeatState(AppState);
         if (AppState.settings.directorEnabled === false) {
+            directorTelemetry?.markGateSkipped?.('directorEnabled=false');
             directorDebug('skip: directorEnabled=false');
             return null;
         }
         if (AppState.settings.directorRunEveryTurn === false) {
+            directorTelemetry?.markGateSkipped?.('directorRunEveryTurn=false');
             directorDebug('skip: directorRunEveryTurn=false');
             return null;
         }
         if (!eventData || typeof eventData !== 'object' || eventData.dryRun) {
+            directorTelemetry?.markGateSkipped?.('invalid-or-dryrun');
             directorDebug('skip: invalid eventData or dryRun');
             return null;
         }
         if (!Array.isArray(eventData.chat)) {
+            directorTelemetry?.markGateSkipped?.('eventData.chat-not-array');
             directorDebug('skip: eventData.chat is not an array');
             return null;
         }
+
+        const ready = await ensureDirectorRuntimeReady({
+            AppState,
+            MemoryHistoryDB,
+            telemetry: directorTelemetry,
+        });
+        if (!ready?.ok) {
+            const reason = ready?.reason || ready?.status || 'state-missing';
+            directorTelemetry?.markGateSkipped?.(reason, ready);
+            directorWarn(`导演运行态未就绪：${reason}`);
+            return null;
+        }
+
+        const session = getSillyTavernSessionFingerprint(eventData);
+        const previousSession = AppState.experience?.directorRuntime?.lastSession || null;
+        const sessionDiff = diffSessionFingerprint(previousSession, session);
+        if (sessionDiff.length > 0) {
+            directorTelemetry?.markInvalidated?.(`session-changed:${sessionDiff.join(',')}`, {
+                previous: previousSession,
+                current: session,
+            });
+        }
+        const boundSession = AppState.experience?.directorRuntime?.boundSession || null;
+        const boundDiff = diffBoundDirectorSession(boundSession, session);
+        if (boundDiff.length > 0) {
+            const reason = `session-mismatch:${boundDiff.join(',')}`;
+            directorTelemetry?.markGateSkipped?.(reason, { boundSession, current: session });
+            directorWarn(`当前聊天与已绑定导演章节不匹配：${boundDiff.join(',')}`);
+            return null;
+        }
+        if (boundSession && Number.isInteger(boundSession.chapterIndex)) {
+            const queueLength = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue.length : 0;
+            AppState.experience.currentChapterIndex = Math.max(0, Math.min(boundSession.chapterIndex, Math.max(0, queueLength - 1)));
+        }
+        normalizeDirectorBeatState(AppState);
 
         const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
             ? AppState.experience.currentChapterIndex
             : 0;
         const memory = AppState.memory?.queue?.[chapterIndex];
         if (!memory) {
+            directorTelemetry?.markGateSkipped?.('chapter-missing', { chapterIndex });
             directorWarn(`当前章节不存在，chapterIndex=${chapterIndex}`);
             return null;
         }
+        ensureMemoryDirectorRuntime(memory, chapterIndex);
 
         const beats = ensureChapterBeats(memory);
         if (!Array.isArray(beats) || beats.length === 0) {
+            directorTelemetry?.markGateSkipped?.('beats-missing', { chapterIndex });
             directorWarn(`无可用轻节拍，chapter=${chapterIndex + 1}`);
             return null;
         }
@@ -1063,6 +1307,15 @@ export function createDirectorService(deps = {}) {
             : 0;
         memory.chapterCurrentBeatIndex = currentBeatIdx;
         const turnPrefix = buildDirectorTurnPrefix(chapterIndex);
+        const runStartedAt = Date.now();
+        const runId = directorTelemetry?.makeRunId?.() || `wwd-${runStartedAt.toString(36)}`;
+        directorTelemetry?.markRunStarted?.({
+            runId,
+            chapterIndex,
+            beatIndex: currentBeatIdx,
+            beatCount: beats.length,
+            session,
+        });
         directorDebug(`start chapter=${chapterIndex + 1}, beat=${currentBeatIdx + 1}/${beats.length}`);
 
         const latestUserMessage = getLatestUserMessage(eventData);
@@ -1287,22 +1540,46 @@ export function createDirectorService(deps = {}) {
         AppState.experience.lastChapterIdx = chapterIndex;
         AppState.experience.directorLastDecision = { ...memory.directorDecision };
         AppState.experience.directorLastDecisionAt = Date.now();
-
-        const injection = buildInjection(decision, beats);
-        stripExistingDirectorInjection(eventData.chat);
-        eventData.chat.unshift({
-            role: 'system',
-            content: injection,
-            name: 'system',
-            is_user: false,
-            is_system: true,
-            mes: injection,
-            is_westworld_director: true,
-            is_storyweaver_director: true,
+        directorTelemetry?.markApiResult?.({
+            runId,
+            source: decisionSource,
+            durationMs: Date.now() - runStartedAt,
+            chapterIndex,
+            beatIndex: decision.stage_idx,
+            beatCount: beats.length,
         });
+
+        const injection = withDirectorInjectionMarker(
+            buildInjection(decision, beats),
+            {
+                runId,
+                chapterIndex,
+                beatIndex: decision.stage_idx,
+            },
+            {
+                includeMarker: AppState?.settings?.directorInjectionMarkerEnabled !== false,
+            },
+        );
+        const injectionInfo = insertDirectorInjection(eventData.chat, injection, {
+            runId,
+            chapterIndex,
+            beatIndex: decision.stage_idx,
+            source: decisionSource,
+        });
+        AppState.experience.directorLastInjectionPrompt = injection;
+        AppState.experience.directorLastInjectionMeta = {
+            runId,
+            chapterIndex,
+            beatIndex: decision.stage_idx,
+            source: decisionSource,
+            contentLength: injection.length,
+            contentHash: hashText(injection),
+            at: Date.now(),
+        };
+        directorTelemetry?.markInjected?.(injectionInfo);
         directorInfo(`注入完成 chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
         if (typeof updateStreamContent === 'function') {
-            updateStreamContent(`✅ ${turnPrefix} 注入导演提示词完成（activeBeat=${decision.stage_idx + 1}）\n`);
+            updateStreamContent(`✅ ${turnPrefix} 注入导演提示词完成（activeBeat=${decision.stage_idx + 1}, marker=${injectionInfo.markerFoundAfterInsert ? 'ok' : 'missing'}）\n`);
         }
 
         return decision;
@@ -1310,5 +1587,11 @@ export function createDirectorService(deps = {}) {
 
     return {
         runDirectorBeforeGeneration,
+        getDirectorContext,
+        getDirectorInjectionPrompt,
+        getDirectorPromptForLittleWhiteBox,
+        inspectDirectorInjection,
+        testDirectorInjection,
+        bindDirectorSessionToCurrentChapter,
     };
 }

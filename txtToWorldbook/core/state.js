@@ -54,6 +54,7 @@
             lastBeatIdx: 0,
             directorLastDecision: null,
             directorLastDecisionAt: 0,
+            directorRuntime: createInitialDirectorRuntimeState(),
         },
         ui: {
             isMultiSelectMode: false,
@@ -77,5 +78,51 @@
         },
         settings: { ...(defaultSettings || {}) },
         globalSemaphore: null
+    };
+}
+
+export function createInitialDirectorRuntimeState() {
+    return {
+        hookRegistered: false,
+        hookRegisteredAt: 0,
+        lastEventAt: 0,
+        lastEventType: '',
+        phase: 'idle',
+        lastSkipReason: '',
+        lastRunId: '',
+        lastRunAt: 0,
+        lastRunDurationMs: 0,
+        lastChapterIndex: -1,
+        lastBeatIndex: -1,
+        lastBeatCount: 0,
+        lastDecisionSource: '',
+        restore: {
+            status: 'idle',
+            at: 0,
+            restored: false,
+            reason: '',
+            memoryCount: 0,
+            durationMs: 0,
+        },
+        session: null,
+        lastSession: null,
+        boundSession: null,
+        invalidated: false,
+        invalidatedAt: 0,
+        invalidationReason: '',
+        lastInjection: {
+            injected: false,
+            at: 0,
+            runId: '',
+            chatLengthBefore: 0,
+            chatLengthAfter: 0,
+            insertionIndex: -1,
+            role: '',
+            contentLength: 0,
+            contentHash: '',
+            contentPreview: '',
+            markerFoundAfterInsert: false,
+        },
+        lastError: '',
     };
 }

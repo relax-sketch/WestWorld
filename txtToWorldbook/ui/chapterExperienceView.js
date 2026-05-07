@@ -1,3 +1,8 @@
+import {
+    ensureExperienceState,
+    ensureMemoryDirectorRuntime,
+} from '../services/directorStateService.js';
+
 export function createChapterExperienceView(deps = {}) {
     const {
         AppState,
@@ -237,9 +242,7 @@ export function createChapterExperienceView(deps = {}) {
     }
 
     function ensureState() {
-        if (!AppState.experience) {
-            AppState.experience = { currentChapterIndex: 0 };
-        }
+        ensureExperienceState(AppState, Array.isArray(AppState.memory?.queue) ? AppState.memory.queue.length : 0);
     }
 
     function getMemory(index) {
@@ -248,43 +251,8 @@ export function createChapterExperienceView(deps = {}) {
 
     function ensureMemoryRuntime(memory, index) {
         if (!memory) return;
-        if (!memory.chapterTitle || !String(memory.chapterTitle).trim()) {
-            memory.chapterTitle = `第${index + 1}章`;
-        }
-        if (typeof memory.chapterOutline !== 'string') {
-            memory.chapterOutline = '';
-        }
-        if (!memory.chapterOutlineStatus) {
-            memory.chapterOutlineStatus = 'pending';
-        }
-        if (typeof memory.chapterOutlineError !== 'string') {
-            memory.chapterOutlineError = '';
-        }
-        if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
-            memory.chapterScript = { keyNodes: [], beats: [] };
-        }
-        if (!Array.isArray(memory.chapterScript.keyNodes)) {
-            memory.chapterScript.keyNodes = [];
-        }
-        if (!Array.isArray(memory.chapterScript.beats)) {
-            memory.chapterScript.beats = [];
-        }
+        ensureMemoryDirectorRuntime(memory, index);
         memory.chapterScript.beats = memory.chapterScript.beats.map((beat, idx) => normalizeBeatForView(beat, idx));
-        if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
-            memory.chapterCurrentBeatIndex = 0;
-        }
-        if (typeof memory.chapterOpeningPreview !== 'string') {
-            memory.chapterOpeningPreview = '';
-        }
-        if (typeof memory.chapterOpeningSent !== 'boolean') {
-            memory.chapterOpeningSent = false;
-        }
-        if (typeof memory.chapterOpeningError !== 'string') {
-            memory.chapterOpeningError = '';
-        }
-        if (typeof memory.chapterOpeningGenerating !== 'boolean') {
-            memory.chapterOpeningGenerating = false;
-        }
     }
 
     function toShortText(text, maxLen = 180) {

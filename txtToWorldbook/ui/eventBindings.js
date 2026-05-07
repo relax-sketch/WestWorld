@@ -538,6 +538,151 @@ export function bindSettingEvents(deps = {}) {
         return '';
     };
 
+    const getDirectorApi = () => {
+        if (typeof window === 'undefined') return null;
+        return window.WestWorld || window.WestWorldTxtToWorldbook || window.StoryWeaver || null;
+    };
+
+    const formatTime = (value) => {
+        const at = Number(value || 0);
+        if (!at) return '无';
+        try {
+            return new Date(at).toLocaleTimeString('zh-CN', { hour12: false });
+        } catch (_) {
+            return String(at);
+        }
+    };
+
+    const writeClipboard = async (text) => {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        return ok;
+    };
+
+    const buildDirectorDiagnosticsSnapshot = () => {
+        const api = getDirectorApi();
+        if (!api) {
+            return {
+                available: false,
+                reason: 'westworld-api-missing',
+                status: null,
+                gate: null,
+                context: null,
+                logs: [],
+            };
+        }
+        const status = api.getDirectorRuntimeStatus?.() || api.getDirectorStatus?.() || null;
+        const gate = api.getDirectorGateStatus?.() || null;
+        const context = api.getDirectorContext?.({ includeRuntime: true }) || null;
+        const logs = api.getDirectorLogs?.(20) || [];
+        return {
+            available: true,
+            status,
+            gate,
+            context,
+            logs,
+        };
+    };
+
+    const renderDirectorDiagnostics = () => {
+        const summaryEl = document.getElementById('ttw-director-diagnostics-summary');
+        const jsonEl = document.getElementById('ttw-director-diagnostics-json');
+        const logsEl = document.getElementById('ttw-director-diagnostics-logs');
+        if (!summaryEl && !jsonEl && !logsEl) return;
+
+        const snapshot = buildDirectorDiagnosticsSnapshot();
+        const status = snapshot.status || {};
+        const injection = status.lastInjection || {};
+        const boundSession = status.boundSession || null;
+        const context = snapshot.context || {};
+        const chapter = context.chapter || {};
+        const beat = context.beat || {};
+
+        const cells = [
+            ['API', snapshot.available ? '已连接' : '缺失'],
+            ['Hook', status.hookRegistered ? '已注册' : '未注册'],
+            ['阶段', status.phase || 'unknown'],
+            ['跳过原因', status.lastSkipReason || '无'],
+            ['章节', Number.isInteger(chapter.index) ? `${chapter.index + 1}` : (Number.isInteger(status.lastChapterIndex) && status.lastChapterIndex >= 0 ? `${status.lastChapterIndex + 1}` : '无')],
+            ['Beat', Number.isInteger(beat.index) ? `${beat.index + 1}/${beat.count || 0}` : (Number.isInteger(status.lastBeatIndex) && status.lastBeatIndex >= 0 ? `${status.lastBeatIndex + 1}/${status.lastBeatCount || 0}` : '无')],
+            ['注入', injection.injected ? '已插入' : '未确认'],
+            ['Marker', injection.markerFoundAfterInsert ? '存在' : '未确认'],
+            ['绑定', boundSession ? `第${Number(boundSession.chapterIndex || 0) + 1}章` : '未绑定'],
+            ['最近运行', formatTime(status.lastRunAt)],
+            ['失效', status.invalidated ? (status.invalidationReason || 'needs-resync') : '否'],
+        ];
+
+        if (summaryEl) {
+            summaryEl.innerHTML = cells.map(([label, value]) => `
+                <div style="padding:7px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;min-width:0;">
+                    <div style="font-size:10px;color:#aaa;margin-bottom:3px;">${String(label)}</div>
+                    <div style="font-size:12px;color:#fff;overflow-wrap:anywhere;">${String(value)}</div>
+                </div>
+            `).join('');
+        }
+        if (jsonEl) {
+            jsonEl.textContent = JSON.stringify(snapshot, null, 2);
+        }
+        if (logsEl) {
+            const logs = Array.isArray(snapshot.logs) ? snapshot.logs.slice().reverse() : [];
+            logsEl.innerHTML = logs.length > 0
+                ? logs.map((log) => `
+                    <div style="padding:5px 7px;background:rgba(0,0,0,0.22);border-radius:5px;color:#ddd;">
+                        <span style="color:#888;">${formatTime(log.at)}</span>
+                        <span style="color:#8bc5ff;">${String(log.phase || log.level || '')}</span>
+                        <span>${String(log.message || '')}</span>
+                    </div>
+                `).join('')
+                : '<div style="color:#888;">暂无日志</div>';
+        }
+    };
+
+    const copyDirectorDiagnostics = async () => {
+        const snapshot = buildDirectorDiagnosticsSnapshot();
+        await writeClipboard(JSON.stringify(snapshot, null, 2));
+        ErrorHandler?.showUserSuccess?.('导演诊断 JSON 已复制');
+    };
+
+    const testDirectorInjection = () => {
+        const api = getDirectorApi();
+        const result = api?.testDirectorInjection?.() || { ok: false, reason: 'westworld-api-missing' };
+        renderDirectorDiagnostics();
+        if (result.ok) {
+            ErrorHandler?.showUserSuccess?.('模拟注入测试通过');
+        } else {
+            ErrorHandler?.showUserError?.(`模拟注入测试失败：${result.reason || result.result?.reason || 'unknown'}`);
+        }
+    };
+
+    const clearDirectorLogs = () => {
+        const api = getDirectorApi();
+        api?.clearDirectorLogs?.();
+        renderDirectorDiagnostics();
+        ErrorHandler?.showUserSuccess?.('导演日志已清空');
+    };
+
+    const bindDirectorSession = () => {
+        const api = getDirectorApi();
+        const result = api?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'westworld-api-missing' };
+        renderDirectorDiagnostics();
+        if (result.ok) {
+            const chapterNo = Number.isInteger(result.binding?.chapterIndex) ? result.binding.chapterIndex + 1 : 0;
+            ErrorHandler?.showUserSuccess?.(`已绑定当前聊天到第${chapterNo}章`);
+        } else {
+            ErrorHandler?.showUserError?.(`绑定失败：${result.reason || 'unknown'}`);
+        }
+    };
+
     const savePromptByType = (type) => {
         const textarea = document.getElementById(`ttw-${type}-prompt`);
         if (!textarea) return;
@@ -614,6 +759,11 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-chapter-regex': { change: (e) => { AppState.config.chapterRegex.pattern = e.target.value; saveCurrentSettings(); } },
         '#ttw-test-chapter-regex': { click: testChapterRegex },
         '#ttw-update-plugin-btn': { click: () => { if (typeof handlePluginSelfUpdate === 'function') handlePluginSelfUpdate(); } },
+        '#ttw-director-diagnostics-refresh': { click: renderDirectorDiagnostics },
+        '#ttw-director-diagnostics-copy': { click: () => { copyDirectorDiagnostics().catch((error) => ErrorHandler?.showUserError?.(`复制失败：${error?.message || error}`)); } },
+        '#ttw-director-diagnostics-test': { click: testDirectorInjection },
+        '#ttw-director-diagnostics-bind': { click: bindDirectorSession },
+        '#ttw-director-diagnostics-clear': { click: clearDirectorLogs },
         '.ttw-chapter-preset': { click: (e, btn) => { const regex = btn.dataset.regex; document.getElementById('ttw-chapter-regex').value = regex; AppState.config.chapterRegex.pattern = regex; saveCurrentSettings(); } },
         '.ttw-reset-prompt': {
             click: (e, btn) => {
@@ -743,6 +893,8 @@ export function bindSettingEvents(deps = {}) {
         settingKey: 'customDirectorInjectionPrompt',
         label: '导演注入演员前置提示词',
     });
+
+    renderDirectorDiagnostics();
 }
 
 export function bindPromptEvents(deps = {}) {

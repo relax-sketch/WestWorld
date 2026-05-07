@@ -93,6 +93,7 @@ import { createProcessingStateService } from './services/processingStateService.
 import { createRepairService } from './services/repairService.js';
 import { createWorldbookRuntimeService } from './services/worldbookRuntimeService.js';
 import { createDirectorService } from './services/directorService.js';
+import { createDirectorTelemetryService } from './services/directorTelemetryService.js';
 import { createAppContext } from './app/createApp.js';
 import { createCoreServices } from './app/createCoreServices.js';
 import { createFeatureServicesConfig } from './app/createFeatureServicesConfig.js';
@@ -828,13 +829,20 @@ const {
     handleRepairSingleMemory,
     handleRepairMemoryWithSplit,
 } = repairService;
+const directorTelemetry = createDirectorTelemetryService({
+    AppState,
+    Logger,
+    debugEnabled: () => AppState.settings?.debugMode === true,
+});
 const directorService = createDirectorService({
     AppState,
+    MemoryHistoryDB,
     Logger,
     callDirectorAPI,
     getLanguagePrefix,
     debugLog,
     updateStreamContent,
+    directorTelemetry,
 });
 const memoryQueueActionsService = createMemoryQueueActionsService({
     AppState,
@@ -1377,6 +1385,19 @@ open = shellRuntimeBindings.open;
     }));
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
     publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
+    publicApi.getDirectorRuntimeStatus = () => directorTelemetry.getStatus();
+    publicApi.getDirectorLogs = (limit) => directorTelemetry.getLogs(limit);
+    publicApi.clearDirectorLogs = () => directorTelemetry.clearLogs();
+    publicApi.markDirectorHookRegistered = (data) => directorTelemetry.markHookRegistered(data);
+    publicApi.markDirectorEvent = (eventType, data) => directorTelemetry.markEvent(eventType, data);
+    publicApi.markDirectorGateSkipped = (reason, data) => directorTelemetry.markGateSkipped(reason, data);
+    publicApi.invalidateDirectorRuntime = (reason, data) => directorTelemetry.markInvalidated(reason, data);
+    publicApi.getDirectorContext = (...args) => directorService.getDirectorContext(...args);
+    publicApi.getDirectorInjectionPrompt = (...args) => directorService.getDirectorInjectionPrompt(...args);
+    publicApi.getDirectorPromptForLittleWhiteBox = (...args) => directorService.getDirectorPromptForLittleWhiteBox(...args);
+    publicApi.inspectDirectorInjection = (...args) => directorService.inspectDirectorInjection(...args);
+    publicApi.testDirectorInjection = (...args) => directorService.testDirectorInjection(...args);
+    publicApi.bindDirectorSessionToCurrentChapter = (...args) => directorService.bindDirectorSessionToCurrentChapter(...args);
     window[WESTWORLD_TTW_API_KEY] = publicApi;
     window[LEGACY_STORYWEAVER_TTW_API_KEY] = publicApi;
 

@@ -90,6 +90,26 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
     </div>`;
 }
 
+function buildDirectorDiagnosticsHtml() {
+    return `
+    <div class="ttw-setting-card ttw-setting-card-blue" id="ttw-director-diagnostics-card">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+            <div style="font-weight:bold;color:#8bc5ff;">导演运行诊断</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" id="ttw-director-diagnostics-refresh" class="ttw-btn ttw-btn-small">刷新状态</button>
+                <button type="button" id="ttw-director-diagnostics-copy" class="ttw-btn ttw-btn-small">复制诊断 JSON</button>
+                <button type="button" id="ttw-director-diagnostics-test" class="ttw-btn ttw-btn-small">测试模拟注入</button>
+                <button type="button" id="ttw-director-diagnostics-bind" class="ttw-btn ttw-btn-small">绑定当前聊天</button>
+                <button type="button" id="ttw-director-diagnostics-clear" class="ttw-btn ttw-btn-small ttw-btn-warning">清空日志</button>
+            </div>
+        </div>
+        <div id="ttw-director-diagnostics-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px;"></div>
+        <pre id="ttw-director-diagnostics-json" style="margin:0 0 10px 0;max-height:180px;overflow:auto;white-space:pre-wrap;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px;font-size:11px;color:#ddd;"></pre>
+        <div style="font-size:12px;color:#8bc5ff;margin-bottom:6px;">最近导演日志</div>
+        <div id="ttw-director-diagnostics-logs" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;font-size:11px;"></div>
+    </div>`;
+}
+
 const PLUGIN_VERSION = 'v3.10.2';
 
 function buildPluginUpdateHtml() {
@@ -255,6 +275,7 @@ export function buildSettingsHtml() {
                 </label>
             </div>
             ${buildCustomApiSectionHtml()}
+            ${buildDirectorDiagnosticsHtml()}
             ${buildParallelConfigHtml()}
             ${buildBasicSettingsHtml()}
             ${buildCheckboxOptionsHtml()}

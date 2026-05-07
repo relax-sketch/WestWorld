@@ -1,5 +1,6 @@
 import * as scriptApi from '../../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
+import { getDirectorSkipReason as getDirectorGateSkipReason } from './txtToWorldbook/services/directorGateService.js';
 
 const { saveSettingsDebounced, eventSource, event_types } = scriptApi;
 
@@ -24,12 +25,18 @@ let txtToWorldbookInitPromise = null;
 let directorPromptReadyHandler = null;
 let directorMessageSentHandler = null;
 let directorGenerationStartedHandler = null;
+const directorLifecycleHandlers = new Map();
 const directorPromptGate = {
     pendingUserSend: false,
     lastUserSendAt: 0,
     lastGeneration: null,
     lastHandledAt: 0,
     inProgress: false,
+    hookRegistered: false,
+    hookRegisteredAt: 0,
+    lastSkipReason: '',
+    lastLifecycleEvent: '',
+    lastLifecycleAt: 0,
 };
 
 function isDirectorTraceEnabled() {
@@ -254,6 +261,41 @@ function getTxtToWorldbookApiSafe() {
     return txtToWorldbookModule?.getTxtToWorldbookApi?.();
 }
 
+function getDirectorGateStatus() {
+    return {
+        pendingUserSend: directorPromptGate.pendingUserSend,
+        lastUserSendAt: directorPromptGate.lastUserSendAt,
+        lastGeneration: directorPromptGate.lastGeneration,
+        lastHandledAt: directorPromptGate.lastHandledAt,
+        inProgress: directorPromptGate.inProgress,
+        hookRegistered: directorPromptGate.hookRegistered,
+        hookRegisteredAt: directorPromptGate.hookRegisteredAt,
+        lastSkipReason: directorPromptGate.lastSkipReason,
+        lastLifecycleEvent: directorPromptGate.lastLifecycleEvent,
+        lastLifecycleAt: directorPromptGate.lastLifecycleAt,
+    };
+}
+
+function markDirectorEvent(eventType, data = {}) {
+    const api = getTxtToWorldbookApiSafe();
+    api?.markDirectorEvent?.(eventType, data);
+}
+
+function markDirectorGateSkipped(reason, data = {}) {
+    directorPromptGate.lastSkipReason = String(reason || '');
+    const api = getTxtToWorldbookApiSafe();
+    api?.markDirectorGateSkipped?.(reason, data);
+}
+
+function invalidateDirectorRuntime(reason, data = {}) {
+    directorPromptGate.pendingUserSend = false;
+    directorPromptGate.lastGeneration = null;
+    directorPromptGate.lastLifecycleEvent = String(reason || '');
+    directorPromptGate.lastLifecycleAt = Date.now();
+    const api = getTxtToWorldbookApiSafe();
+    api?.invalidateDirectorRuntime?.(reason, data);
+}
+
 function extractGenerationContext(eventData) {
     if (eventData && typeof eventData === 'object') {
         return {
@@ -266,34 +308,11 @@ function extractGenerationContext(eventData) {
 }
 
 function getDirectorSkipReason(eventData) {
-    if (!eventData || typeof eventData !== 'object' || eventData.dryRun) {
-        return 'invalid-or-dryrun';
-    }
-
-    const ctx = extractGenerationContext(eventData);
-    const params = ctx.params || {};
-    const type = String(ctx.type || '').toLowerCase();
-
-    const isQuiet = type === 'quiet'
-        || !!params.quiet_prompt
-        || params.quiet === true
-        || params.is_quiet === true;
-    const isAuto = !!params.automatic_trigger
-        || !!params.background
-        || !!params.is_background;
-    if (isQuiet || isAuto) {
-        return `quiet-or-background(type=${type || 'unknown'})`;
-    }
-
-    const isRegenerate = type === 'regenerate' || type === 'swipe' || !!params.regenerate || !!params.swipe;
-    const recentUserSend = directorPromptGate.lastUserSendAt > 0
-        && (Date.now() - directorPromptGate.lastUserSendAt) < 45000;
-
-    if (!directorPromptGate.pendingUserSend && !recentUserSend && !isRegenerate) {
-        return 'no-recent-user-input';
-    }
-
-    return null;
+    return getDirectorGateSkipReason(eventData, {
+        pendingUserSend: directorPromptGate.pendingUserSend,
+        lastUserSendAt: directorPromptGate.lastUserSendAt,
+        lastGeneration: extractGenerationContext(eventData),
+    });
 }
 
 function registerDirectorPromptHook() {
@@ -306,6 +325,7 @@ function registerDirectorPromptHook() {
         directorMessageSentHandler = () => {
             directorPromptGate.pendingUserSend = true;
             directorPromptGate.lastUserSendAt = Date.now();
+            markDirectorEvent('MESSAGE_SENT');
             directorTrace('MESSAGE_SENT received, mark pendingUserSend=true');
         };
     }
@@ -318,6 +338,7 @@ function registerDirectorPromptHook() {
                 dryRun,
                 at: Date.now(),
             };
+            markDirectorEvent('GENERATION_STARTED', { type, dryRun, params });
             const isRegenerate = type === 'regenerate' || type === 'swipe' || !!params?.regenerate || !!params?.swipe;
             if (isRegenerate) {
                 directorPromptGate.pendingUserSend = true;
@@ -331,15 +352,21 @@ function registerDirectorPromptHook() {
         directorPromptReadyHandler = async (eventData) => {
             if (directorPromptGate.inProgress) {
                 directorTrace('skip: inProgress lock active');
+                markDirectorGateSkipped('inProgress-lock');
                 return;
             }
             if (Date.now() - directorPromptGate.lastHandledAt < 800) {
                 directorTrace('skip: throttled within 800ms');
+                markDirectorGateSkipped('throttled');
                 return;
             }
+            markDirectorEvent('CHAT_COMPLETION_PROMPT_READY', {
+                chatLength: Array.isArray(eventData?.chat) ? eventData.chat.length : -1,
+            });
             const skipReason = getDirectorSkipReason(eventData);
             if (skipReason) {
                 directorTrace(`skip: ${skipReason}`);
+                markDirectorGateSkipped(skipReason);
                 return;
             }
 
@@ -349,12 +376,14 @@ function registerDirectorPromptHook() {
                 const api = getTxtToWorldbookApiSafe();
                 if (!api || typeof api.runDirectorBeforeGeneration !== 'function') {
                     directorTrace('skip: txtToWorldbook api not ready or missing runDirectorBeforeGeneration');
+                    markDirectorGateSkipped('txtToWorldbook-api-not-ready');
                     return;
                 }
                 await api.runDirectorBeforeGeneration(eventData);
                 directorTrace('runDirectorBeforeGeneration completed');
             } catch (error) {
                 console.warn('[WestWorld] director hook failed:', error?.message || error);
+                invalidateDirectorRuntime('hook-error', { error: error?.message || String(error) });
             } finally {
                 directorPromptGate.inProgress = false;
                 directorPromptGate.pendingUserSend = false;
@@ -374,7 +403,39 @@ function registerDirectorPromptHook() {
 
     eventSource.off?.(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
+    registerDirectorLifecycleHooks();
+    directorPromptGate.hookRegistered = true;
+    directorPromptGate.hookRegisteredAt = Date.now();
+    getTxtToWorldbookApiSafe()?.markDirectorHookRegistered?.({
+        gate: getDirectorGateStatus(),
+    });
     directorTrace('director prompt hook registered');
+}
+
+function registerDirectorLifecycleHooks() {
+    const lifecycleEvents = [
+        'CHAT_CHANGED',
+        'CHAT_CREATED',
+        'MESSAGE_SWIPED',
+        'MESSAGE_DELETED',
+        'MESSAGE_EDITED',
+        'MESSAGE_UPDATED',
+        'CHARACTER_SELECTED',
+    ];
+
+    for (const eventName of lifecycleEvents) {
+        const eventType = event_types?.[eventName];
+        if (!eventType) continue;
+        if (!directorLifecycleHandlers.has(eventName)) {
+            directorLifecycleHandlers.set(eventName, (...args) => {
+                invalidateDirectorRuntime(eventName.toLowerCase().replace(/_/g, '-'), { args });
+                directorTrace(`${eventName} received, director runtime invalidated`);
+            });
+        }
+        const handler = directorLifecycleHandlers.get(eventName);
+        eventSource.off?.(eventType, handler);
+        eventSource.on(eventType, handler);
+    }
 }
 
 function ensureSettings() {
@@ -498,6 +559,17 @@ async function bootstrap() {
             openTxtConverter: openTxtToWorldbookPanel,
             getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
             updateSelfFromRepo,
+            getDirectorGateStatus,
+            getDirectorStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
+            getDirectorRuntimeStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
+            getDirectorLogs: (limit) => getTxtToWorldbookApiSafe()?.getDirectorLogs?.(limit) || [],
+            clearDirectorLogs: () => getTxtToWorldbookApiSafe()?.clearDirectorLogs?.(),
+            getDirectorContext: (options) => getTxtToWorldbookApiSafe()?.getDirectorContext?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+            getDirectorInjectionPrompt: (options) => getTxtToWorldbookApiSafe()?.getDirectorInjectionPrompt?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+            getDirectorPromptForLittleWhiteBox: (options) => getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+            inspectDirectorInjection: (chat) => getTxtToWorldbookApiSafe()?.inspectDirectorInjection?.(chat) || { injected: false, reason: 'txtToWorldbook-api-not-ready' },
+            testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+            bindDirectorSessionToCurrentChapter: () => getTxtToWorldbookApiSafe()?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
         };
         window.StoryWeaver = window.WestWorld;
         console.log('[WestWorld] Plugin initialized successfully');
