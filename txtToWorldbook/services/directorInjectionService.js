@@ -1,5 +1,39 @@
 export const DIRECTOR_INJECTION_MARKER = '[WestWorld Director Injection]';
 export const DIRECTOR_INJECTION_IDENTIFIER = 'westworld-director-current';
+export const DEFAULT_DIRECTOR_INJECTION_DEPTH = 0;
+export const DEFAULT_DIRECTOR_INJECTION_ORDER = 100;
+
+function clampInteger(value, fallback, min, max) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+export function normalizeDirectorInjectionPlacement(settings = {}, overrides = {}) {
+    const depth = clampInteger(
+        overrides.depth ?? settings.directorInjectionDepth,
+        DEFAULT_DIRECTOR_INJECTION_DEPTH,
+        0,
+        100,
+    );
+    const order = clampInteger(
+        overrides.order ?? settings.directorInjectionOrder,
+        DEFAULT_DIRECTOR_INJECTION_ORDER,
+        -10000,
+        10000,
+    );
+    return {
+        placement: 'post-depth',
+        depth,
+        order,
+    };
+}
+
+export function resolveDirectorInjectionIndex(chatLength, depth = DEFAULT_DIRECTOR_INJECTION_DEPTH) {
+    const length = Math.max(0, Number.isFinite(Number(chatLength)) ? Math.floor(Number(chatLength)) : 0);
+    const normalizedDepth = clampInteger(depth, DEFAULT_DIRECTOR_INJECTION_DEPTH, 0, 100);
+    return Math.max(0, Math.min(length, length - normalizedDepth));
+}
 
 export function hashText(text = '') {
     const source = String(text || '');
@@ -68,6 +102,10 @@ export function inspectDirectorInjection(chat) {
             contentHash: '',
             contentPreview: '',
             markerFoundAfterInsert: false,
+            depth: 0,
+            order: 0,
+            depthFromEnd: 0,
+            placement: '',
         };
     }
 
@@ -75,6 +113,9 @@ export function inspectDirectorInjection(chat) {
         const item = chat[i] || {};
         if (!isDirectorInjectionItem(item)) continue;
         const content = String(item.content || item.mes || '');
+        const depthFromEnd = Math.max(0, chat.length - i - 1);
+        const storedDepth = Number(item.westworld_director_depth);
+        const storedOrder = Number(item.westworld_director_order);
         return {
             injected: true,
             reason: '',
@@ -86,6 +127,10 @@ export function inspectDirectorInjection(chat) {
             markerFoundAfterInsert: content.includes(DIRECTOR_INJECTION_MARKER),
             runId: item.westworld_director_run_id || '',
             identifier: item.identifier || DIRECTOR_INJECTION_IDENTIFIER,
+            depth: Number.isFinite(storedDepth) ? storedDepth : depthFromEnd,
+            order: Number.isFinite(storedOrder) ? storedOrder : 0,
+            depthFromEnd,
+            placement: item.westworld_director_placement || 'post-depth',
         };
     }
 
@@ -98,6 +143,10 @@ export function inspectDirectorInjection(chat) {
         contentHash: '',
         contentPreview: '',
         markerFoundAfterInsert: false,
+        depth: 0,
+        order: 0,
+        depthFromEnd: 0,
+        placement: '',
     };
 }
 
@@ -114,6 +163,8 @@ export function insertDirectorInjection(chat, injection, meta = {}) {
 
     const chatLengthBefore = chat.length;
     const stripResult = stripExistingDirectorInjection(chat);
+    const placement = normalizeDirectorInjectionPlacement(meta.settings || {}, meta);
+    const insertionIndex = resolveDirectorInjectionIndex(chat.length, placement.depth);
     const content = String(injection || '');
     const message = {
         role: 'system',
@@ -126,14 +177,20 @@ export function insertDirectorInjection(chat, injection, meta = {}) {
         is_westworld_director: true,
         is_storyweaver_director: true,
         westworld_director_run_id: meta.runId || '',
+        westworld_director_depth: placement.depth,
+        westworld_director_order: placement.order,
+        westworld_director_placement: placement.placement,
         westworld_director_meta: {
             runId: meta.runId || '',
             chapterIndex: Number.isInteger(meta.chapterIndex) ? meta.chapterIndex : -1,
             beatIndex: Number.isInteger(meta.beatIndex) ? meta.beatIndex : -1,
             source: meta.source || '',
+            depth: placement.depth,
+            order: placement.order,
+            placement: placement.placement,
         },
     };
-    chat.unshift(message);
+    chat.splice(insertionIndex, 0, message);
 
     const inspected = inspectDirectorInjection(chat);
     return {
@@ -143,5 +200,8 @@ export function insertDirectorInjection(chat, injection, meta = {}) {
         chatLengthBefore,
         chatLengthAfter: chat.length,
         removedExisting: stripResult.removed || 0,
+        depth: placement.depth,
+        order: placement.order,
+        placement: placement.placement,
     };
 }

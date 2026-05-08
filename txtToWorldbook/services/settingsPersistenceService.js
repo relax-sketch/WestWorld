@@ -132,6 +132,20 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.directorEnabled = document.getElementById('ttw-director-enabled')?.checked ?? AppState.settings.directorEnabled ?? true;
         AppState.settings.directorAutoFallbackToMain = document.getElementById('ttw-director-fallback-main')?.checked ?? AppState.settings.directorAutoFallbackToMain ?? true;
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
+        AppState.settings.directorInjectionDepth = Math.max(0, Math.min(100, parseInt(
+            document.getElementById('ttw-director-injection-depth')?.value
+            ?? AppState.settings.directorInjectionDepth
+            ?? defaultSettings.directorInjectionDepth
+            ?? 0,
+            10,
+        ) || 0));
+        AppState.settings.directorInjectionOrder = Math.max(-10000, Math.min(10000, parseInt(
+            document.getElementById('ttw-director-injection-order')?.value
+            ?? AppState.settings.directorInjectionOrder
+            ?? defaultSettings.directorInjectionOrder
+            ?? 100,
+            10,
+        ) || 0));
 
         // Backward compatibility mirror fields
         AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
@@ -187,6 +201,14 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorEnabled = parsed.directorEnabled ?? true;
                 AppState.settings.directorAutoFallbackToMain = parsed.directorAutoFallbackToMain ?? true;
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
+                AppState.settings.directorInjectionDepth = Math.max(0, Math.min(100, parseInt(
+                    parsed.directorInjectionDepth ?? defaultSettings.directorInjectionDepth ?? 0,
+                    10,
+                ) || 0));
+                AppState.settings.directorInjectionOrder = Math.max(-10000, Math.min(10000, parseInt(
+                    parsed.directorInjectionOrder ?? defaultSettings.directorInjectionOrder ?? 100,
+                    10,
+                ) || 0));
 
                 // Backward compatibility mirror fields
                 AppState.settings.customApiProvider = migratedMainApi.provider;

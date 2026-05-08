@@ -1049,47 +1049,33 @@ westworld: {
 
 ### LittleWhiteBox helper
 
-已在本轮继续实现：
+已更正实现位置：不改 LittleWhiteBox 全局 `callGenerate` helper，也不改 Assistant JSAPI。EnaPlanner 需要在自己的规划链路里显式读取 WestWorld，且用户能关闭。
 
-- `D:\github\LittleWhiteBox\bridges\call-generate-service.js`
-  - 新增 `window.LittleWhiteBox.getWestWorldDirectorInjection(options)`。
-  - WestWorld 不存在或未初始化时返回 `{ ok:false, reason:'westworld-api-missing' }`。
-  - WestWorld 存在时调用 `WestWorld.getDirectorPromptForLittleWhiteBox(options)`。
+当前 LittleWhiteBox 仅修改：
 
-- `D:\github\LittleWhiteBox\scripts\build-assistant-jsapi-manifest.mjs`
-  - 将 WestWorld 只读 API 加入 JSAPI manifest 生成规则。
+- `D:\github\LittleWhiteBox\modules\ena-planner\ena-planner.js`
+  - 新增配置：
+    - `westWorldDirector.enabled`，默认 `false`。
+    - `westWorldDirector.maxLength`，默认 `4000`。
+  - 新增 `buildWestWorldDirectorBlock()`：
+    - 通过 `window.WestWorld || window.WestWorldTxtToWorldbook || window.StoryWeaver || window.StoryWeaverTxtToWorldbook` 获取 WestWorld public API。
+    - 调用 `getDirectorPromptForLittleWhiteBox({ includeMarker:true, maxLength, mode:'current' })`。
+    - 成功时把导演执行单包装为 `<westworld_director>...</westworld_director>` system message 加入 EnaPlanner 规划 messages。
+    - WestWorld 不存在、未初始化、没有当前执行单时只记录 warning 并跳过，不阻断 EnaPlanner。
+  - 新增 `debugWestWorldForUi()` 和 `xb-ena:debug-westworld` 消息处理，用于 UI 诊断。
 
-- `D:\github\LittleWhiteBox\modules\assistant\assistant.js`
-  - 在 `st` JSAPI namespace 下暴露只读代理：
-    - `st.westworld.*`
-    - `st.westworldTxtToWorldbook.*`
-  - 不要求 Assistant 代码直接访问危险全局 `window`。
-
-- `D:\github\LittleWhiteBox\modules\assistant\st-jsapi-manifest.json`
-  - 已通过构建脚本重建。
-
-已允许的只读 JSAPI 路径包括：
-
-- `WestWorld.getDirectorPromptForLittleWhiteBox(options)`
-- `WestWorldTxtToWorldbook.getDirectorPromptForLittleWhiteBox(options)`
-- `st.westworld.getDirectorContext()`
-- `st.westworld.getDirectorInjectionPrompt()`
-- `st.westworld.getDirectorPromptForLittleWhiteBox()`
-- `st.westworld.getDirectorRuntimeStatus()`
-- `st.westworld.getDirectorStatus()`
-- `st.westworld.getDirectorLogs()`
-- `st.westworld.inspectDirectorInjection()`
-- `st.westworldTxtToWorldbook.getDirectorContext()`
-- `st.westworldTxtToWorldbook.getDirectorInjectionPrompt()`
-- `st.westworldTxtToWorldbook.getDirectorPromptForLittleWhiteBox()`
-- `st.westworldTxtToWorldbook.getDirectorRuntimeStatus()`
-- `st.westworldTxtToWorldbook.getDirectorLogs()`
-- `st.westworldTxtToWorldbook.inspectDirectorInjection()`
+- `D:\github\LittleWhiteBox\modules\ena-planner\ena-planner.html`
+  - 设置页新增“WestWorld 导演”卡片。
+  - 提供“调用 WestWorld 导演执行单”开关。
+  - 提供最大读取字符数设置。
+  - 提供“诊断 WestWorld 导演”按钮。
 
 当前效果：
 
-- LittleWhiteBox 的 `callGenerate` / `assemblePrompt` 可以通过 helper 读取 WestWorld 注入对象。
-- Assistant 的 RunJavaScriptApi 可以通过 `st.westworld.*` 读取 WestWorld 诊断信息，不需要读取 `window` 或私有状态。
+- EnaPlanner 可以在开启后读取 WestWorld 当前导演执行单。
+- 默认关闭，不影响现有 EnaPlanner 行为。
+- 用户可在 EnaPlanner UI 中关闭该功能。
+- 若 WestWorld 不存在或 public API 不可用，EnaPlanner 会跳过该上下文，不抛异常。
 
 ### 更严格的 session 绑定策略
 
@@ -1143,10 +1129,8 @@ westworld: {
 
 LittleWhiteBox 已修改：
 
-- `D:\github\LittleWhiteBox\bridges\call-generate-service.js`
-- `D:\github\LittleWhiteBox\modules\assistant\assistant.js`
-- `D:\github\LittleWhiteBox\modules\assistant\st-jsapi-manifest.json`
-- `D:\github\LittleWhiteBox\scripts\build-assistant-jsapi-manifest.mjs`
+- `D:\github\LittleWhiteBox\modules\ena-planner\ena-planner.js`
+- `D:\github\LittleWhiteBox\modules\ena-planner\ena-planner.html`
 
 ## SillyTavern 插件兼容性确认
 
@@ -1157,13 +1141,12 @@ LittleWhiteBox 已修改：
 - 后台 hook 仍使用 SillyTavern 已有 `eventSource` / `event_types`。
 - 生命周期事件保持可选注册：某些 ST 版本没有的 event type 会被跳过。
 - WestWorld 诊断 UI 只调用 `window.WestWorld` / `window.WestWorldTxtToWorldbook` public API。
-- LittleWhiteBox helper 保持可选依赖：WestWorld 不存在时返回 `ok:false`，不抛异常。
-- Assistant JSAPI 未开放危险 `window` 访问，而是在受限 `st.westworld.*` namespace 中提供只读路径。
+- EnaPlanner 的 WestWorld 读取保持可选依赖：WestWorld 不存在时跳过，不抛异常。
+- 未修改 Assistant JSAPI，也未开放危险 `window` 访问。
 
 本轮新增验证：
 
 - WestWorld：`npm test` 通过，7 个测试全绿。
 - WestWorld：`node --check index.js / eventBindings.js / settingsPanel.js / directorService.js / directorStateService.js / directorTelemetryService.js` 通过。
-- LittleWhiteBox：`node --test modules/assistant/tests/jsapi-manifest.test.js` 通过，2 个测试全绿。
-- LittleWhiteBox：`node --check bridges/call-generate-service.js / modules/assistant/assistant.js / scripts/build-assistant-jsapi-manifest.mjs` 通过。
+- LittleWhiteBox：`node --check modules/ena-planner/ena-planner.js` 通过。
 - 两仓库 `git diff --check` 均无 whitespace error；WestWorld 仅有 Git 的 LF/CRLF 提示。

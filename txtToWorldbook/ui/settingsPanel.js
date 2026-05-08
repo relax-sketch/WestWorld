@@ -452,13 +452,13 @@ function buildDirectorInjectionPromptSectionHtml() {
     <div class="ttw-prompt-section">
         <div class="ttw-prompt-header" data-target="ttw-director-injection-content">
             <div style="display:flex;align-items:center;gap:8px;">
-                <span>🧭</span><span style="font-weight:500;">导演注入演员前置提示词</span>
+                <span>🧭</span><span style="font-weight:500;">导演注入演员后置提示词</span>
                 <span class="ttw-badge ttw-badge-blue">必需</span>
             </div>
             <span class="ttw-collapse-icon">▼</span>
         </div>
         <div id="ttw-director-injection-content" class="ttw-prompt-content" style="display:block;">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI前的执行单模板。建议保留节拍与动作链占位符。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">导演框架注入到演员AI消息后段的执行单模板。建议保留节拍与动作链占位符。</div>
             <div class="ttw-placeholder-hint" style="margin-bottom:10px;">
                 <span style="color:var(--ttw-text-secondary);font-weight:bold;">⚠️ 建议保留占位符：</span>
                 <code>{CURRENT_BEAT_SUMMARY}</code> <code>{DIRECTION_START}</code> <code>{DIRECTION_ACTION_CHAIN}</code> <code>{DIRECTION_PROCESS_LINES}</code> <code>{DIRECTION_END}</code>
@@ -474,6 +474,16 @@ function buildDirectorInjectionPromptSectionHtml() {
             <textarea id="ttw-director-injection-prompt" rows="8" placeholder="默认内容已自动填充" class="ttw-textarea-small"></textarea>
             <div class="ttw-setting-hint" style="margin-top:8px;margin-bottom:4px;">📎 自由附加内容（将追加到提示词末尾，与提示词捆绑生效）</div>
             <textarea id="ttw-director-injection-suffix" rows="2" placeholder="可选，附加的自由内容..." class="ttw-textarea-small"></textarea>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:8px;">
+                <label class="ttw-setting-item" style="display:block;">
+                    <span style="display:block;margin-bottom:4px;">注入深度</span>
+                    <input type="number" id="ttw-director-injection-depth" class="ttw-input" min="0" max="100" step="1">
+                </label>
+                <label class="ttw-setting-item" style="display:block;">
+                    <span style="display:block;margin-bottom:4px;">注入顺序</span>
+                    <input type="number" id="ttw-director-injection-order" class="ttw-input" min="-10000" max="10000" step="1">
+                </label>
+            </div>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="director-injection">🔄 恢复默认</button>
                 <button class="ttw-btn ttw-btn-small" id="ttw-save-director-injection-prompt">💾 保存</button>
@@ -969,6 +979,10 @@ export function hydrateSettingsFromState(deps = {}) {
     }
     const directorInjectionSuffixEl = document.getElementById('ttw-director-injection-suffix');
     if (directorInjectionSuffixEl) directorInjectionSuffixEl.value = AppState.settings.customDirectorInjectionSuffix || '';
+    const directorInjectionDepthEl = document.getElementById('ttw-director-injection-depth');
+    if (directorInjectionDepthEl) directorInjectionDepthEl.value = AppState.settings.directorInjectionDepth ?? 0;
+    const directorInjectionOrderEl = document.getElementById('ttw-director-injection-order');
+    if (directorInjectionOrderEl) directorInjectionOrderEl.value = AppState.settings.directorInjectionOrder ?? 100;
 
     const parallelEnabledEl = document.getElementById('ttw-parallel-enabled');
     if (parallelEnabledEl) parallelEnabledEl.checked = AppState.config.parallel.enabled;

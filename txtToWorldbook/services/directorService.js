@@ -13,6 +13,7 @@ import {
 import {
     insertDirectorInjection,
     inspectDirectorInjection,
+    normalizeDirectorInjectionPlacement,
     withDirectorInjectionMarker,
     hashText,
 } from './directorInjectionService.js';
@@ -1156,6 +1157,7 @@ export function createDirectorService(deps = {}) {
                 reason: prompt.reason,
             };
         }
+        const placement = normalizeDirectorInjectionPlacement(AppState?.settings || {}, options);
         return {
             ok: true,
             reason: '',
@@ -1163,11 +1165,15 @@ export function createDirectorService(deps = {}) {
                 role: 'system',
                 content: prompt.content,
                 identifier: 'westworld-director-current',
-                position: 'IN_PROMPT',
-                depth: 0,
+                position: 'IN_CHAT',
+                depth: placement.depth,
+                order: placement.order,
             },
             context: getDirectorContext(options),
-            meta: prompt.meta,
+            meta: {
+                ...prompt.meta,
+                ...placement,
+            },
         };
     }
 
@@ -1190,6 +1196,9 @@ export function createDirectorService(deps = {}) {
             chapterIndex: Number.isInteger(options.chapterIndex) ? options.chapterIndex : 0,
             beatIndex: Number.isInteger(options.beatIndex) ? options.beatIndex : 0,
             source: 'test',
+            settings: AppState?.settings || {},
+            depth: options.depth,
+            order: options.order,
         });
         return {
             ok: result.injected === true,
@@ -1565,6 +1574,7 @@ export function createDirectorService(deps = {}) {
             chapterIndex,
             beatIndex: decision.stage_idx,
             source: decisionSource,
+            settings: AppState?.settings || {},
         });
         AppState.experience.directorLastInjectionPrompt = injection;
         AppState.experience.directorLastInjectionMeta = {
