@@ -583,12 +583,14 @@ export function bindSettingEvents(deps = {}) {
         }
         const status = api.getDirectorRuntimeStatus?.() || api.getDirectorStatus?.() || null;
         const gate = api.getDirectorGateStatus?.() || null;
+        const promptManager = api.getDirectorPromptManagerStatus?.() || gate?.promptManager || null;
         const context = api.getDirectorContext?.({ includeRuntime: true }) || null;
         const logs = api.getDirectorLogs?.(20) || [];
         return {
             available: true,
             status,
             gate,
+            promptManager,
             context,
             logs,
         };
@@ -605,12 +607,15 @@ export function bindSettingEvents(deps = {}) {
         const injection = status.lastInjection || {};
         const boundSession = status.boundSession || null;
         const context = snapshot.context || {};
+        const promptManager = snapshot.promptManager || {};
         const chapter = context.chapter || {};
         const beat = context.beat || {};
 
         const cells = [
             ['API', snapshot.available ? '已连接' : '缺失'],
             ['Hook', status.hookRegistered ? '已注册' : '未注册'],
+            ['ST预设条目', promptManager.exists ? (promptManager.activeEnabled ? '已启用' : '已关闭') : '缺失'],
+            ['深度/顺序', promptManager.exists ? `${promptManager.injectionDepth ?? '-'} / ${promptManager.injectionOrder ?? '-'}` : '无'],
             ['阶段', status.phase || 'unknown'],
             ['跳过原因', status.lastSkipReason || '无'],
             ['章节', Number.isInteger(chapter.index) ? `${chapter.index + 1}` : (Number.isInteger(status.lastChapterIndex) && status.lastChapterIndex >= 0 ? `${status.lastChapterIndex + 1}` : '无')],
@@ -669,6 +674,17 @@ export function bindSettingEvents(deps = {}) {
         api?.clearDirectorLogs?.();
         renderDirectorDiagnostics();
         ErrorHandler?.showUserSuccess?.('导演日志已清空');
+    };
+
+    const repairDirectorPromptManagerEntry = () => {
+        const api = getDirectorApi();
+        const result = api?.repairDirectorPromptManagerEntry?.() || { ok: false, reason: 'westworld-api-missing' };
+        renderDirectorDiagnostics();
+        if (result.ok) {
+            ErrorHandler?.showUserSuccess?.('已修复/创建 SillyTavern 预设条目：WestWorld Director');
+        } else {
+            ErrorHandler?.showUserError?.(`修复失败：${result.reason || 'unknown'}`);
+        }
     };
 
     const bindDirectorSession = () => {
@@ -761,6 +777,7 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-update-plugin-btn': { click: () => { if (typeof handlePluginSelfUpdate === 'function') handlePluginSelfUpdate(); } },
         '#ttw-director-diagnostics-refresh': { click: renderDirectorDiagnostics },
         '#ttw-director-diagnostics-copy': { click: () => { copyDirectorDiagnostics().catch((error) => ErrorHandler?.showUserError?.(`复制失败：${error?.message || error}`)); } },
+        '#ttw-director-diagnostics-repair-pm': { click: repairDirectorPromptManagerEntry },
         '#ttw-director-diagnostics-test': { click: testDirectorInjection },
         '#ttw-director-diagnostics-bind': { click: bindDirectorSession },
         '#ttw-director-diagnostics-clear': { click: clearDirectorLogs },

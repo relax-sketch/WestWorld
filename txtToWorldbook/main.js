@@ -1384,6 +1384,8 @@ open = shellRuntimeBindings.open;
         MemoryHistoryDB,
     }));
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
+    publicApi.prepareDirectorInjectionForGeneration = (...args) => directorService.prepareDirectorInjectionForGeneration(...args);
+    publicApi.recordDirectorPromptReadyInspection = (...args) => directorService.recordDirectorPromptReadyInspection(...args);
     publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
     publicApi.getDirectorRuntimeStatus = () => directorTelemetry.getStatus();
     publicApi.getDirectorLogs = (limit) => directorTelemetry.getLogs(limit);

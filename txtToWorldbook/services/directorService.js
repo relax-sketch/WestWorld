@@ -1226,24 +1226,25 @@ export function createDirectorService(deps = {}) {
         return { ok: true, binding };
     }
 
-    async function runDirectorBeforeGeneration(eventData) {
+    async function runDirectorBeforeGeneration(eventData, options = {}) {
+        const shouldInjectChat = options.injectChat !== false;
         normalizeDirectorBeatState(AppState);
         if (AppState.settings.directorEnabled === false) {
             directorTelemetry?.markGateSkipped?.('directorEnabled=false');
             directorDebug('skip: directorEnabled=false');
-            return null;
+            return shouldInjectChat ? null : { ok: false, reason: 'directorEnabled=false' };
         }
         if (AppState.settings.directorRunEveryTurn === false) {
             directorTelemetry?.markGateSkipped?.('directorRunEveryTurn=false');
             directorDebug('skip: directorRunEveryTurn=false');
-            return null;
+            return shouldInjectChat ? null : { ok: false, reason: 'directorRunEveryTurn=false' };
         }
         if (!eventData || typeof eventData !== 'object' || eventData.dryRun) {
             directorTelemetry?.markGateSkipped?.('invalid-or-dryrun');
             directorDebug('skip: invalid eventData or dryRun');
-            return null;
+            return shouldInjectChat ? null : { ok: false, reason: 'invalid-or-dryrun' };
         }
-        if (!Array.isArray(eventData.chat)) {
+        if (shouldInjectChat && !Array.isArray(eventData.chat)) {
             directorTelemetry?.markGateSkipped?.('eventData.chat-not-array');
             directorDebug('skip: eventData.chat is not an array');
             return null;
@@ -1560,12 +1561,6 @@ export function createDirectorService(deps = {}) {
                 includeMarker: AppState?.settings?.directorInjectionMarkerEnabled !== false,
             },
         );
-        const injectionInfo = insertDirectorInjection(eventData.chat, injection, {
-            runId,
-            chapterIndex,
-            beatIndex: decision.stage_idx,
-            source: decisionSource,
-        });
         AppState.experience.directorLastInjectionPrompt = injection;
         AppState.experience.directorLastInjectionMeta = {
             runId,
@@ -1576,6 +1571,38 @@ export function createDirectorService(deps = {}) {
             contentHash: hashText(injection),
             at: Date.now(),
         };
+
+        if (!shouldInjectChat) {
+            const contentPreview = injection.slice(0, 180).replace(/\s+/g, ' ').trim();
+            directorTelemetry?.writeLog?.('info', 'prompt-manager-ready', 'director prompt prepared for PromptManager', {
+                pendingPromptManagerInjection: true,
+                viaPromptManager: true,
+                markerFound: injection.includes('[WestWorld Director Injection]'),
+                role: 'system',
+                contentLength: injection.length,
+                contentHash: hashText(injection),
+                contentPreview,
+                runId,
+            });
+            directorInfo(`PromptManager director prompt ready chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
+            if (typeof updateStreamContent === 'function') {
+                updateStreamContent(`鉁?${turnPrefix} PromptManager瀵兼紨鎵ц鍗曞凡鍑嗗锛坅ctiveBeat=${decision.stage_idx + 1}锛塡n`);
+            }
+            return {
+                ok: true,
+                reason: '',
+                content: injection,
+                meta: { ...AppState.experience.directorLastInjectionMeta },
+                decision,
+            };
+        }
+
+        const injectionInfo = insertDirectorInjection(eventData.chat, injection, {
+            runId,
+            chapterIndex,
+            beatIndex: decision.stage_idx,
+            source: decisionSource,
+        });
         directorTelemetry?.markInjected?.(injectionInfo);
         directorInfo(`注入完成 chapter=${chapterIndex + 1}, activeBeat=${decision.stage_idx + 1}`);
         if (typeof updateStreamContent === 'function') {
@@ -1585,8 +1612,27 @@ export function createDirectorService(deps = {}) {
         return decision;
     }
 
+    async function prepareDirectorInjectionForGeneration(eventContext = {}) {
+        return runDirectorBeforeGeneration(
+            { ...(eventContext || {}) },
+            { injectChat: false },
+        );
+    }
+
+    function recordDirectorPromptReadyInspection(chat) {
+        const inspected = inspectDirectorInjection(chat);
+        directorTelemetry?.markInjected?.({
+            ...inspected,
+            viaPromptManager: true,
+            at: Date.now(),
+        });
+        return inspected;
+    }
+
     return {
         runDirectorBeforeGeneration,
+        prepareDirectorInjectionForGeneration,
+        recordDirectorPromptReadyInspection,
         getDirectorContext,
         getDirectorInjectionPrompt,
         getDirectorPromptForLittleWhiteBox,

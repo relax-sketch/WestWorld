@@ -1,6 +1,14 @@
 import * as scriptApi from '../../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
+import { promptManager } from '../../../../scripts/openai.js';
+import { INJECTION_POSITION } from '../../../../scripts/PromptManager.js';
 import { getDirectorSkipReason as getDirectorGateSkipReason } from './txtToWorldbook/services/directorGateService.js';
+import {
+    clearDirectorPromptManagerContent,
+    ensureDirectorPromptManagerEntry,
+    getDirectorPromptManagerStatus,
+    setDirectorPromptManagerContent,
+} from './txtToWorldbook/services/directorPromptManagerService.js';
 
 const { saveSettingsDebounced, eventSource, event_types } = scriptApi;
 
@@ -273,6 +281,7 @@ function getDirectorGateStatus() {
         lastSkipReason: directorPromptGate.lastSkipReason,
         lastLifecycleEvent: directorPromptGate.lastLifecycleEvent,
         lastLifecycleAt: directorPromptGate.lastLifecycleAt,
+        promptManager: getDirectorPromptManagerStatusSafe(),
     };
 }
 
@@ -315,6 +324,124 @@ function getDirectorSkipReason(eventData) {
     });
 }
 
+function getDirectorPromptManagerOptions() {
+    return {
+        injectionPosition: INJECTION_POSITION?.ABSOLUTE ?? 1,
+    };
+}
+
+function savePromptManagerStructure(result) {
+    if (!result?.ok || result.changed !== true) return;
+    try {
+        promptManager?.saveServiceSettings?.();
+    } catch (error) {
+        console.warn('[WestWorld] failed to save PromptManager settings:', error?.message || error);
+    }
+    try {
+        saveSettingsDebounced?.();
+    } catch (_) { }
+}
+
+function repairDirectorPromptManagerEntry(options = {}) {
+    const result = ensureDirectorPromptManagerEntry(promptManager, {
+        ...getDirectorPromptManagerOptions(),
+        ...(options.clearContent ? { content: '' } : {}),
+    });
+    if (options.save !== false) {
+        savePromptManagerStructure(result);
+    }
+    return {
+        ...result,
+        status: getDirectorPromptManagerStatus(promptManager),
+    };
+}
+
+function getDirectorPromptManagerStatusSafe() {
+    return getDirectorPromptManagerStatus(promptManager);
+}
+
+function clearDirectorPromptManager(reason = '') {
+    const result = clearDirectorPromptManagerContent(promptManager, reason, getDirectorPromptManagerOptions());
+    directorTrace(`PromptManager director prompt cleared: ${reason || 'no-reason'}`);
+    return result;
+}
+
+function setDirectorPromptManagerDirectorContent(content) {
+    const result = setDirectorPromptManagerContent(promptManager, content, getDirectorPromptManagerOptions());
+    directorTrace(`PromptManager director prompt content length=${String(content || '').length}`);
+    return result;
+}
+
+async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
+    clearDirectorPromptManager('generation-started');
+
+    if (scriptApi.main_api !== 'openai') {
+        markDirectorGateSkipped('prompt-manager-openai-only', { mainApi: scriptApi.main_api || '' });
+        return { ok: false, reason: 'prompt-manager-openai-only' };
+    }
+
+    if (directorPromptGate.inProgress) {
+        markDirectorGateSkipped('inProgress-lock');
+        return { ok: false, reason: 'inProgress-lock' };
+    }
+
+    const promptEntry = repairDirectorPromptManagerEntry({ save: false });
+    if (!promptEntry.ok) {
+        markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
+        return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
+    }
+    if (promptEntry.activeEnabled === false) {
+        markDirectorGateSkipped('prompt-manager-entry-disabled', promptEntry.status || promptEntry);
+        return { ok: false, reason: 'prompt-manager-entry-disabled' };
+    }
+
+    const skipReason = getDirectorSkipReason(eventContext);
+    if (skipReason) {
+        markDirectorGateSkipped(skipReason);
+        clearDirectorPromptManager(skipReason);
+        return { ok: false, reason: skipReason };
+    }
+
+    directorPromptGate.inProgress = true;
+    directorPromptGate.lastHandledAt = Date.now();
+    try {
+        const api = getTxtToWorldbookApiSafe();
+        if (!api || typeof api.prepareDirectorInjectionForGeneration !== 'function') {
+            markDirectorGateSkipped('txtToWorldbook-api-not-ready');
+            clearDirectorPromptManager('txtToWorldbook-api-not-ready');
+            return { ok: false, reason: 'txtToWorldbook-api-not-ready' };
+        }
+
+        const prepared = await api.prepareDirectorInjectionForGeneration(eventContext);
+        if (!prepared?.ok || !prepared.content) {
+            const reason = prepared?.reason || 'director-content-empty';
+            markDirectorGateSkipped(reason, prepared || {});
+            clearDirectorPromptManager(reason);
+            return { ok: false, reason };
+        }
+
+        const setResult = setDirectorPromptManagerDirectorContent(prepared.content);
+        if (!setResult.ok) {
+            markDirectorGateSkipped(setResult.reason || 'prompt-manager-set-failed', setResult);
+            return { ok: false, reason: setResult.reason || 'prompt-manager-set-failed' };
+        }
+
+        markDirectorEvent('PROMPT_MANAGER_READY', {
+            contentLength: prepared.content.length,
+            meta: prepared.meta || null,
+            status: getDirectorPromptManagerStatusSafe(),
+        });
+        return { ok: true, meta: prepared.meta || null };
+    } catch (error) {
+        clearDirectorPromptManager('prepare-error');
+        console.warn('[WestWorld] director PromptManager prepare failed:', error?.message || error);
+        invalidateDirectorRuntime('prompt-manager-prepare-error', { error: error?.message || String(error) });
+        return { ok: false, reason: 'prompt-manager-prepare-error' };
+    } finally {
+        directorPromptGate.inProgress = false;
+    }
+}
+
 function registerDirectorPromptHook() {
     if (!eventSource || !event_types?.CHAT_COMPLETION_PROMPT_READY) {
         directorTrace('eventSource or CHAT_COMPLETION_PROMPT_READY missing, skip register');
@@ -331,7 +458,7 @@ function registerDirectorPromptHook() {
     }
 
     if (!directorGenerationStartedHandler && event_types?.GENERATION_STARTED) {
-        directorGenerationStartedHandler = (type, params, dryRun) => {
+        directorGenerationStartedHandler = async (type, params, dryRun) => {
             directorPromptGate.lastGeneration = {
                 type,
                 params,
@@ -345,47 +472,34 @@ function registerDirectorPromptHook() {
                 directorPromptGate.lastUserSendAt = Date.now();
                 directorTrace(`GENERATION_STARTED(${type}) treated as user-triggered regenerate/swipe`);
             }
+            await prepareDirectorPromptManagerForGeneration({ type, params, dryRun });
         };
     }
 
     if (!directorPromptReadyHandler) {
         directorPromptReadyHandler = async (eventData) => {
-            if (directorPromptGate.inProgress) {
-                directorTrace('skip: inProgress lock active');
-                markDirectorGateSkipped('inProgress-lock');
-                return;
-            }
-            if (Date.now() - directorPromptGate.lastHandledAt < 800) {
-                directorTrace('skip: throttled within 800ms');
-                markDirectorGateSkipped('throttled');
-                return;
-            }
             markDirectorEvent('CHAT_COMPLETION_PROMPT_READY', {
                 chatLength: Array.isArray(eventData?.chat) ? eventData.chat.length : -1,
+                promptManager: getDirectorPromptManagerStatusSafe(),
             });
-            const skipReason = getDirectorSkipReason(eventData);
-            if (skipReason) {
-                directorTrace(`skip: ${skipReason}`);
-                markDirectorGateSkipped(skipReason);
-                return;
-            }
 
-            directorPromptGate.inProgress = true;
-            directorPromptGate.lastHandledAt = Date.now();
             try {
                 const api = getTxtToWorldbookApiSafe();
-                if (!api || typeof api.runDirectorBeforeGeneration !== 'function') {
-                    directorTrace('skip: txtToWorldbook api not ready or missing runDirectorBeforeGeneration');
+                if (!api || typeof api.recordDirectorPromptReadyInspection !== 'function') {
+                    directorTrace('skip ready inspection: txtToWorldbook api not ready');
                     markDirectorGateSkipped('txtToWorldbook-api-not-ready');
                     return;
                 }
-                await api.runDirectorBeforeGeneration(eventData);
-                directorTrace('runDirectorBeforeGeneration completed');
+                const inspected = api.recordDirectorPromptReadyInspection(eventData?.chat);
+                if (!inspected?.injected) {
+                    directorTrace(`ready inspection miss: ${inspected?.reason || 'director-injection-not-found'}`);
+                } else {
+                    directorTrace(`ready inspection ok at index=${inspected.insertionIndex}`);
+                }
             } catch (error) {
-                console.warn('[WestWorld] director hook failed:', error?.message || error);
-                invalidateDirectorRuntime('hook-error', { error: error?.message || String(error) });
+                console.warn('[WestWorld] director ready inspection failed:', error?.message || error);
+                invalidateDirectorRuntime('ready-inspection-error', { error: error?.message || String(error) });
             } finally {
-                directorPromptGate.inProgress = false;
                 directorPromptGate.pendingUserSend = false;
             }
         };
@@ -555,11 +669,15 @@ async function bootstrap() {
     try {
         await ensureTxtToWorldbookReady();
         registerDirectorPromptHook();
+        repairDirectorPromptManagerEntry({ save: true, clearContent: true });
         window.WestWorld = {
             openTxtConverter: openTxtToWorldbookPanel,
             getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
             updateSelfFromRepo,
             getDirectorGateStatus,
+            getDirectorPromptManagerStatus: getDirectorPromptManagerStatusSafe,
+            repairDirectorPromptManagerEntry: () => repairDirectorPromptManagerEntry({ save: true }),
+            clearDirectorPromptManagerContent: (reason) => clearDirectorPromptManager(reason || 'manual-clear'),
             getDirectorStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
             getDirectorRuntimeStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
             getDirectorLogs: (limit) => getTxtToWorldbookApiSafe()?.getDirectorLogs?.(limit) || [],

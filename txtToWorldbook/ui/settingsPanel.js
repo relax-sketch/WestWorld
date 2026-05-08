@@ -98,6 +98,7 @@ function buildDirectorDiagnosticsHtml() {
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                 <button type="button" id="ttw-director-diagnostics-refresh" class="ttw-btn ttw-btn-small">刷新状态</button>
                 <button type="button" id="ttw-director-diagnostics-copy" class="ttw-btn ttw-btn-small">复制诊断 JSON</button>
+                <button type="button" id="ttw-director-diagnostics-repair-pm" class="ttw-btn ttw-btn-small">修复预设条目</button>
                 <button type="button" id="ttw-director-diagnostics-test" class="ttw-btn ttw-btn-small">测试模拟注入</button>
                 <button type="button" id="ttw-director-diagnostics-bind" class="ttw-btn ttw-btn-small">绑定当前聊天</button>
                 <button type="button" id="ttw-director-diagnostics-clear" class="ttw-btn ttw-btn-small ttw-btn-warning">清空日志</button>
