@@ -384,11 +384,27 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         || generationType === 'swipe'
         || generationParams.regenerate === true
         || generationParams.swipe === true;
+
+    const promptEntry = repairDirectorPromptManagerEntry({ save: true });
+    if (!promptEntry.ok) {
+        markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
+        return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
+    }
+
     if (isRegenerateOrSwipe) {
+        const status = getDirectorPromptManagerStatusSafe();
+        if (promptEntry.activeEnabled === false) {
+            markDirectorGateSkipped('prompt-manager-entry-disabled', status || promptEntry);
+            return { ok: false, reason: 'prompt-manager-entry-disabled' };
+        }
+        if (!status?.contentLength) {
+            markDirectorGateSkipped('prompt-manager-reuse-empty', status || promptEntry);
+            return { ok: false, reason: 'prompt-manager-reuse-empty' };
+        }
         markDirectorEvent('PROMPT_MANAGER_REUSED', {
             type: generationType,
             params: generationParams,
-            status: getDirectorPromptManagerStatusSafe(),
+            status,
         });
         return { ok: true, reused: true, reason: 'regenerate-or-swipe' };
     }
@@ -400,11 +416,6 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         return { ok: false, reason: 'inProgress-lock' };
     }
 
-    const promptEntry = repairDirectorPromptManagerEntry({ save: false });
-    if (!promptEntry.ok) {
-        markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
-        return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
-    }
     if (promptEntry.activeEnabled === false) {
         markDirectorGateSkipped('prompt-manager-entry-disabled', promptEntry.status || promptEntry);
         return { ok: false, reason: 'prompt-manager-entry-disabled' };
