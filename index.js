@@ -373,12 +373,27 @@ function setDirectorPromptManagerDirectorContent(content) {
 }
 
 async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
-    clearDirectorPromptManager('generation-started');
-
     if (scriptApi.main_api !== 'openai') {
         markDirectorGateSkipped('prompt-manager-openai-only', { mainApi: scriptApi.main_api || '' });
         return { ok: false, reason: 'prompt-manager-openai-only' };
     }
+
+    const generationType = String(eventContext?.type || '');
+    const generationParams = eventContext?.params || {};
+    const isRegenerateOrSwipe = generationType === 'regenerate'
+        || generationType === 'swipe'
+        || generationParams.regenerate === true
+        || generationParams.swipe === true;
+    if (isRegenerateOrSwipe) {
+        markDirectorEvent('PROMPT_MANAGER_REUSED', {
+            type: generationType,
+            params: generationParams,
+            status: getDirectorPromptManagerStatusSafe(),
+        });
+        return { ok: true, reused: true, reason: 'regenerate-or-swipe' };
+    }
+
+    clearDirectorPromptManager('generation-started');
 
     if (directorPromptGate.inProgress) {
         markDirectorGateSkipped('inProgress-lock');
