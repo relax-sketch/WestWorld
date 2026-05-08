@@ -439,25 +439,51 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         }
 
         const prepared = await api.prepareDirectorInjectionForGeneration(eventContext);
-        if (!prepared?.ok || !prepared.content) {
+        let promptToSet = prepared;
+        if (!promptToSet?.ok || !promptToSet.content) {
             const reason = prepared?.reason || 'director-content-empty';
-            markDirectorGateSkipped(reason, prepared || {});
-            clearDirectorPromptManager(reason);
-            return { ok: false, reason };
+            const shouldRespectSkip = [
+                'directorEnabled=false',
+                'directorRunEveryTurn=false',
+                'state-missing',
+                'chapter-missing',
+                'beats-missing',
+            ].includes(reason);
+            if (shouldRespectSkip) {
+                markDirectorGateSkipped(reason, prepared || {});
+                clearDirectorPromptManager(reason);
+                return { ok: false, reason };
+            }
+            const fallbackPrompt = typeof api.getDirectorInjectionPrompt === 'function'
+                ? api.getDirectorInjectionPrompt({ includeMarker: true })
+                : null;
+            if (!fallbackPrompt?.ok || !fallbackPrompt.content) {
+                markDirectorGateSkipped(reason, {
+                    prepared: prepared || {},
+                    fallback: fallbackPrompt || null,
+                });
+                clearDirectorPromptManager(reason);
+                return { ok: false, reason };
+            }
+            markDirectorEvent('PROMPT_MANAGER_FALLBACK_CURRENT_BEAT', {
+                reason,
+                meta: fallbackPrompt.meta || null,
+            });
+            promptToSet = fallbackPrompt;
         }
 
-        const setResult = setDirectorPromptManagerDirectorContent(prepared.content);
+        const setResult = setDirectorPromptManagerDirectorContent(promptToSet.content);
         if (!setResult.ok) {
             markDirectorGateSkipped(setResult.reason || 'prompt-manager-set-failed', setResult);
             return { ok: false, reason: setResult.reason || 'prompt-manager-set-failed' };
         }
 
         markDirectorEvent('PROMPT_MANAGER_READY', {
-            contentLength: prepared.content.length,
-            meta: prepared.meta || null,
+            contentLength: promptToSet.content.length,
+            meta: promptToSet.meta || null,
             status: getDirectorPromptManagerStatusSafe(),
         });
-        return { ok: true, meta: prepared.meta || null };
+        return { ok: true, meta: promptToSet.meta || null };
     } catch (error) {
         clearDirectorPromptManager('prepare-error');
         console.warn('[WestWorld] director PromptManager prepare failed:', error?.message || error);

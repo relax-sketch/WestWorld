@@ -19,14 +19,14 @@ test('quiet and background generations are skipped', () => {
     );
 });
 
-test('normal generation without recent user input is skipped', () => {
+test('normal generation is allowed even without MESSAGE_SENT telemetry', () => {
     assert.equal(
         getDirectorSkipReason(
             { type: 'normal', params: {} },
             { pendingUserSend: false, lastUserSendAt: 1000 },
             { now: 1000 + 60000 },
         ),
-        'no-recent-user-input',
+        null,
     );
 });
 

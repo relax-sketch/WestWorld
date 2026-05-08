@@ -10,8 +10,7 @@ export function extractGenerationContext(eventData, lastGeneration = null) {
 }
 
 export function getDirectorSkipReason(eventData, gateState = {}, options = {}) {
-    const now = Number.isFinite(options.now) ? options.now : Date.now();
-    const userInputWindowMs = Number.isFinite(options.userInputWindowMs) ? options.userInputWindowMs : 45000;
+    void options;
 
     if (!eventData || typeof eventData !== 'object' || eventData.dryRun) {
         return 'invalid-or-dryrun';
@@ -30,14 +29,6 @@ export function getDirectorSkipReason(eventData, gateState = {}, options = {}) {
         || !!params.is_background;
     if (isQuiet || isAuto) {
         return `quiet-or-background(type=${type || 'unknown'})`;
-    }
-
-    const isRegenerate = type === 'regenerate' || type === 'swipe' || !!params.regenerate || !!params.swipe;
-    const recentUserSend = Number(gateState.lastUserSendAt || 0) > 0
-        && (now - Number(gateState.lastUserSendAt || 0)) < userInputWindowMs;
-
-    if (!gateState.pendingUserSend && !recentUserSend && !isRegenerate) {
-        return 'no-recent-user-input';
     }
 
     return null;

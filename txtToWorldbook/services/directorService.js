@@ -1111,23 +1111,42 @@ export function createDirectorService(deps = {}) {
             if (!memory) return { ok: false, reason: 'chapter-missing', content: '', meta: {} };
             ensureMemoryDirectorRuntime(memory, chapterIndex);
             const beats = ensureChapterBeats(memory);
-            const decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
-            if (!decision) return { ok: false, reason: 'decision-missing', content: '', meta: {} };
-            const beatIndex = Number.isInteger(decision.stage_idx)
+            let decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
+            const beatIndex = Number.isInteger(decision?.stage_idx)
+                ? Math.max(0, Math.min(decision.stage_idx, Math.max(0, beats.length - 1)))
+                : (Number.isInteger(memory.chapterCurrentBeatIndex)
+                    ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beats.length - 1)))
+                    : 0);
+            if (!decision) {
+                const directionContext = buildDirectionContext({
+                    beats,
+                    currentBeatIdx: beatIndex,
+                    isNewBeat: false,
+                    latestAssistantMessage: '',
+                    latestUserMessage: '',
+                });
+                decision = {
+                    ...buildFallbackDecision(beatIndex, beats, 'current-beat-fallback', directionContext),
+                    previous_stage_idx: beatIndex,
+                    is_new_beat: false,
+                    direction_context: directionContext,
+                };
+            }
+            const finalBeatIndex = Number.isInteger(decision.stage_idx)
                 ? Math.max(0, Math.min(decision.stage_idx, Math.max(0, beats.length - 1)))
                 : 0;
             const runId = meta.runId || directorTelemetry?.makeRunId?.('wwd-preview') || `wwd-preview-${Date.now().toString(36)}`;
             content = withDirectorInjectionMarker(
                 buildInjection(decision, beats),
-                { runId, chapterIndex, beatIndex },
+                { runId, chapterIndex, beatIndex: finalBeatIndex },
                 { includeMarker: options.includeMarker !== false },
             );
             meta = {
                 ...meta,
                 runId,
                 chapterIndex,
-                beatIndex,
-                source: meta.source || 'current-decision',
+                beatIndex: finalBeatIndex,
+                source: meta.source || (decision.reason === 'current-beat-fallback' ? 'current-beat-fallback' : 'current-decision'),
             };
         }
 
