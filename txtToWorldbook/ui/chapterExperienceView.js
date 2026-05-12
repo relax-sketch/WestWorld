@@ -1406,6 +1406,100 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
+    function getReadingProgressStatus() {
+        ensureState();
+        const queue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+        if (queue.length <= 0) {
+            return {
+                ok: false,
+                reason: 'chapter-missing',
+                currentChapter: 0,
+                totalChapters: 0,
+                currentBeat: 0,
+                totalBeats: 0,
+                display: '0/0',
+                canNextBeat: false,
+                canNextChapter: false,
+            };
+        }
+
+        const maxChapterIndex = Math.max(0, queue.length - 1);
+        const chapterIndex = Number.isInteger(AppState.experience?.currentChapterIndex)
+            ? Math.max(0, Math.min(AppState.experience.currentChapterIndex, maxChapterIndex))
+            : 0;
+        AppState.experience.currentChapterIndex = chapterIndex;
+
+        const memory = getMemory(chapterIndex);
+        if (!memory) {
+            return {
+                ok: false,
+                reason: 'chapter-missing',
+                currentChapter: chapterIndex + 1,
+                totalChapters: queue.length,
+                currentBeat: 0,
+                totalBeats: 0,
+                display: '0/0',
+                canNextBeat: false,
+                canNextChapter: chapterIndex < maxChapterIndex,
+            };
+        }
+
+        ensureMemoryRuntime(memory, chapterIndex);
+        const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
+        const totalBeats = Array.isArray(beats) ? beats.length : 0;
+        const maxBeatIndex = Math.max(0, totalBeats - 1);
+        const beatIndex = totalBeats > 0
+            ? (Number.isInteger(memory.chapterCurrentBeatIndex)
+                ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, maxBeatIndex))
+                : 0)
+            : 0;
+        memory.chapterCurrentBeatIndex = beatIndex;
+        AppState.experience.currentBeatIndex = beatIndex;
+
+        return {
+            ok: true,
+            reason: '',
+            currentChapter: chapterIndex + 1,
+            totalChapters: queue.length,
+            currentBeat: totalBeats > 0 ? beatIndex + 1 : 0,
+            totalBeats,
+            display: totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}` : '0/0',
+            canNextBeat: totalBeats > 0 && beatIndex < maxBeatIndex,
+            canNextChapter: chapterIndex < maxChapterIndex,
+        };
+    }
+
+    async function goToNextBeat() {
+        const status = getReadingProgressStatus();
+        if (!status.ok) {
+            ErrorHandler.showUserError('暂无可切换节拍的章节');
+            return { ok: false, reason: status.reason || 'chapter-missing', status };
+        }
+        if (!status.canNextBeat) {
+            ErrorHandler.showUserError('已是最后一拍');
+            return { ok: false, reason: 'last-beat', status };
+        }
+
+        await switchCurrentBeat(1);
+        return { ok: true, status: getReadingProgressStatus() };
+    }
+
+    async function goToNextChapter() {
+        const status = getReadingProgressStatus();
+        if (!status.ok) {
+            ErrorHandler.showUserError('暂无可切换章节');
+            return { ok: false, reason: status.reason || 'chapter-missing', status };
+        }
+        if (!status.canNextChapter) {
+            ErrorHandler.showUserError('已是最后一章');
+            return { ok: false, reason: 'last-chapter', status };
+        }
+
+        await enterChapter(status.currentChapter);
+        await persistCurrentState();
+        return { ok: true, status: getReadingProgressStatus() };
+    }
+
     async function showCurrentChapterPanelInternal() {
         persistLastModalView('current');
         setModeTabActive('current');
@@ -1659,5 +1753,8 @@ export function createChapterExperienceView(deps = {}) {
             preparePanels();
             renderCurrentPanel();
         },
+        goToNextBeat,
+        goToNextChapter,
+        getReadingProgressStatus,
     };
 }

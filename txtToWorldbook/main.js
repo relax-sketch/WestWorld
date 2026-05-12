@@ -1020,6 +1020,9 @@ const {
     showStoryOutlinePanel,
     showCurrentChapterPanel,
     showSettingsPanel,
+    goToNextBeat,
+    goToNextChapter,
+    getReadingProgressStatus,
 } = chapterExperienceView;
 
     // ========== UI ==========
@@ -1400,6 +1403,9 @@ open = shellRuntimeBindings.open;
     publicApi.inspectDirectorInjection = (...args) => directorService.inspectDirectorInjection(...args);
     publicApi.testDirectorInjection = (...args) => directorService.testDirectorInjection(...args);
     publicApi.bindDirectorSessionToCurrentChapter = (...args) => directorService.bindDirectorSessionToCurrentChapter(...args);
+    publicApi.nextBeat = (...args) => goToNextBeat(...args);
+    publicApi.nextChapter = (...args) => goToNextChapter(...args);
+    publicApi.getReadingProgressStatus = (...args) => getReadingProgressStatus(...args);
     window[WESTWORLD_TTW_API_KEY] = publicApi;
     window[LEGACY_STORYWEAVER_TTW_API_KEY] = publicApi;
 
