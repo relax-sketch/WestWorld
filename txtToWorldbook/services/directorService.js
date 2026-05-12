@@ -28,6 +28,10 @@ export function createDirectorService(deps = {}) {
         updateStreamContent,
         directorTelemetry,
     } = deps;
+    const directorToastState = {
+        lastKey: '',
+        lastAt: 0,
+    };
 
     function directorDebug(msg) {
         if (typeof debugLog === 'function') {
@@ -46,6 +50,24 @@ export function createDirectorService(deps = {}) {
     function directorInfo(msg) {
         Logger?.info?.('Director', msg);
         directorDebug(msg);
+    }
+
+    function notifyDirectorJudgement(kind, message) {
+        try {
+            const toast = globalThis?.toastr;
+            if (!toast) return;
+            const key = `${kind}:${message}`;
+            const now = Date.now();
+            if (directorToastState.lastKey === key && now - directorToastState.lastAt < 1500) return;
+            directorToastState.lastKey = key;
+            directorToastState.lastAt = now;
+            const method = typeof toast[kind] === 'function' ? kind : 'info';
+            toast[method](message, 'WestWorld 导演', {
+                timeOut: kind === 'info' ? 1800 : 2600,
+                extendedTimeOut: 1000,
+                preventDuplicates: true,
+            });
+        } catch (_) { }
     }
 
     function buildDirectorTurnPrefix(chapterIndex) {
@@ -1446,12 +1468,14 @@ export function createDirectorService(deps = {}) {
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
             }
+            notifyDirectorJudgement('info', `导演判定请求已发送：第${chapterIndex + 1}章，节拍 ${lockedBeatIdx + 1}/${beats.length}`);
             const response = await callDirectorAPI(prompt, chapterIndex + 1);
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${String(response || '').length} 字符\n`);
             }
             const parsed = extractJsonObject(response);
             if (!parsed) {
+                notifyDirectorJudgement('warning', '导演判定收到响应，但不是有效 JSON，已使用兜底判定');
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
                 if (typeof updateStreamContent === 'function') {
                     updateStreamContent(`⚠️ ${turnPrefix} 响应不是有效JSON，已切换回退判定\n`);
@@ -1460,6 +1484,7 @@ export function createDirectorService(deps = {}) {
                 decisionSource = 'fallback-parse';
             } else {
                 decision = normalizeDecision(parsed, lockedBeatIdx, beats, directionContext);
+                notifyDirectorJudgement('success', `导演判定成功：锁定节拍 ${decision.stage_idx + 1}/${beats.length}`);
             }
 
             // 新增：输出导演决策详情日志
@@ -1485,6 +1510,7 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`   终点: ${toShortText(ds.end || '', 100) || '（默认）'}\n`);
             }
         } catch (error) {
+            notifyDirectorJudgement('warning', `导演判定请求失败，已使用兜底：${error?.message || String(error)}`);
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${error?.message || String(error)}\n`);
