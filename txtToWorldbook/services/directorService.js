@@ -490,13 +490,28 @@ export function createDirectorService(deps = {}) {
         return '';
     }
 
+    function getEventLatestUserOverride(eventData) {
+        if (!eventData || typeof eventData !== 'object') return '';
+        const candidates = [
+            eventData.latestUserMessage,
+            eventData.userInput,
+            eventData.rawUserInput,
+            eventData.originalUserInput,
+            eventData.message,
+        ];
+        for (const candidate of candidates) {
+            const text = String(candidate || '').trim();
+            if (text) return text;
+        }
+        return '';
+    }
+
     function getLatestDialogue(eventData) {
-        void eventData;
         const lines = [];
 
         const realChat = getSillyTavernChatHistory();
         const lastAssistant = pickLatestFromChat(realChat, isAssistantChatItem);
-        const lastUser = pickLatestFromChat(realChat, isUserChatItem);
+        const lastUser = getEventLatestUserOverride(eventData) || pickLatestFromChat(realChat, isUserChatItem);
 
         if (lastAssistant) lines.push(`AI:${toShortText(lastAssistant, 320)}`);
         if (lastUser) lines.push(`用户:${toShortText(lastUser, 320)}`);
@@ -505,7 +520,8 @@ export function createDirectorService(deps = {}) {
     }
 
     function getLatestUserMessage(eventData) {
-        void eventData;
+        const override = getEventLatestUserOverride(eventData);
+        if (override) return override;
         const realChat = getSillyTavernChatHistory();
         return pickLatestFromChat(realChat, isUserChatItem);
     }

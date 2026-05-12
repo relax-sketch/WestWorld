@@ -23,6 +23,7 @@ const WESTWORLD_DIRECTOR_DEBUG_KEY = 'westworld-director-debug';
 const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 const CHAT_CONTROL_BAR_ID = 'westworld-chat-control-bar';
 const CHAT_CONTROL_STYLE_ID = 'westworld-chat-control-style';
+const EXTERNAL_DIRECTOR_PREPARE_TTL_MS = 60000;
 
 const defaultSettings = {
     panelCollapsed: true,
@@ -49,6 +50,7 @@ const directorPromptGate = {
     lastSkipReason: '',
     lastLifecycleEvent: '',
     lastLifecycleAt: 0,
+    externalPrepared: null,
 };
 
 function isDirectorTraceEnabled() {
@@ -285,6 +287,7 @@ function getDirectorGateStatus() {
         lastSkipReason: directorPromptGate.lastSkipReason,
         lastLifecycleEvent: directorPromptGate.lastLifecycleEvent,
         lastLifecycleAt: directorPromptGate.lastLifecycleAt,
+        externalPrepared: directorPromptGate.externalPrepared,
         promptManager: getDirectorPromptManagerStatusSafe(),
     };
 }
@@ -303,6 +306,7 @@ function markDirectorGateSkipped(reason, data = {}) {
 function invalidateDirectorRuntime(reason, data = {}) {
     directorPromptGate.pendingUserSend = false;
     directorPromptGate.lastGeneration = null;
+    directorPromptGate.externalPrepared = null;
     directorPromptGate.lastLifecycleEvent = String(reason || '');
     directorPromptGate.lastLifecycleAt = Date.now();
     const api = getTxtToWorldbookApiSafe();
@@ -376,6 +380,90 @@ function setDirectorPromptManagerDirectorContent(content) {
     return result;
 }
 
+function clearExternalPreparedDirectorPrompt(reason = '') {
+    if (!directorPromptGate.externalPrepared) return;
+    markDirectorEvent('PROMPT_MANAGER_EXTERNAL_PREPARED_CLEARED', {
+        reason: String(reason || ''),
+        prepared: directorPromptGate.externalPrepared,
+    });
+    directorPromptGate.externalPrepared = null;
+}
+
+function getReusableExternalPreparedDirectorPrompt() {
+    const prepared = directorPromptGate.externalPrepared;
+    if (!prepared) return null;
+    if (Date.now() > prepared.expiresAt) {
+        clearExternalPreparedDirectorPrompt('expired');
+        return null;
+    }
+    const status = getDirectorPromptManagerStatusSafe();
+    if (!status?.contentLength) {
+        clearExternalPreparedDirectorPrompt('prompt-manager-content-empty');
+        return null;
+    }
+    return { prepared, status };
+}
+
+async function prepareDirectorPromptForInput(options = {}) {
+    const normalizedOptions = typeof options === 'string' ? { userInput: options } : (options || {});
+    const userInput = String(
+        normalizedOptions.userInput
+        || normalizedOptions.rawUserInput
+        || normalizedOptions.originalUserInput
+        || normalizedOptions.latestUserMessage
+        || ''
+    ).trim();
+    const source = String(normalizedOptions.source || 'external').trim() || 'external';
+
+    if (!userInput) {
+        return { ok: false, reason: 'user-input-empty' };
+    }
+
+    clearExternalPreparedDirectorPrompt('new-external-prepare');
+    directorPromptGate.pendingUserSend = true;
+    directorPromptGate.lastUserSendAt = Date.now();
+
+    const result = await prepareDirectorPromptManagerForGeneration({
+        type: normalizedOptions.type || source,
+        params: {
+            ...(normalizedOptions.params || {}),
+            external_director_prepare: true,
+            source,
+        },
+        dryRun: normalizedOptions.dryRun === true,
+        latestUserMessage: userInput,
+        userInput,
+        rawUserInput: userInput,
+        originalUserInput: userInput,
+        source,
+    });
+
+    if (!result?.ok) {
+        directorPromptGate.externalPrepared = null;
+        return result;
+    }
+
+    const status = getDirectorPromptManagerStatusSafe();
+    directorPromptGate.externalPrepared = {
+        source,
+        at: Date.now(),
+        expiresAt: Date.now() + EXTERNAL_DIRECTOR_PREPARE_TTL_MS,
+        inputLength: userInput.length,
+        contentLength: status?.contentLength || 0,
+        contentHash: result?.meta?.contentHash || '',
+        runId: result?.meta?.runId || '',
+    };
+    markDirectorEvent('PROMPT_MANAGER_EXTERNAL_PREPARED', {
+        prepared: directorPromptGate.externalPrepared,
+        meta: result?.meta || null,
+    });
+    return {
+        ...result,
+        externalPrepared: { ...directorPromptGate.externalPrepared },
+        status,
+    };
+}
+
 async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
     if (scriptApi.main_api !== 'openai') {
         markDirectorGateSkipped('prompt-manager-openai-only', { mainApi: scriptApi.main_api || '' });
@@ -395,12 +483,30 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
     }
 
+    if (promptEntry.activeEnabled === false) {
+        markDirectorGateSkipped('prompt-manager-entry-disabled', promptEntry.status || promptEntry);
+        return { ok: false, reason: 'prompt-manager-entry-disabled' };
+    }
+
+    const reusableExternal = getReusableExternalPreparedDirectorPrompt();
+    if (reusableExternal) {
+        markDirectorEvent('PROMPT_MANAGER_EXTERNAL_REUSED', {
+            type: generationType,
+            params: generationParams,
+            prepared: reusableExternal.prepared,
+            status: reusableExternal.status,
+        });
+        return {
+            ok: true,
+            reused: true,
+            reason: 'external-prepared',
+            externalPrepared: reusableExternal.prepared,
+            status: reusableExternal.status,
+        };
+    }
+
     if (isRegenerateOrSwipe) {
         const status = getDirectorPromptManagerStatusSafe();
-        if (promptEntry.activeEnabled === false) {
-            markDirectorGateSkipped('prompt-manager-entry-disabled', status || promptEntry);
-            return { ok: false, reason: 'prompt-manager-entry-disabled' };
-        }
         if (!status?.contentLength) {
             markDirectorGateSkipped('prompt-manager-reuse-empty', status || promptEntry);
             return { ok: false, reason: 'prompt-manager-reuse-empty' };
@@ -418,11 +524,6 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
     if (directorPromptGate.inProgress) {
         markDirectorGateSkipped('inProgress-lock');
         return { ok: false, reason: 'inProgress-lock' };
-    }
-
-    if (promptEntry.activeEnabled === false) {
-        markDirectorGateSkipped('prompt-manager-entry-disabled', promptEntry.status || promptEntry);
-        return { ok: false, reason: 'prompt-manager-entry-disabled' };
     }
 
     const skipReason = getDirectorSkipReason(eventContext);
@@ -557,6 +658,7 @@ function registerDirectorPromptHook() {
                 invalidateDirectorRuntime('ready-inspection-error', { error: error?.message || String(error) });
             } finally {
                 directorPromptGate.pendingUserSend = false;
+                clearExternalPreparedDirectorPrompt('prompt-ready');
             }
         };
     }
@@ -939,6 +1041,7 @@ async function bootstrap() {
             getDirectorContext: (options) => getTxtToWorldbookApiSafe()?.getDirectorContext?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
             getDirectorInjectionPrompt: (options) => getTxtToWorldbookApiSafe()?.getDirectorInjectionPrompt?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
             getDirectorPromptForLittleWhiteBox: (options) => getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+            prepareDirectorPromptForInput,
             inspectDirectorInjection: (chat) => getTxtToWorldbookApiSafe()?.inspectDirectorInjection?.(chat) || { injected: false, reason: 'txtToWorldbook-api-not-ready' },
             testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
             bindDirectorSessionToCurrentChapter: () => getTxtToWorldbookApiSafe()?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
