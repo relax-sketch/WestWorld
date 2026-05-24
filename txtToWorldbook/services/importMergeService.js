@@ -1,12 +1,13 @@
 import { normalizeNameForComparison } from './nameNormalizationService.js';
+import { PROMPT_MODULE_IDS } from './promptRegistryService.js';
 
 export function createImportMergeService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         Logger,
         ErrorHandler,
         ModalFactory,
-        defaultMergePrompt,
         saveCurrentSettings,
         showProgressSection,
         setProcessingStatus,
@@ -17,7 +18,6 @@ export function createImportMergeService(deps = {}) {
         updateWorldbookPreview,
         Semaphore,
         callAPI,
-        getLanguagePrefix,
         parseAIResponse,
     } = deps;
 
@@ -209,12 +209,17 @@ export function createImportMergeService(deps = {}) {
     }
 
     async function mergeEntriesWithAI(entryA, entryB, customPrompt) {
-        const promptTemplate = customPrompt?.trim() || defaultMergePrompt;
-        const prompt = promptTemplate
-            .replace('{ENTRY_A}', JSON.stringify(entryA, null, 2))
-            .replace('{ENTRY_B}', JSON.stringify(entryB, null, 2));
+        if (customPrompt?.trim()) {
+            promptRegistryService.setOverride(PROMPT_MODULE_IDS.MERGE_IMPORTED, { body: customPrompt.trim() });
+        }
+        const prompt = promptRegistryService.composeRequest([PROMPT_MODULE_IDS.MERGE_IMPORTED], {
+            [PROMPT_MODULE_IDS.MERGE_IMPORTED]: {
+                ENTRY_A: JSON.stringify(entryA, null, 2),
+                ENTRY_B: JSON.stringify(entryB, null, 2),
+            },
+        });
 
-        const response = await callAPI(getLanguagePrefix() + prompt);
+        const response = await callAPI(prompt);
 
         try {
             const result = parseAIResponse(response);
@@ -389,7 +394,7 @@ export function createImportMergeService(deps = {}) {
                 const previewModal = ModalFactory.create({
                     id: 'ttw-default-merge-prompt-modal',
                     title: '🔍 默认合并提示词',
-                    body: `<textarea readonly style="width: 100%; height: 300px; resize: vertical; box-sizing: border-box; background: rgba(0,0,0,0.3); color: #ccc; border: 1px solid #555; padding: 10px; font-family: monospace; border-radius: 4px; white-space: pre-wrap;">${defaultMergePrompt}</textarea>`,
+                    body: `<textarea readonly style="width: 100%; height: 300px; resize: vertical; box-sizing: border-box; background: rgba(0,0,0,0.3); color: #ccc; border: 1px solid #555; padding: 10px; font-family: monospace; border-radius: 4px; white-space: pre-wrap;">${promptRegistryService.getResolvedModule(PROMPT_MODULE_IDS.MERGE_IMPORTED).body}</textarea>`,
                     footer: '<button class="ttw-btn ttw-btn-primary" id="ttw-close-merge-prompt">关闭</button>',
                 });
                 previewModal.querySelector('#ttw-close-merge-prompt')
@@ -707,5 +712,6 @@ export function createImportMergeService(deps = {}) {
         importAndMergeWorldbook,
         importAndMergeCharacterCard,
         showMergeOptionsModal,
+        mergeEntriesWithAI,
     };
 }

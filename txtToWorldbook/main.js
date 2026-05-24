@@ -94,6 +94,7 @@ import { createRepairService } from './services/repairService.js';
 import { createWorldbookRuntimeService } from './services/worldbookRuntimeService.js';
 import { createDirectorService } from './services/directorService.js';
 import { createDirectorTelemetryService } from './services/directorTelemetryService.js';
+import { createPackagePolicyService } from './services/packagePolicyService.js';
 import { createAppContext } from './app/createApp.js';
 import { createCoreServices } from './app/createCoreServices.js';
 import { createFeatureServicesConfig } from './app/createFeatureServicesConfig.js';
@@ -626,6 +627,9 @@ const {
 // - 数据规范化
 
 const coreServices = createCoreServices({
+    promptRegistryDeps: {
+        AppState,
+    },
     promptDeps: {
         AppState,
         getEnabledCategories,
@@ -668,6 +672,7 @@ const coreServices = createCoreServices({
     },
     processingDeps: ({ apiService, parserService }) => ({
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Semaphore,
         updateMemoryQueueUI,
@@ -702,6 +707,7 @@ const coreServices = createCoreServices({
     }),
     rerollDeps: ({ apiService, parserService }) => ({
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         updateStopButtonVisibility,
         updateStreamContent,
@@ -743,6 +749,7 @@ const coreServices = createCoreServices({
     }),
 });
 const {
+    promptRegistryService,
     promptService,
     parserService,
     apiService,
@@ -753,6 +760,7 @@ const {
     getRerollService,
     getRerollModals,
 } = coreServices;
+const packagePolicyService = createPackagePolicyService();
 const {
     getLanguagePrefix,
     messagesToString,
@@ -810,6 +818,7 @@ const {
 } = worldbookRuntimeService;
 const repairService = createRepairService({
     AppState,
+    promptRegistryService,
     MemoryHistoryDB,
     updateProgress: (...args) => updateProgress(...args),
     updateMemoryQueueUI: (...args) => updateMemoryQueueUI(...args),
@@ -836,6 +845,7 @@ const directorTelemetry = createDirectorTelemetryService({
 });
 const directorService = createDirectorService({
     AppState,
+    promptRegistryService,
     MemoryHistoryDB,
     Logger,
     callDirectorAPI,
@@ -960,6 +970,7 @@ const {
 
 const {
     renderMessageChainUI,
+    bindPromptEditorEvents,
     updateSettingsUI,
     updateChapterRegexUI,
     renderCategoriesList,
@@ -999,12 +1010,14 @@ const {
     buildSystemPrompt,
     getChapterForcePrompt,
     getEnabledCategories,
+    promptRegistryService,
     handleFetchModelList,
     handleQuickTestModel,
 });
 
 const chapterExperienceView = createChapterExperienceView({
     AppState,
+    promptRegistryService,
     ErrorHandler,
     confirmAction,
     callAPI,
@@ -1107,12 +1120,13 @@ const {
 } = createFeatureServices({
     ...createFeatureServicesConfig({
         AppState,
+        promptRegistryService,
+        packagePolicyService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
         ModalFactory,
         confirmAction,
-        defaultSettings,
         defaultMergePrompt,
         defaultConsolidatePrompt,
         naturalSortEntryNames,
@@ -1220,6 +1234,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     updateSettingsUI,
     updateChapterRegexUI,
     handleProviderChange,
+    promptRegistryService,
     switchApiTab,
     ensureModalStyles,
     bindModalEvents: () => _bindModalEvents(),
@@ -1245,6 +1260,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     bindSettingEventsUI,
     bindCollapsePanelEventsUI,
     bindPromptEventsUI,
+    bindPromptEditorEvents,
     bindMessageChainEventsUI,
     bindFileEventsUI,
     bindActionEventsUI,
@@ -1389,7 +1405,7 @@ open = shellRuntimeBindings.open;
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
     publicApi.prepareDirectorInjectionForGeneration = (...args) => directorService.prepareDirectorInjectionForGeneration(...args);
     publicApi.recordDirectorPromptReadyInspection = (...args) => directorService.recordDirectorPromptReadyInspection(...args);
-    publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
+    publicApi.isDirectorEnabled = () => (AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api')) !== 'off';
     publicApi.getDirectorRuntimeStatus = () => directorTelemetry.getStatus();
     publicApi.getDirectorLogs = (limit) => directorTelemetry.getLogs(limit);
     publicApi.clearDirectorLogs = () => directorTelemetry.clearLogs();

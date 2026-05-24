@@ -1,7 +1,4 @@
-import {
-    defaultDirectorFrameworkPrompt,
-    defaultDirectorInjectionPrompt,
-} from '../core/constants.js';
+import { PROMPT_MODULE_IDS } from './promptRegistryService.js';
 import {
     ensureDirectorRuntimeReady,
     getSillyTavernSessionFingerprint,
@@ -20,10 +17,10 @@ import {
 export function createDirectorService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Logger,
         callDirectorAPI,
-        getLanguagePrefix,
         debugLog,
         updateStreamContent,
         directorTelemetry,
@@ -94,6 +91,10 @@ export function createDirectorService(deps = {}) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
+    }
+
+    function renderDirectorFragment(moduleId, variables = {}) {
+        return promptRegistryService.renderModule(moduleId, variables);
     }
 
     function renderPromptTemplate(template, variables = {}) {
@@ -553,37 +554,51 @@ export function createDirectorService(deps = {}) {
         let startAnchor = '';
         if (hasLargeBeatJump) {
             if (entryEvent) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），本回合以“${entryEvent}”作为新起点，不承接最近AI输出末尾。`;
+                startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_LARGE_ENTRY, {
+                    JUMP_DISTANCE: Math.max(2, Math.round(jumpDistance)),
+                    ENTRY_EVENT: entryEvent,
+                });
             } else if (recentUser) {
-                startAnchor = `检测到跨节拍跳转（约${Math.max(2, Math.round(jumpDistance))}拍），以用户当前互动“${recentUser}”作为新起点，不承接最近AI输出末尾。`;
+                startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_LARGE_USER, {
+                    JUMP_DISTANCE: Math.max(2, Math.round(jumpDistance)),
+                    RECENT_USER: recentUser,
+                });
             } else {
-                startAnchor = '检测到跨节拍跳转，本回合从当前节拍可见起点直接开场，不承接最近AI输出末尾。';
+                startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_LARGE_DEFAULT);
             }
         } else if (recentAssistant) {
             if (isNewBeat && entryEvent) {
-                startAnchor = `先承接最近AI输出末尾“${recentAssistant}”角色行为或话语，再以“${entryEvent}”触发入场事件。`;
+                startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_ASSISTANT_NEW, {
+                    RECENT_ASSISTANT: recentAssistant,
+                    ENTRY_EVENT: entryEvent,
+                });
             } else {
-                startAnchor = `优先承接最近AI输出末尾“${recentAssistant}”角色行为或话语。`;
+                startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_ASSISTANT, {
+                    RECENT_ASSISTANT: recentAssistant,
+                });
             }   
         } else if (entryEvent) {
-            startAnchor = `以“${entryEvent}”作为入场触发继续推进，并与用户当前互动保持连续。`;
+            startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_ENTRY, {
+                ENTRY_EVENT: entryEvent,
+            });
         } else if (recentUser) {
-            startAnchor = `以用户刚给出的互动“${recentUser}”作为当前起点继续推进，不补写超出输入边界的动作。`;
+            startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_USER, {
+                RECENT_USER: recentUser,
+            });
         } else {
-            startAnchor = '从当前可见动作直接续写，保持连续，不补写超出用户输入边界的剧情。';
+            startAnchor = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_DEFAULT);
         }
-         // ===== end_guideline 新增逻辑 =====
 
         const freePlayKeywords = /自由推进|随意推进|自由发挥|随意发挥|自由演绎|随意演绎|你继续|你推进|自由写|随便写|随意写|自由发挥剧情|随意发挥剧情/;
         const isFreePlay = freePlayKeywords.test(recentUser);
 
         let endGuideline = '';
         if (isFreePlay) {
-            endGuideline = '本回合只需收束到可中断的临时节点（小结果、可追问钩子或局势变化），不要求完成整个节拍；';
+            endGuideline = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_END_FREE_PLAY);
         } else if (recentUser) {
-            endGuideline = `以用户本轮输入末尾的可见状态为收束锚点，不得越界续写用户未给出的后续动作或结果。`;
+            endGuideline = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_END_USER);
         } else {
-            endGuideline = '本回合收束到可承接的临时节点，不要求完成整节拍。';
+            endGuideline = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_END_DEFAULT);
         }
         return {
             mode: isNewBeat ? 'new_beat' : 'in_beat',
@@ -717,85 +732,63 @@ export function createDirectorService(deps = {}) {
         const contextMode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const startAnchor = toShortText(context.start_anchor || '', 180)
             || (contextMode === 'new_beat'
-                ? '先触发当前节拍入场动作，再进入可见互动。'
-                : '承接最近AI输出，再接入用户动作继续推进。');
-        const contextEntryEvent = toShortText(context.entry_event || '', 120) || '无';
-        const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || '无';
-        const contextRecentUser = toShortText(context.recent_user || '', 220) || '无';
+                ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_NEW_DEFAULT)
+                : renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_IN_BEAT_DEFAULT));
+        const emptyContext = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_EMPTY);
+        const contextEntryEvent = toShortText(context.entry_event || '', 120) || emptyContext;
+        const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || emptyContext;
+        const contextRecentUser = toShortText(context.recent_user || '', 220) || emptyContext;
         const endGuideline = toShortText(context.end_guideline || '', 180)
-            || '本回合收束到可中断临时节点，不要求完成整节拍，且不得超出用户输入边界。';
+            || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_END_BOUNDARY);
         const currentOriginal = String(currentBeat?.original_text || '').trim();
-        const currentOriginalForPrompt = currentOriginal || '无';
-        const template = String(AppState?.settings?.customDirectorFrameworkPrompt || '').trim() || defaultDirectorFrameworkPrompt;
-        const contextModeLabel = contextMode === 'new_beat' ? '新入节拍' : '节拍中段续写';
-        const entryEventLine = contextMode === 'new_beat' ? `- 入场事件：${contextEntryEvent}` : '';
-        const promptBody = renderPromptTemplate(template, {
-            CHAPTER_TITLE: String(chapterTitle || ''),
-            CHAPTER_OUTLINE: String(chapterOutline || ''),
-            CURRENT_BEAT_INDEX: String(currentBeatIdx),
-            LATEST_USER_MESSAGE: toShortText(latestUserMessage || '无', 320) || '无',
-            CONTEXT_MODE_LABEL: contextModeLabel,
-            RECENT_ASSISTANT: contextRecentAssistant,
-            ENTRY_EVENT_LINE: entryEventLine,
-            CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
-            RECENT_USER: contextRecentUser,
-            START_ANCHOR: startAnchor,
-            END_GUIDELINE: endGuideline,
-            COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
-            FIXED_STAGE_IDX: String(currentBeatIdx),
+        const currentOriginalForPrompt = currentOriginal || emptyContext;
+        const contextModeLabel = contextMode === 'new_beat'
+            ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_MODE_NEW)
+            : renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_MODE_IN_BEAT);
+        const entryEventLine = contextMode === 'new_beat'
+            ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_ENTRY_LINE, { ENTRY_EVENT: contextEntryEvent })
+            : '';
+        return promptRegistryService.composeRequest([PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK], {
+            [PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK]: {
+                CHAPTER_TITLE: String(chapterTitle || ''),
+                CHAPTER_OUTLINE: String(chapterOutline || ''),
+                CURRENT_BEAT_INDEX: String(currentBeatIdx),
+                LATEST_USER_MESSAGE: toShortText(latestUserMessage || '', 320) || emptyContext,
+                CONTEXT_MODE_LABEL: contextModeLabel,
+                RECENT_ASSISTANT: contextRecentAssistant,
+                ENTRY_EVENT_LINE: entryEventLine,
+                CURRENT_BEAT_ORIGINAL: currentOriginalForPrompt,
+                RECENT_USER: contextRecentUser,
+                START_ANCHOR: startAnchor,
+                END_GUIDELINE: endGuideline,
+                COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
+                FIXED_STAGE_IDX: String(currentBeatIdx),
+            },
         });
-        const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
-            && (typeof extension_settings !== 'undefined'
-                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
-                : true);
-        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorFrameworkSuffix || '').trim() : '';
-        const suffixBlock = suffix ? `\n\n${suffix}` : '';
-        return `${prefix}${promptBody}${suffixBlock}`;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
-        const currentSummary = toShortText(currentBeat?.summary || '当前节拍', 200) || '当前节拍';
-        const nextSummary = toShortText(nextBeat?.summary || '下一节拍', 200) || '下一节拍';
+        const currentBeatFallback = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_CURRENT_BEAT);
+        const currentSummary = toShortText(currentBeat?.summary || currentBeatFallback, 200) || currentBeatFallback;
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const mode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
         const startAnchor = toShortText(context.start_anchor || '', 160);
-        const recentAssistant = toTailText(context.recent_assistant || '', 160);
-        const recentUser = toShortText(context.recent_user || '', 160);
-        const entryEvent = toShortText(context.entry_event || '', 100);
-        const endGuideline = toShortText(context.end_guideline || '', 160)
-            || '本回合收束到可承接的临时节点，不要求完成整节拍。';
-
-        if (mode === 'new_beat') {
-            const steps = [
-                entryEvent
-                    ? `先启动“${entryEvent}”对应的入场动作，不复述整段背景。`
-                    : '直接进入当前节拍的首个可见动作，不重铺背景。',
-                `围绕“${currentSummary}”推进1-2个具体互动动作，形成可见变化。`,
-            ];
-            return {
-                start: startAnchor || `先以“${entryEvent || currentSummary}”触发当前节拍开场，再进入可见动作。`,
-                action_chain: buildActionChain(steps),
-                steps,
-                end: endGuideline,
-            };
-        }
-
-        const inBeatStart = startAnchor
-            || (recentAssistant
-                ? `优先承接最近AI输出“${recentAssistant}”，再接入用户动作继续推进。`
-                : (recentUser
-                    ? `承接最近用户动作“${recentUser}”继续推进，不重铺背景。`
-                    : `从“${currentSummary}”已进行中的局面继续推进，不复述背景。`));
-        const steps = [
-            `围绕“${currentSummary}”推进1-2个具体互动动作，不空转。`,
-            `让互动产生一个清晰变化（信息、关系或局势其一），必要时为“${nextSummary}”保留可追问钩子。`,
-        ];
+        const entryEvent = toShortText(context.entry_event || '', 100) || currentSummary;
+        const moduleId = !nextBeat
+            ? PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_END
+            : (mode === 'new_beat'
+                ? PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_NEW_BEAT
+                : PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_IN_BEAT);
+        const actionChain = promptRegistryService.renderModule(moduleId, {
+            CURRENT_SUMMARY: currentSummary,
+            ENTRY_EVENT_OR_SUMMARY: entryEvent,
+        });
+        const steps = splitActionChain(actionChain, 4);
         return {
-            start: inBeatStart,
-            action_chain: buildActionChain(steps),
+            start: startAnchor || steps[0] || actionChain,
+            action_chain: buildActionChain(steps) || actionChain,
             steps,
-            end: endGuideline,
+            end: steps[steps.length - 1] || actionChain,
         };
     }
 
@@ -810,7 +803,7 @@ export function createDirectorService(deps = {}) {
         );
         if (start.length < 20) {
             const richerFallback = toShortText(
-                fallback.start || '先锚定当前回合可见动作，再展开本回合推进，不复述背景。',
+                fallback.start || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_NORMALIZE_START_RICH),
                 150
             );
             start = toShortText([start, richerFallback].filter(Boolean).join(' '), 180);
@@ -841,7 +834,8 @@ export function createDirectorService(deps = {}) {
             .slice(0, 4);
 
         while (steps.length < 2) {
-            const nextFallback = fallbackSteps[steps.length] || '沿当前目标继续推进，并确保动作可见。';
+            const nextFallback = fallbackSteps[steps.length]
+                || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_NORMALIZE_STEP);
             const normalized = normalizeActionSegment(nextFallback, 120);
             if (!normalized) break;
             steps.push(normalized);
@@ -855,10 +849,10 @@ export function createDirectorService(deps = {}) {
         );
 
         return {
-            start: start || toShortText(fallback.start || '从当前局面直接接续。', 180),
+            start: start || toShortText(fallback.start || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_START), 180),
             action_chain: normalizedActionChain || buildActionChain(fallbackSteps),
             steps,
-            end: end || toShortText(fallback.end || '本回合收束到可承接的临时节点。', 180),
+            end: end || toShortText(fallback.end || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_END), 180),
         };
     }
 
@@ -1005,26 +999,28 @@ export function createDirectorService(deps = {}) {
             : Math.max(0, stageIdx - 1);
         const switchedStage = stageIdx !== previousStageIdx;
         const currentOriginal = String(currentBeat?.original_text || '').trim();
-        const currentOriginalSection = currentOriginal || '（当前节拍缺少原文，请优先遵循导演演绎指导并保持语气连续）';
+        const currentOriginalSection = currentOriginal
+            || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_CURRENT_MISSING);
         const nextBeatSummary = toShortText(
             decision?.next_beat_summary
             || nextBeat?.summary
             || '',
             120
-        ) || '（当前已是最后节拍）';
+        ) || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_NEXT_MISSING);
         const nextBeatEntryEvent = toShortText(
             decision?.next_beat_entry_event
             || nextBeat?.entryEvent
             || '',
             140
-        ) || '（无）';
+        ) || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_NEXT_ENTRY_MISSING);
         const nextBeatPreview200 = toHeadText(
             decision?.next_beat_preview_200
             || nextBeat?.original_text
             || '',
             220
-        ) || '（当前已是最后节拍，无下一节拍原文预览）';
-        const currentExitCondition = toShortText(currentBeat?.exitCondition || '', 140) || '无明确退出事件';
+        ) || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_NEXT_PREVIEW_MISSING);
+        const currentExitCondition = toShortText(currentBeat?.exitCondition || '', 140)
+            || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_EXIT_MISSING);
         const directionContext = decision?.direction_context && typeof decision.direction_context === 'object'
             ? decision.direction_context
             : buildDirectionContext({
@@ -1039,11 +1035,15 @@ export function createDirectorService(deps = {}) {
             buildDefaultDirectionScript(currentBeat, nextBeat, directionContext)
         );
         const actionChainSteps = splitActionChain(directionScript.action_chain || '', 4);
+        const defaultSteps = splitActionChain(
+            renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_DEFAULT_STEPS),
+            4
+        );
         const steps = actionChainSteps.length > 0
             ? actionChainSteps
             : (Array.isArray(directionScript.steps) && directionScript.steps.length > 0
                 ? directionScript.steps
-                : ['围绕当前节拍推进一个可见动作。', '在可承接位置收束本轮输出。']);
+                : defaultSteps);
         const actionChain = buildActionChain(steps);
 
         const processLines = steps
@@ -1051,32 +1051,29 @@ export function createDirectorService(deps = {}) {
             .map((step, idx) => `  ${idx + 1}. ${step}`)
             .join('\n');
 
-        const stageExecutionRequirement = switchedStage
-            ? '- 执行要求: 本回合发生切拍时，先用1-2句完成过渡/回接，再进入动作链；终点只做临时收束，不等于继续切拍。'
-            : '- 执行要求: 严格停留在当前节拍内推进动作链；终点只做临时收束，不得跳出当前节拍。';
+        const stageExecutionRequirement = renderDirectorFragment(
+            switchedStage
+                ? PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_SWITCHED
+                : PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_STAY
+        );
+        const defaultStart = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_START);
+        const defaultEnd = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_END);
 
-        const template = String(AppState?.settings?.customDirectorInjectionPrompt || '').trim() || defaultDirectorInjectionPrompt;
-        const injectionBody = renderPromptTemplate(template, {
+        return promptRegistryService.renderModule(PROMPT_MODULE_IDS.DIRECTOR_INJECTION, {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
-            CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || '当前节拍'),
+            CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_CURRENT_BEAT)),
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
-            DIRECTION_START: String(directionScript.start || '从当前局面直接接续。'),
-            DIRECTION_ACTION_CHAIN: String(actionChain || '围绕当前节拍推进可见动作并收束。'),
-            DIRECTION_PROCESS_LINES: processLines || '  1. 围绕当前节拍推进一个可见动作。\n  2. 在可承接位置收束本轮输出。',
-            DIRECTION_END: String(directionScript.end || '本回合收束到可承接的临时节点。'),
+            DIRECTION_START: String(directionScript.start || defaultStart),
+            DIRECTION_ACTION_CHAIN: String(actionChain || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_DEFAULT_ACTION)),
+            DIRECTION_PROCESS_LINES: processLines || defaultSteps.map((step, idx) => `  ${idx + 1}. ${step}`).join('\n'),
+            DIRECTION_END: String(directionScript.end || defaultEnd),
             STAGE_EXECUTION_REQUIREMENT: stageExecutionRequirement,
             CURRENT_EXIT_CONDITION: currentExitCondition,
             NEXT_BEAT_SUMMARY: nextBeatSummary,
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
-            START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
+            START_RECAP: String(directionScript.start || defaultStart),
         });
-        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
-            && (typeof extension_settings !== 'undefined'
-                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
-                : true);
-        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorInjectionSuffix || '').trim() : '';
-        return suffix ? `${injectionBody}\n\n${suffix}` : injectionBody;
     }
 
     function getDirectorContext(options = {}) {
@@ -1134,6 +1131,10 @@ export function createDirectorService(deps = {}) {
 
     function getDirectorInjectionPrompt(options = {}) {
         normalizeDirectorBeatState(AppState);
+        const directorMode = String(AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api'));
+        if (directorMode === 'off' || AppState.settings.directorEnabled === false) {
+            return { ok: false, reason: 'directorMode=off', content: '', meta: {} };
+        }
         const mode = String(options.mode || 'current');
         let content = '';
         let meta = AppState.experience?.directorLastInjectionMeta || {};
@@ -1286,10 +1287,11 @@ export function createDirectorService(deps = {}) {
     async function runDirectorBeforeGeneration(eventData, options = {}) {
         const shouldInjectChat = options.injectChat !== false;
         normalizeDirectorBeatState(AppState);
-        if (AppState.settings.directorEnabled === false) {
-            directorTelemetry?.markGateSkipped?.('directorEnabled=false');
-            directorDebug('skip: directorEnabled=false');
-            return shouldInjectChat ? null : { ok: false, reason: 'directorEnabled=false' };
+        const directorMode = String(AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api'));
+        if (directorMode === 'off' || AppState.settings.directorEnabled === false) {
+            directorTelemetry?.markGateSkipped?.('directorMode=off');
+            directorDebug('skip: directorMode=off');
+            return shouldInjectChat ? null : { ok: false, reason: 'directorMode=off' };
         }
         if (AppState.settings.directorRunEveryTurn === false) {
             directorTelemetry?.markGateSkipped?.('directorRunEveryTurn=false');
@@ -1463,24 +1465,29 @@ export function createDirectorService(deps = {}) {
             updateStreamContent(`   判定模式: ${modeLabel}\n`);
         }
 
-        const prompt = buildDirectorPrompt({
-            chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
-            chapterOutline: toShortText(memory.chapterOutline || '', 200),
-            currentBeatIdx: lockedBeatIdx,
-            beats,
-            latestDialogue,
-            latestUserMessage,
-            directionContext,
-        });
+        const prompt = directorMode === 'api'
+            ? buildDirectorPrompt({
+                chapterTitle: memory.chapterTitle || `第${chapterIndex + 1}章`,
+                chapterOutline: toShortText(memory.chapterOutline || '', 200),
+                currentBeatIdx: lockedBeatIdx,
+                beats,
+                latestDialogue,
+                latestUserMessage,
+                directionContext,
+            })
+            : '';
 
         // 新增：输出导演提示词构建完成日志
-        if (typeof updateStreamContent === 'function') {
+        if (typeof updateStreamContent === 'function' && prompt) {
             updateStreamContent(`📝 ${turnPrefix} 导演提示词构建完成 (${prompt.length}字符)\n`);
         }
 
         let decision = null;
         let decisionSource = 'model';
-        try {
+        if (directorMode === 'local-fallback') {
+            decision = buildFallbackDecision(lockedBeatIdx, beats, 'local-fallback', directionContext);
+            decisionSource = 'fallback-local';
+        } else try {
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
             }
@@ -1491,6 +1498,10 @@ export function createDirectorService(deps = {}) {
             }
             const parsed = extractJsonObject(response);
             if (!parsed) {
+                if (AppState.settings.directorFallbackOnError === false) {
+                    directorTelemetry?.markGateSkipped?.('directorFallbackOnError=false', { failure: 'parse' });
+                    return shouldInjectChat ? null : { ok: false, reason: 'directorFallbackOnError=false' };
+                }
                 notifyDirectorJudgement('warning', '导演判定收到响应，但不是有效 JSON，已使用兜底判定');
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
                 if (typeof updateStreamContent === 'function') {
@@ -1526,6 +1537,10 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`   终点: ${toShortText(ds.end || '', 100) || '（默认）'}\n`);
             }
         } catch (error) {
+            if (AppState.settings.directorFallbackOnError === false) {
+                directorTelemetry?.markGateSkipped?.('directorFallbackOnError=false', { failure: 'api-error' });
+                return shouldInjectChat ? null : { ok: false, reason: 'directorFallbackOnError=false' };
+            }
             notifyDirectorJudgement('warning', `导演判定请求失败，已使用兜底：${error?.message || String(error)}`);
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
             if (typeof updateStreamContent === 'function') {
@@ -1552,7 +1567,11 @@ export function createDirectorService(deps = {}) {
         const nextBeatSummary = toShortText(nextBeat?.summary || '', 200);
         const nextBeatEntryEvent = toShortText(nextBeat?.entryEvent || '', 140);
         const nextBeatPreview200 = toHeadText(nextBeat?.original_text || '', 200)
-            || (nextBeatSummary ? `摘要：${nextBeatSummary}` : '');
+            || (nextBeatSummary
+                ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_NEXT_PREVIEW_SUMMARY, {
+                    NEXT_BEAT_SUMMARY: nextBeatSummary,
+                })
+                : '');
 
         // 新增：输出下一节拍信息
         if (typeof updateStreamContent === 'function' && nextBeatSummary) {

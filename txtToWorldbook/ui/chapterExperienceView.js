@@ -2,14 +2,15 @@ import {
     ensureExperienceState,
     ensureMemoryDirectorRuntime,
 } from '../services/directorStateService.js';
+import { PROMPT_MODULE_IDS } from '../services/promptRegistryService.js';
 
 export function createChapterExperienceView(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         ErrorHandler,
         confirmAction,
         callAPI,
-        getLanguagePrefix,
         ModalFactory,
         MemoryHistoryDB,
         retryChapterOutline,
@@ -1265,26 +1266,22 @@ export function createChapterExperienceView(deps = {}) {
 
     async function generateOpeningText(memory, index) {
         const chapterTitle = memory.chapterTitle || `第${index + 1}章`;
-        const chapterSummary = toHeadSnippet(memory?.chapterOutline || '', 48) || '无';
+        const chapterSummary = toHeadSnippet(memory?.chapterOutline || '', 48)
+            || promptRegistryService.renderModule(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_SUMMARY);
         const { carryOver, carrySource, leadIn } = resolveOpeningAnchors(memory, index);
-        const carryText = carryOver || '无可用AI尾部承接（非首章且聊天中暂无AI输出）';
-        const leadText = leadIn || buildChapterLeadSnippet(memory, 50, 100) || '本章开头素材缺失';
+        const carryText = carryOver || promptRegistryService.renderModule(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_CARRY);
+        const leadText = leadIn || buildChapterLeadSnippet(memory, 50, 100)
+            || promptRegistryService.renderModule(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_LEAD);
 
-        const prompt = `${getLanguagePrefix()}你是互动小说旁白。请生成“承上启下型开场白”。
-
-硬性要求：
-1) 仅输出 100 字以内中文，不要解释规则，不要输出JSON，不要分点。
-2) 只能用于衔接上文并引入本章，不要推进剧情。
-3) 先承上，再启下：承上必须参考“承上素材（尾部截断）”；启下必须参考“启下素材（头部截断）”。
-4) 不得泄露本章后续目标、流程、关键节点、核心冲突、转折或结局。
-
-当前章节：${chapterTitle}
-当前章节摘要（参考）：${chapterSummary}
-承上来源：${carrySource}
-承上素材（尾部截断100字）：${carryText}
-启下素材（头部截断100字）：${leadText}
-
-请直接输出开场白正文：`;
+        const prompt = promptRegistryService.composeRequest([PROMPT_MODULE_IDS.CHAPTER_OPENING], {
+            [PROMPT_MODULE_IDS.CHAPTER_OPENING]: {
+                CHAPTER_TITLE: chapterTitle,
+                CHAPTER_SUMMARY: chapterSummary,
+                CARRY_SOURCE: carrySource,
+                CARRY_TEXT: carryText,
+                LEAD_TEXT: leadText,
+            },
+        });
 
         const response = await callAPI(prompt, index + 1);
         return sanitizeOpeningText(response, memory, index);
@@ -1756,5 +1753,6 @@ export function createChapterExperienceView(deps = {}) {
         goToNextBeat,
         goToNextChapter,
         getReadingProgressStatus,
+        generateOpeningText,
     };
 }

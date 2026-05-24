@@ -33,6 +33,8 @@
 
 ## Task 1: Add The Prompt Registry Core And Settings Schema
 
+**Status:** Completed (`43c3797`)
+
 **Files:**
 - Modify: `txtToWorldbook/core/constants.js`
 - Create: `txtToWorldbook/services/promptRegistryService.js`
@@ -40,9 +42,9 @@
 - Modify: `txtToWorldbook/main.js`
 - Create: `tests/promptRegistryService.test.js`
 
-- [ ] Before editing, record the current BOM state of `txtToWorldbook/core/constants.js` and confirm it is UTF-8 with BOM.
-- [ ] Add failing tests for immutable defaults, explicit empty overrides, global composition, no-global module rendering, restore-default behavior, and missing-placeholder warnings.
-- [ ] Add new settings defaults without deleting existing legacy fields yet:
+- [x] Before editing, record the current BOM state of `txtToWorldbook/core/constants.js` and confirm it is UTF-8 with BOM.
+- [x] Add failing tests for immutable defaults, explicit empty overrides, global composition, no-global module rendering, restore-default behavior, and missing-placeholder warnings.
+- [x] Add new settings defaults without deleting existing legacy fields yet:
 
 ```js
 promptConfigVersion: 1,
@@ -55,7 +57,7 @@ directorMode: 'api',
 directorFallbackOnError: true,
 ```
 
-- [ ] Define stable module identifiers and fixed baseline content derived from the existing prompt literals/default constants:
+- [x] Define stable module identifiers and fixed baseline content derived from the existing prompt literals/default constants:
 
 ```js
 export const PROMPT_MODULE_IDS = Object.freeze({
@@ -86,7 +88,7 @@ export const PROMPT_MODULE_IDS = Object.freeze({
 });
 ```
 
-- [ ] Implement a pure service API whose default definitions are never written back as editable defaults:
+- [x] Implement a pure service API whose default definitions are never written back as editable defaults:
 
 ```js
 listModules()
@@ -99,10 +101,10 @@ getWarnings(id, layers = getResolvedModule(id))
 migrateLegacySettings(settings)
 ```
 
-- [ ] Resolve overrides using property presence, not truthiness, so `{ body: '' }` remains an intentional saved value and produces warnings instead of silently restoring a default.
-- [ ] Ensure `composeRequest()` appends the Chinese language module when appropriate, applies `promptGlobal.prefix` and `promptGlobal.suffix` exactly once, and supports `{ includeGlobal: false }` for injection-only rendering.
-- [ ] Wire the new pure service through core creation/main dependency injection without migrating call sites in this task.
-- [ ] Re-run tests and verify the BOM state of `constants.js` remains unchanged.
+- [x] Resolve overrides using property presence, not truthiness, so `{ body: '' }` remains an intentional saved value and produces warnings instead of silently restoring a default.
+- [x] Ensure `composeRequest()` appends the Chinese language module when appropriate, applies `promptGlobal.prefix` and `promptGlobal.suffix` exactly once, and supports `{ includeGlobal: false }` for injection-only rendering.
+- [x] Wire the new pure service through core creation/main dependency injection without migrating call sites in this task.
+- [x] Re-run tests and verify the BOM state of `constants.js` remains unchanged.
 
 **Test command:**
 
@@ -121,16 +123,18 @@ git commit -m "feat: add layered prompt registry core"
 
 ## Task 2: Migrate Legacy Prompt Settings And Category Prompt Layers
 
+**Status:** Completed (`c3e90ee`)
+
 **Files:**
 - Modify: `txtToWorldbook/services/settingsPersistenceService.js`
 - Modify: `txtToWorldbook/services/categoryPersistenceService.js`
 - Modify: `tests/promptRegistryService.test.js`
 - Create: `tests/categoryPersistenceService.test.js`
 
-- [ ] Add failing tests that migrate legacy `custom*Prompt`, existing director suffixes, shared prefix selection, and existing `contentGuide` values without losing user content.
-- [ ] Make local settings load call `migrateLegacySettings()` once when `promptConfigVersion` is absent or older, retaining local API values in localStorage.
-- [ ] Map existing editable defaults into the new modules, including existing director suffix settings; retain legacy read compatibility only as needed for migration.
-- [ ] Upgrade category prompt state to layered values:
+- [x] Add failing tests that migrate legacy `custom*Prompt`, existing director suffixes, shared prefix selection, and existing `contentGuide` values without losing user content.
+- [x] Make local settings load call `migrateLegacySettings()` once when `promptConfigVersion` is absent or older, retaining local API values in localStorage.
+- [x] Map existing editable defaults into the new modules, including existing director suffix settings; retain legacy read compatibility only as needed for migration.
+- [x] Upgrade category prompt state to layered values:
 
 ```js
 promptLayers: {
@@ -140,9 +144,9 @@ promptLayers: {
 }
 ```
 
-- [ ] For built-in categories, use the existing `DEFAULT_WORLDBOOK_CATEGORIES[].contentGuide` as the immutable body baseline; for user-created categories, create the initial baseline from the current generated body text and keep later user edits as overrides.
-- [ ] Update `generateDynamicJsonTemplate()` to render each category's layered content, while preserving non-prompt structural fields used to build the output JSON shape.
-- [ ] Confirm warning-only validation allows blank category body or missing runtime placeholders to be saved.
+- [x] For built-in categories, use the existing `DEFAULT_WORLDBOOK_CATEGORIES[].contentGuide` as the immutable body baseline; for user-created categories, create the initial baseline from the current generated body text and keep later user edits as overrides.
+- [x] Update `generateDynamicJsonTemplate()` to render each category's layered content, while preserving non-prompt structural fields used to build the output JSON shape.
+- [x] Confirm warning-only validation allows blank category body or missing runtime placeholders to be saved.
 
 **Test command:**
 
@@ -161,6 +165,8 @@ git commit -m "feat: migrate prompt settings and category layers"
 
 ## Task 3: Build The Registry-Driven Prompt Editor And Preview
 
+**Status:** Completed (`0fcee71`)
+
 **Files:**
 - Create: `txtToWorldbook/ui/promptEditorView.js`
 - Modify: `txtToWorldbook/ui/settingsPanel.js`
@@ -169,12 +175,12 @@ git commit -m "feat: migrate prompt settings and category layers"
 - Modify: `txtToWorldbook/ui/createUiHelpers.js`
 - Modify: `txtToWorldbook/main.js`
 
-- [ ] Before editing, record and later preserve BOM for `settingsPanel.js` and `eventBindings.js`.
-- [ ] Replace the hard-coded prompt textarea list with a registry host and a new view that enumerates every registered module, including category modules and local fallback modules.
-- [ ] Provide editable and savable `prefix`, `body`, and `suffix` inputs for every prompt module; render global prefix/global suffix separately above module cards.
-- [ ] Add per-module “恢复默认” actions that call `resetOverride(id)` and restore the immutable project default rather than rewriting the baseline.
-- [ ] Display warnings beside a module when required placeholders are absent or a module is blank; do not block save.
-- [ ] Keep prompt preset and message-chain editing exposed as prompt configuration, and add director controls:
+- [x] Before editing, record and later preserve BOM for `settingsPanel.js` and `eventBindings.js`.
+- [x] Replace the hard-coded prompt textarea list with a registry host and a new view that enumerates every registered module, including category modules and local fallback modules.
+- [x] Provide editable and savable `prefix`, `body`, and `suffix` inputs for every prompt module; render global prefix/global suffix separately above module cards.
+- [x] Add per-module “恢复默认” actions that call `resetOverride(id)` and restore the immutable project default rather than rewriting the baseline.
+- [x] Display warnings beside a module when required placeholders are absent or a module is blank; do not block save.
+- [x] Keep prompt preset and message-chain editing exposed as prompt configuration, and add director controls:
 
 ```html
 <select id="ttw-director-mode">
@@ -185,9 +191,9 @@ git commit -m "feat: migrate prompt settings and category layers"
 <input type="checkbox" id="ttw-director-fallback-on-error">
 ```
 
-- [ ] Update preview to show composed global layers for complete requests and an explicit injection preview labeled as not using global layers.
-- [ ] Wire view events through existing UI helpers and settings persistence; avoid duplicating registry logic inside DOM handlers.
-- [ ] Do not add automated browser/UI tests; perform only import/syntax loading through Node in this task.
+- [x] Update preview to show composed global layers for complete requests and an explicit injection preview labeled as not using global layers.
+- [x] Wire view events through existing UI helpers and settings persistence; avoid duplicating registry logic inside DOM handlers.
+- [x] Do not add automated browser/UI tests; perform only import/syntax loading through Node in this task.
 
 **Verification commands:**
 
@@ -209,6 +215,8 @@ git commit -m "feat: expose registry based prompt editor"
 
 ## Task 4: Route Non-Director Prompt Call Sites Through The Registry
 
+**Status:** Completed (`b9b1e1b`)
+
 **Files:**
 - Modify: `txtToWorldbook/services/promptService.js`
 - Modify: `txtToWorldbook/services/processingService.js`
@@ -220,13 +228,15 @@ git commit -m "feat: expose registry based prompt editor"
 - Modify: `txtToWorldbook/ui/chapterExperienceView.js`
 - Create: `tests/promptCompositionCallSites.test.js`
 
-- [ ] Write failing service-level tests for representative worldbook, repair, reroll, consolidate, alias merge, imported merge, and chapter-opening requests. Assert each rendered module can contribute prefix/body/suffix and each complete outbound request sees the global layer once.
-- [ ] Change `promptService` to use registry rendering for language, system, plot, style, previous-memory context, relevant-worldbook context, and force-chapter text while retaining existing main-only message-chain behavior.
-- [ ] Replace inline instructions/wrappers in `processingService` with registry modules for parallel/serial extraction, relevant context, reroll extra constraints, chapter assets, and entry-event refinement.
-- [ ] Replace inline repair and reroll prompt fragments with `WORLDBOOK_REPAIR` and `WORLDBOOK_SINGLE_REROLL` rendering.
-- [ ] Route imported merge, consolidate body/rules, and alias merge through `MERGE_IMPORTED`, `MERGE_CONSOLIDATE`, `MERGE_CONSOLIDATE_RULES`, and `MERGE_ALIAS`.
-- [ ] Route the chapter opening instruction through `CHAPTER_OPENING` instead of a local inline string.
-- [ ] Search prompt-bearing code after conversion and either map any remaining user-visible instruction string into a module or document why it is protocol metadata/runtime data and not editable prompt content.
+- [x] Write failing service-level tests for representative worldbook, repair, reroll, consolidate, alias merge, imported merge, and chapter-opening requests. Assert each rendered module can contribute prefix/body/suffix and each complete outbound request sees the global layer once.
+- [x] Change `promptService` to use registry rendering for language, system, plot, style, previous-memory context, relevant-worldbook context, and force-chapter text while retaining existing main-only message-chain behavior.
+- [x] Replace inline instructions/wrappers in `processingService` with registry modules for parallel/serial extraction, relevant context, reroll extra constraints, chapter assets, and entry-event refinement.
+- [x] Replace inline repair and reroll prompt fragments with `WORLDBOOK_REPAIR` and `WORLDBOOK_SINGLE_REROLL` rendering.
+- [x] Route imported merge, consolidate body/rules, and alias merge through `MERGE_IMPORTED`, `MERGE_CONSOLIDATE`, `MERGE_CONSOLIDATE_RULES`, and `MERGE_ALIAS`.
+- [x] Route the chapter opening instruction through `CHAPTER_OPENING` instead of a local inline string.
+- [x] Search prompt-bearing code after conversion and either map any remaining user-visible instruction string into a module or document why it is protocol metadata/runtime data and not editable prompt content.
+
+**Audit note:** Remaining prompt-bearing director composition is isolated to `directorService.js` for Task 5; prompt package serialization is isolated to `importExportService.js` for Task 6. Other remaining search matches are category compatibility/baseline storage, UI text, logging, error messages, or validation text rather than outbound editable prompt content.
 
 **Search command:**
 
@@ -251,6 +261,8 @@ git commit -m "feat: compose all non director prompts from registry"
 
 ## Task 5: Implement Director Three-State Behavior And Preserve Injection Compatibility
 
+**Status:** Completed (`7606845`)
+
 **Files:**
 - Modify: `txtToWorldbook/services/directorService.js`
 - Modify: `txtToWorldbook/services/directorInjectionService.js` only if dependency wiring or testability requires it; do not change protocol constants
@@ -262,7 +274,7 @@ git commit -m "feat: compose all non director prompts from registry"
 - Modify: `tests/directorPromptManagerService.test.js`
 - Create: `tests/directorModeService.test.js`
 
-- [ ] Add failing tests for each mode:
+- [x] Add failing tests for each mode:
 
 ```js
 directorMode: 'api'            // calls director API; may fall back only when toggle is true
@@ -270,10 +282,10 @@ directorMode: 'local-fallback' // does not call director API; builds editable lo
 directorMode: 'off'            // returns a skip status and removes/avoids injection
 ```
 
-- [ ] Add tests that `directorFallbackOnError: false` does not silently generate a local injection after API error or parse failure.
-- [ ] Compose `DIRECTOR_FRAMEWORK` as a complete director API request with the global layer once.
-- [ ] Render `DIRECTOR_FALLBACK_NEW_BEAT`, `DIRECTOR_FALLBACK_IN_BEAT`, and `DIRECTOR_FALLBACK_END` as editable local fallback content selected by existing decision context.
-- [ ] Render `DIRECTOR_INJECTION` with module-specific prefix/body/suffix only:
+- [x] Add tests that `directorFallbackOnError: false` does not silently generate a local injection after API error or parse failure.
+- [x] Compose `DIRECTOR_FRAMEWORK` as a complete director API request with the global layer once.
+- [x] Render `DIRECTOR_FALLBACK_NEW_BEAT`, `DIRECTOR_FALLBACK_IN_BEAT`, and `DIRECTOR_FALLBACK_END` as editable local fallback content selected by existing decision context.
+- [x] Render `DIRECTOR_INJECTION` with module-specific prefix/body/suffix only:
 
 ```js
 const content = promptRegistryService.renderModule(
@@ -282,11 +294,13 @@ const content = promptRegistryService.renderModule(
 );
 ```
 
-- [ ] Preserve `getDirectorPromptForLittleWhiteBox()` return shape and the existing PromptManager identifier/position/depth behavior. Assert in tests that global prefix/global suffix and main message-chain text do not appear in injection content.
-- [ ] Update `index.js` preparation logic so `off` or API-error-with-fallback-disabled clears/respects skipped injection instead of calling an unconditional local fallback accessor.
-- [ ] Keep `DIRECTOR_INJECTION_MARKER` and `DIRECTOR_INJECTION_IDENTIFIER` fixed protocol metadata; do not expose them in the prompt editor.
-- [ ] Retain the per-turn director meaning of the mode selector; do not reroute the chapter-assets extraction task to local fallback.
-- [ ] Recheck BOM after the two UI file edits in this task.
+- [x] Preserve `getDirectorPromptForLittleWhiteBox()` return shape and the existing PromptManager identifier/position/depth behavior. Assert in tests that global prefix/global suffix and main message-chain text do not appear in injection content.
+- [x] Update `index.js` preparation logic so `off` or API-error-with-fallback-disabled clears/respects skipped injection instead of calling an unconditional local fallback accessor.
+- [x] Keep `DIRECTOR_INJECTION_MARKER` and `DIRECTOR_INJECTION_IDENTIFIER` fixed protocol metadata; do not expose them in the prompt editor.
+- [x] Retain the per-turn director meaning of the mode selector; do not reroute the chapter-assets extraction task to local fallback.
+- [x] Recheck BOM after the two UI file edits in this task.
+
+**Audit note:** The mode controls were already introduced during Task 3, so Task 5 reused them without rewriting the UI files and rechecked that `settingsPanel.js` and `eventBindings.js` remain strict UTF-8 with BOM. Director context, normalization, local fallback, and actor-injection guidance fragments that enter model-visible content are now registry modules; resource-state beat normalization remains outside prompt configuration.
 
 **Test command:**
 
@@ -305,6 +319,8 @@ git commit -m "feat: add director modes without altering injection contract"
 
 ## Task 6: Separate Prompt Configuration Packages From Engineering Resource Packages
 
+**Status:** Completed (`7cbd6ee`)
+
 **Files:**
 - Create: `txtToWorldbook/services/packagePolicyService.js`
 - Modify: `txtToWorldbook/services/importExportService.js`
@@ -315,7 +331,7 @@ git commit -m "feat: add director modes without altering injection contract"
 - Create: `tests/packagePolicyService.test.js`
 - Create: `tests/taskStatePackagePolicy.test.js`
 
-- [ ] Add failing tests proving prompt config export includes editable prompt material but excludes API fields:
+- [x] Add failing tests proving prompt config export includes editable prompt material but excludes API fields:
 
 ```js
 {
@@ -329,8 +345,8 @@ git commit -m "feat: add director modes without altering injection contract"
 }
 ```
 
-- [ ] Add failing tests proving engineering/task export retains resources and result-reproduction parameters but excludes `mainApi`, `directorApi`, keys, route presets, prompt settings, category prompt text, and message chain.
-- [ ] Implement pure policy functions with explicit whitelists rather than cloning `AppState.settings`:
+- [x] Add failing tests proving engineering/task export retains resources and result-reproduction parameters but excludes `mainApi`, `directorApi`, keys, route presets, prompt settings, category prompt text, and message chain.
+- [x] Implement pure policy functions with explicit whitelists rather than cloning `AppState.settings`:
 
 ```js
 buildPromptConfigPackage(state)
@@ -341,11 +357,13 @@ filterLegacyPromptImport(payload)
 filterLegacyResourceImport(payload)
 ```
 
-- [ ] Make prompt configuration import/export preserve local API provider/address/model/key and route preset settings unchanged, including when importing older full-settings files.
-- [ ] Make task/project package load avoid restoring any API or editable prompt values from both new and legacy payloads.
-- [ ] Strip category `contentGuide` and `promptLayers` from engineering packages while keeping category identity/output-structure data required to interpret stored processing results.
-- [ ] Update memory snapshot restoration so old `savedState.settings` cannot overwrite local API or prompt configuration during result-history recovery.
-- [ ] Pass the policy dependency through feature creation/main wiring.
+- [x] Make prompt configuration import/export preserve local API provider/address/model/key and route preset settings unchanged, including when importing older full-settings files.
+- [x] Make task/project package load avoid restoring any API or editable prompt values from both new and legacy payloads.
+- [x] Strip category `contentGuide` and `promptLayers` from engineering packages while keeping category identity/output-structure data required to interpret stored processing results.
+- [x] Update memory snapshot restoration so old `savedState.settings` cannot overwrite local API or prompt configuration during result-history recovery.
+- [x] Pass the policy dependency through feature creation/main wiring.
+
+**Audit note:** The engineering-package whitelist also removes category prompt examples, cached `directorLastInjectionPrompt`, and director diagnostic prompt previews; it retains director decisions, chapter beats, generated worldbooks, and resume parameters. `memoryHistoryDB.js` already writes snapshots without `settings`, so the legacy `savedState.settings` protection was correctly implemented at its restoration boundary in `taskStateService.js` rather than adding unrelated storage churn.
 
 **Test command:**
 
@@ -364,16 +382,18 @@ git commit -m "feat: split prompt configuration from resource packages"
 
 ## Task 7: Document Behavior, Audit Encoding, And Run Final Verification
 
+**Status:** Completed (`4aba467`)
+
 **Files:**
 - Modify: `README.md`
 - Modify: `westworld.md`
 - Modify: any already-created test file only if a failing verification exposes a missing assertion
 
-- [ ] Document that every prompt module exposes editable prefix/body/suffix, warning-only placeholder validation, immutable restore-default baselines, and global prefix/suffix behavior.
-- [ ] Document director modes, including the separate API-error fallback toggle and the fact that PromptManager/LittleWhite injection does not consume global layers.
-- [ ] Document export boundaries: prompt configuration package contains prompt editing data but no API; engineering resource package contains processing/director outputs and resume parameters but no prompt/API configuration.
-- [ ] Document that UI interaction acceptance is manually performed on the user's mobile/desktop environment; do not add browser automation to verification.
-- [ ] Run the complete Node test suite:
+- [x] Document that every prompt module exposes editable prefix/body/suffix, warning-only placeholder validation, immutable restore-default baselines, and global prefix/suffix behavior.
+- [x] Document director modes, including the separate API-error fallback toggle and the fact that PromptManager/LittleWhite injection does not consume global layers.
+- [x] Document export boundaries: prompt configuration package contains prompt editing data but no API; engineering resource package contains processing/director outputs and resume parameters but no prompt/API configuration.
+- [x] Document that UI interaction acceptance is manually performed on the user's mobile/desktop environment; do not add browser automation to verification.
+- [x] Run the complete Node test suite:
 
 ```powershell
 npm test
@@ -381,7 +401,7 @@ npm test
 
 **Expected result:** The Node test process exits successfully with no failed tests.
 
-- [ ] Verify all touched Chinese/prompt-bearing files decode as strict UTF-8 and ensure the three original BOM files remain BOM-prefixed:
+- [x] Verify all touched Chinese/prompt-bearing files decode as strict UTF-8 and ensure the three original BOM files remain BOM-prefixed:
 
 ```powershell
 $files = @(
@@ -405,7 +425,9 @@ foreach ($file in $files) {
 
 **Expected result:** Every listed file reports `UTF8=true`; `constants.js`, `settingsPanel.js`, and `eventBindings.js` report `BOM=True`, unless a separately approved encoding change supersedes this plan.
 
-- [ ] Inspect the worktree and stage only documentation/tests changed by this final task; leave `AGENTS.md`, `.claude/`, and unrelated deletions untouched.
+- [x] Inspect the worktree and stage only documentation/tests changed by this final task; leave `AGENTS.md`, `.claude/`, and unrelated deletions untouched.
+
+**Verification note:** `npm test` completed with 38 passing tests and no failures. Strict UTF-8 decoding passed for all touched prompt-bearing files; `constants.js`, `settingsPanel.js`, `eventBindings.js`, and the already-BOM `main.js` retain their BOM state. Per the agreed test plan, no browser/UI automation was run.
 
 **Commit:**
 
@@ -416,11 +438,11 @@ git commit -m "docs: explain prompt registry and package boundaries"
 
 ## Final Completion Checklist
 
-- [ ] Every AI-readable instruction and editable director injection fragment is represented by a registered module or an explicit category prompt layer.
-- [ ] Every module exposes savable `prefix/body/suffix`, warning-only validation, and immutable restore-default behavior.
-- [ ] Global prefix/suffix apply exactly once to complete outbound model requests and never apply to PromptManager/LittleWhite injection.
-- [ ] Director `api`, `local-fallback`, and `off` modes work, and API failure fallback is independently selectable.
-- [ ] Prompt configuration export/import excludes API fields; engineering resource packages exclude API and editable prompt configuration.
-- [ ] Existing resource payloads retain data needed to interpret or resume processed director/worldbook results.
-- [ ] Node tests pass and encoding/BOM checks pass.
-- [ ] UI behavior is handed to the user for manual validation in the actual mobile/desktop environment, with no browser automation claimed.
+- [x] Every AI-readable instruction and editable director injection fragment is represented by a registered module or an explicit category prompt layer.
+- [x] Every module exposes savable `prefix/body/suffix`, warning-only validation, and immutable restore-default behavior.
+- [x] Global prefix/suffix apply exactly once to complete outbound model requests and never apply to PromptManager/LittleWhite injection.
+- [x] Director `api`, `local-fallback`, and `off` modes work, and API failure fallback is independently selectable.
+- [x] Prompt configuration export/import excludes API fields; engineering resource packages exclude API and editable prompt configuration.
+- [x] Existing resource payloads retain data needed to interpret or resume processed director/worldbook results.
+- [x] Node tests pass and encoding/BOM checks pass.
+- [x] UI behavior is handed to the user for manual validation in the actual mobile/desktop environment, with no browser automation claimed.

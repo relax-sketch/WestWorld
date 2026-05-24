@@ -4,6 +4,7 @@ export function createModalEventBinder(deps) {
         bindSettingEventsUI,
         bindCollapsePanelEventsUI,
         bindPromptEventsUI,
+        bindPromptEditorEvents,
         bindMessageChainEventsUI,
         bindFileEventsUI,
         bindActionEventsUI,
@@ -115,6 +116,9 @@ export function createModalEventBinder(deps) {
 
         bindCollapsePanelEventsUI();
         bindPromptEventsUI({ saveCurrentSettings });
+        if (typeof bindPromptEditorEvents === 'function') {
+            bindPromptEditorEvents({ modalContainer, EventDelegate });
+        }
         bindMessageChainEventsUI({
             AppState,
             renderMessageChainUI,

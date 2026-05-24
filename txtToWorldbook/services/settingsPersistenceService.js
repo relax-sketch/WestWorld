@@ -5,6 +5,7 @@ export function createSettingsPersistenceService(deps) {
         updateSettingsUI,
         updateChapterRegexUI,
         handleProviderChange,
+        migrateLegacyPromptSettings = (settings) => settings,
     } = deps;
 
     const LEGACY_CHAPTER_PATTERNS = new Set([
@@ -107,7 +108,10 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.defaultWorldbookEntriesUI = AppState.persistent.defaultEntries;
         AppState.settings.categoryDefaultConfig = AppState.config.categoryDefault;
         AppState.settings.entryPositionConfig = AppState.config.entryPosition;
-        AppState.settings.customSuffixPrompt = document.getElementById('ttw-suffix-prompt')?.value || '';
+        const legacySuffixPrompt = document.getElementById('ttw-suffix-prompt');
+        if (legacySuffixPrompt) {
+            AppState.settings.customSuffixPrompt = legacySuffixPrompt.value || '';
+        }
         const mainApi = readApiConfigFromDom('main');
         const directorApi = readApiConfigFromDom('director');
 
@@ -129,8 +133,10 @@ export function createSettingsPersistenceService(deps) {
 
         AppState.settings.mainApi = normalizeApiConfig(mainApi, AppState.settings.mainApi);
         AppState.settings.directorApi = normalizeApiConfig(directorApi, AppState.settings.directorApi);
-        AppState.settings.directorEnabled = document.getElementById('ttw-director-enabled')?.checked ?? AppState.settings.directorEnabled ?? true;
-        AppState.settings.directorAutoFallbackToMain = document.getElementById('ttw-director-fallback-main')?.checked ?? AppState.settings.directorAutoFallbackToMain ?? true;
+        AppState.settings.directorMode = document.getElementById('ttw-director-mode')?.value || AppState.settings.directorMode || 'api';
+        AppState.settings.directorEnabled = AppState.settings.directorMode !== 'off';
+        AppState.settings.directorFallbackOnError = document.getElementById('ttw-director-fallback-on-error')?.checked ?? AppState.settings.directorFallbackOnError ?? true;
+        AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
 
         // Backward compatibility mirror fields
@@ -159,8 +165,19 @@ export function createSettingsPersistenceService(deps) {
             const saved = localStorage.getItem(SETTINGS_STORAGE_KEY)
                 || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
             if (saved) {
-                const parsed = JSON.parse(saved);
-                AppState.settings = { ...defaultSettings, ...parsed };
+                const parsed = migrateLegacyPromptSettings(JSON.parse(saved));
+                AppState.settings = {
+                    ...defaultSettings,
+                    ...parsed,
+                    promptGlobal: {
+                        ...(defaultSettings.promptGlobal || {}),
+                        ...(parsed.promptGlobal || {}),
+                    },
+                    promptOverrides: {
+                        ...(defaultSettings.promptOverrides || {}),
+                        ...(parsed.promptOverrides || {}),
+                    },
+                };
 
                 const migratedMainApi = normalizeApiConfig(
                     parsed.mainApi,
@@ -185,7 +202,9 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.mainApi = migratedMainApi;
                 AppState.settings.directorApi = migratedDirectorApi;
                 AppState.settings.directorEnabled = parsed.directorEnabled ?? true;
-                AppState.settings.directorAutoFallbackToMain = parsed.directorAutoFallbackToMain ?? true;
+                AppState.settings.directorMode = parsed.directorMode || (AppState.settings.directorEnabled ? 'api' : 'off');
+                AppState.settings.directorFallbackOnError = parsed.directorFallbackOnError ?? parsed.directorAutoFallbackToMain ?? true;
+                AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
 
                 // Backward compatibility mirror fields

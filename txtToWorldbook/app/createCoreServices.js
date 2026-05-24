@@ -3,6 +3,7 @@ import { createProcessingService } from '../services/processingService.js';
 import { createRerollService } from '../services/rerollService.js';
 import { createApiService } from '../services/apiService.js';
 import { createPromptService } from '../services/promptService.js';
+import { createPromptRegistryService } from '../services/promptRegistryService.js';
 import { createParserService } from '../services/parserService.js';
 import { createTokenMetricsService } from '../services/tokenMetricsService.js';
 import { createExportFormatService } from '../services/exportFormatService.js';
@@ -16,7 +17,11 @@ function resolveDeps(factoryDeps, context) {
 }
 
 export function createCoreServices(deps = {}) {
-    const promptService = createPromptService(deps.promptDeps);
+    const promptRegistryService = createPromptRegistryService(deps.promptRegistryDeps);
+    const promptService = createPromptService({
+        ...(deps.promptDeps || {}),
+        promptRegistryService,
+    });
     const parserService = createParserService(deps.parserDeps);
     const apiService = createApiService(deps.apiDeps);
     const worldbookService = createWorldbookService(deps.worldbookDeps);
@@ -24,6 +29,7 @@ export function createCoreServices(deps = {}) {
     const exportFormatService = createExportFormatService(deps.exportFormatDeps);
 
     const context = {
+        promptRegistryService,
         promptService,
         parserService,
         apiService,
@@ -61,6 +67,7 @@ export function createCoreServices(deps = {}) {
     }
 
     return {
+        promptRegistryService,
         promptService,
         parserService,
         apiService,

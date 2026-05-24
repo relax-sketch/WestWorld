@@ -1,12 +1,14 @@
+import { PROMPT_MODULE_IDS } from './promptRegistryService.js';
+
 export function createRepairService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         updateProgress,
         updateMemoryQueueUI,
         isTokenLimitError,
         getChapterForcePrompt,
-        getLanguagePrefix,
         generateDynamicJsonTemplate,
         getPreviousMemoryContext,
         callAPI,
@@ -51,26 +53,22 @@ export function createRepairService(deps = {}) {
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += `${getLanguagePrefix()}你是世界书生成专家。请提取关键信息。
-
-输出JSON格式：
-${generateDynamicJsonTemplate()}
-`;
-
         const prevContext = getPreviousMemoryContext(index);
-        if (prevContext) {
-            prompt += prevContext;
-        }
-
-        if (Object.keys(AppState.worldbook.generated).length > 0) {
-            prompt += `当前世界书：\n${JSON.stringify(AppState.worldbook.generated, null, 2)}\n\n`;
-        }
-        prompt += `阅读内容（第${chapterIndex}章）：\n---\n${memory.content}\n---\n\n请输出JSON。`;
-
-        if (AppState.settings.forceChapterMarker) {
-            prompt += chapterForcePrompt;
-        }
+        const existingWorldbookContext = Object.keys(AppState.worldbook.generated).length > 0
+            ? promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_REPAIR_EXISTING, {
+                EXISTING_WORLDBOOK: JSON.stringify(AppState.worldbook.generated, null, 2),
+            })
+            : '';
+        const prompt = promptRegistryService.composeRequest([PROMPT_MODULE_IDS.WORLDBOOK_REPAIR], {
+            [PROMPT_MODULE_IDS.WORLDBOOK_REPAIR]: {
+                CHAPTER_INDEX: chapterIndex,
+                DYNAMIC_JSON_TEMPLATE: generateDynamicJsonTemplate(),
+                PREVIOUS_CONTEXT: prevContext,
+                EXISTING_WORLDBOOK_CONTEXT: existingWorldbookContext,
+                CONTENT: memory.content,
+                CHAPTER_FORCE: chapterForcePrompt,
+            },
+        });
 
         const response = await callAPI(prompt);
         let memoryUpdate = parseAIResponse(response);

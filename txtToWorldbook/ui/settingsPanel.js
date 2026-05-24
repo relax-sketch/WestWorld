@@ -72,12 +72,16 @@ ${buildAiRoutePresetsHtml()}
     <button type="button" id="ttw-api-tab-director" class="ttw-btn ttw-btn-small ttw-api-tab" data-api-tab="director">导演AI</button>
 </div>
 <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
-    <label class="ttw-checkbox-label" style="margin:0;">
-        <input type="checkbox" id="ttw-director-enabled" checked>
-        <span>启用导演裁判（每回合运行）</span>
+    <label style="display:flex;align-items:center;gap:8px;margin:0;">
+        <span>每轮导演模式</span>
+        <select id="ttw-director-mode" class="ttw-select" style="flex:1;">
+            <option value="api">导演 API</option>
+            <option value="local-fallback">本地兜底</option>
+            <option value="off">关闭导演</option>
+        </select>
     </label>
     <label class="ttw-checkbox-label" style="margin:0;">
-        <input type="checkbox" id="ttw-director-fallback-main" checked>
+        <input type="checkbox" id="ttw-director-fallback-on-error" checked>
         <span>导演API失败时启用本地导演兜底判定</span>
     </label>
     <label class="ttw-checkbox-label" style="margin:0;">
@@ -514,9 +518,8 @@ function buildPlotPromptSectionHtml() {
             <span class="ttw-collapse-icon">▶</span>
         </div>
         <div id="ttw-plot-content" class="ttw-prompt-content">
-            <textarea id="ttw-plot-prompt" rows="4" placeholder="留空使用默认..." class="ttw-textarea-small"></textarea>
+            <div class="ttw-setting-hint">正文、前缀和后缀请在“提示词编辑”页中的 <code>worldbook.plot</code> 模块修改。</div>
             <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-                <button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="plot">🔄 恢复默认</button>
                 <button class="ttw-btn ttw-btn-small" id="ttw-plot-export-config">⚙️ 导出时的默认配置</button>
             </div>
         </div>
@@ -537,8 +540,7 @@ function buildStylePromptSectionHtml() {
             <span class="ttw-collapse-icon">▶</span>
         </div>
         <div id="ttw-style-content" class="ttw-prompt-content">
-            <textarea id="ttw-style-prompt" rows="4" placeholder="留空使用默认..." class="ttw-textarea-small"></textarea>
-            <div style="margin-top:8px;"><button class="ttw-btn ttw-btn-small ttw-reset-prompt" data-type="style">🔄 恢复默认</button></div>
+            <div class="ttw-setting-hint">正文、前缀和后缀请在“提示词编辑”页中的 <code>worldbook.style</code> 模块修改。</div>
         </div>
     </div>`;
 }
@@ -555,8 +557,7 @@ function buildMessageChainSectionHtml() {
         </div>
         <div id="ttw-suffix-content" class="ttw-prompt-content">
             <div style="margin-bottom:12px;padding:10px;background:var(--ttw-bg-medium);border:1px solid var(--ttw-border-color);border-radius:6px;">
-                <label style="font-size:12px;color:var(--ttw-text-secondary);font-weight:bold;">📌 后缀提示词（追加到提示词末尾，在消息链转换之前生效）</label>
-                <textarea id="ttw-suffix-prompt" rows="2" placeholder="例如：请特别注意提取XX信息，修复乱码内容，注意区分同名角色..." class="ttw-textarea-small" style="margin-top:6px;"></textarea>
+                <div class="ttw-setting-hint">全局前缀/后缀已移至“提示词编辑”页统一修改；此处仅配置主 AI 请求的消息链。</div>
             </div>
             <div style="border-top:1px solid var(--ttw-border-color);padding-top:12px;">
                 <div class="ttw-setting-hint" style="margin-bottom:8px;line-height:1.6;">
@@ -661,13 +662,7 @@ function buildPromptEditorSectionHtml() {
         </div>
         <div class="ttw-section-content ttw-prompt-config-content">
             ${buildPromptPrefixPresetsHtml()}
-            ${buildCategoryGuidePromptSectionHtml()}
-            ${buildWorldbookPromptSectionHtml()}
-            ${buildConsolidatePromptSectionHtml()}
-            ${buildAliasMergePromptSectionHtml()}
-            ${buildChapterAssetsPromptSectionHtml()}
-            ${buildDirectorFrameworkPromptSectionHtml()}
-            ${buildDirectorInjectionPromptSectionHtml()}
+            <div id="ttw-prompt-registry-host"></div>
         </div>
     </div>`;
 }
@@ -1039,11 +1034,11 @@ export function hydrateSettingsFromState(deps = {}) {
     const apiMaxTokensDirectorEl = document.getElementById('ttw-api-max-tokens-director');
     if (apiMaxTokensDirectorEl) apiMaxTokensDirectorEl.value = directorApi.maxTokens || 2048;
 
-    const directorEnabledEl = document.getElementById('ttw-director-enabled');
-    if (directorEnabledEl) directorEnabledEl.checked = AppState.settings.directorEnabled !== false;
+    const directorModeEl = document.getElementById('ttw-director-mode');
+    if (directorModeEl) directorModeEl.value = AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api');
 
-    const directorFallbackEl = document.getElementById('ttw-director-fallback-main');
-    if (directorFallbackEl) directorFallbackEl.checked = AppState.settings.directorAutoFallbackToMain !== false;
+    const directorFallbackEl = document.getElementById('ttw-director-fallback-on-error');
+    if (directorFallbackEl) directorFallbackEl.checked = AppState.settings.directorFallbackOnError !== false;
 
     const directorRunEveryTurnEl = document.getElementById('ttw-director-run-every-turn');
     if (directorRunEveryTurnEl) directorRunEveryTurnEl.checked = AppState.settings.directorRunEveryTurn !== false;

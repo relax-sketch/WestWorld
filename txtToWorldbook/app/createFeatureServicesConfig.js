@@ -1,12 +1,13 @@
 export function createFeatureServicesConfig(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
+        packagePolicyService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
         ModalFactory,
         confirmAction,
-        defaultSettings,
         defaultMergePrompt,
         defaultConsolidatePrompt,
         naturalSortEntryNames,
@@ -59,12 +60,13 @@ export function createFeatureServicesConfig(deps = {}) {
 
     return {
         AppState,
+        promptRegistryService,
+        packagePolicyService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
         ModalFactory,
         confirmAction,
-        defaultSettings,
         defaultMergePrompt,
         defaultConsolidatePrompt,
         naturalSortEntryNames,
