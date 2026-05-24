@@ -33,6 +33,8 @@
 
 ## Task 1: Add The Prompt Registry Core And Settings Schema
 
+**Status:** Completed (`43c3797`)
+
 **Files:**
 - Modify: `txtToWorldbook/core/constants.js`
 - Create: `txtToWorldbook/services/promptRegistryService.js`
@@ -40,9 +42,9 @@
 - Modify: `txtToWorldbook/main.js`
 - Create: `tests/promptRegistryService.test.js`
 
-- [ ] Before editing, record the current BOM state of `txtToWorldbook/core/constants.js` and confirm it is UTF-8 with BOM.
-- [ ] Add failing tests for immutable defaults, explicit empty overrides, global composition, no-global module rendering, restore-default behavior, and missing-placeholder warnings.
-- [ ] Add new settings defaults without deleting existing legacy fields yet:
+- [x] Before editing, record the current BOM state of `txtToWorldbook/core/constants.js` and confirm it is UTF-8 with BOM.
+- [x] Add failing tests for immutable defaults, explicit empty overrides, global composition, no-global module rendering, restore-default behavior, and missing-placeholder warnings.
+- [x] Add new settings defaults without deleting existing legacy fields yet:
 
 ```js
 promptConfigVersion: 1,
@@ -55,7 +57,7 @@ directorMode: 'api',
 directorFallbackOnError: true,
 ```
 
-- [ ] Define stable module identifiers and fixed baseline content derived from the existing prompt literals/default constants:
+- [x] Define stable module identifiers and fixed baseline content derived from the existing prompt literals/default constants:
 
 ```js
 export const PROMPT_MODULE_IDS = Object.freeze({
@@ -86,7 +88,7 @@ export const PROMPT_MODULE_IDS = Object.freeze({
 });
 ```
 
-- [ ] Implement a pure service API whose default definitions are never written back as editable defaults:
+- [x] Implement a pure service API whose default definitions are never written back as editable defaults:
 
 ```js
 listModules()
@@ -99,10 +101,10 @@ getWarnings(id, layers = getResolvedModule(id))
 migrateLegacySettings(settings)
 ```
 
-- [ ] Resolve overrides using property presence, not truthiness, so `{ body: '' }` remains an intentional saved value and produces warnings instead of silently restoring a default.
-- [ ] Ensure `composeRequest()` appends the Chinese language module when appropriate, applies `promptGlobal.prefix` and `promptGlobal.suffix` exactly once, and supports `{ includeGlobal: false }` for injection-only rendering.
-- [ ] Wire the new pure service through core creation/main dependency injection without migrating call sites in this task.
-- [ ] Re-run tests and verify the BOM state of `constants.js` remains unchanged.
+- [x] Resolve overrides using property presence, not truthiness, so `{ body: '' }` remains an intentional saved value and produces warnings instead of silently restoring a default.
+- [x] Ensure `composeRequest()` appends the Chinese language module when appropriate, applies `promptGlobal.prefix` and `promptGlobal.suffix` exactly once, and supports `{ includeGlobal: false }` for injection-only rendering.
+- [x] Wire the new pure service through core creation/main dependency injection without migrating call sites in this task.
+- [x] Re-run tests and verify the BOM state of `constants.js` remains unchanged.
 
 **Test command:**
 
@@ -121,16 +123,18 @@ git commit -m "feat: add layered prompt registry core"
 
 ## Task 2: Migrate Legacy Prompt Settings And Category Prompt Layers
 
+**Status:** Completed (`c3e90ee`)
+
 **Files:**
 - Modify: `txtToWorldbook/services/settingsPersistenceService.js`
 - Modify: `txtToWorldbook/services/categoryPersistenceService.js`
 - Modify: `tests/promptRegistryService.test.js`
 - Create: `tests/categoryPersistenceService.test.js`
 
-- [ ] Add failing tests that migrate legacy `custom*Prompt`, existing director suffixes, shared prefix selection, and existing `contentGuide` values without losing user content.
-- [ ] Make local settings load call `migrateLegacySettings()` once when `promptConfigVersion` is absent or older, retaining local API values in localStorage.
-- [ ] Map existing editable defaults into the new modules, including existing director suffix settings; retain legacy read compatibility only as needed for migration.
-- [ ] Upgrade category prompt state to layered values:
+- [x] Add failing tests that migrate legacy `custom*Prompt`, existing director suffixes, shared prefix selection, and existing `contentGuide` values without losing user content.
+- [x] Make local settings load call `migrateLegacySettings()` once when `promptConfigVersion` is absent or older, retaining local API values in localStorage.
+- [x] Map existing editable defaults into the new modules, including existing director suffix settings; retain legacy read compatibility only as needed for migration.
+- [x] Upgrade category prompt state to layered values:
 
 ```js
 promptLayers: {
@@ -140,9 +144,9 @@ promptLayers: {
 }
 ```
 
-- [ ] For built-in categories, use the existing `DEFAULT_WORLDBOOK_CATEGORIES[].contentGuide` as the immutable body baseline; for user-created categories, create the initial baseline from the current generated body text and keep later user edits as overrides.
-- [ ] Update `generateDynamicJsonTemplate()` to render each category's layered content, while preserving non-prompt structural fields used to build the output JSON shape.
-- [ ] Confirm warning-only validation allows blank category body or missing runtime placeholders to be saved.
+- [x] For built-in categories, use the existing `DEFAULT_WORLDBOOK_CATEGORIES[].contentGuide` as the immutable body baseline; for user-created categories, create the initial baseline from the current generated body text and keep later user edits as overrides.
+- [x] Update `generateDynamicJsonTemplate()` to render each category's layered content, while preserving non-prompt structural fields used to build the output JSON shape.
+- [x] Confirm warning-only validation allows blank category body or missing runtime placeholders to be saved.
 
 **Test command:**
 
@@ -161,6 +165,8 @@ git commit -m "feat: migrate prompt settings and category layers"
 
 ## Task 3: Build The Registry-Driven Prompt Editor And Preview
 
+**Status:** Completed (`0fcee71`)
+
 **Files:**
 - Create: `txtToWorldbook/ui/promptEditorView.js`
 - Modify: `txtToWorldbook/ui/settingsPanel.js`
@@ -169,12 +175,12 @@ git commit -m "feat: migrate prompt settings and category layers"
 - Modify: `txtToWorldbook/ui/createUiHelpers.js`
 - Modify: `txtToWorldbook/main.js`
 
-- [ ] Before editing, record and later preserve BOM for `settingsPanel.js` and `eventBindings.js`.
-- [ ] Replace the hard-coded prompt textarea list with a registry host and a new view that enumerates every registered module, including category modules and local fallback modules.
-- [ ] Provide editable and savable `prefix`, `body`, and `suffix` inputs for every prompt module; render global prefix/global suffix separately above module cards.
-- [ ] Add per-module “恢复默认” actions that call `resetOverride(id)` and restore the immutable project default rather than rewriting the baseline.
-- [ ] Display warnings beside a module when required placeholders are absent or a module is blank; do not block save.
-- [ ] Keep prompt preset and message-chain editing exposed as prompt configuration, and add director controls:
+- [x] Before editing, record and later preserve BOM for `settingsPanel.js` and `eventBindings.js`.
+- [x] Replace the hard-coded prompt textarea list with a registry host and a new view that enumerates every registered module, including category modules and local fallback modules.
+- [x] Provide editable and savable `prefix`, `body`, and `suffix` inputs for every prompt module; render global prefix/global suffix separately above module cards.
+- [x] Add per-module “恢复默认” actions that call `resetOverride(id)` and restore the immutable project default rather than rewriting the baseline.
+- [x] Display warnings beside a module when required placeholders are absent or a module is blank; do not block save.
+- [x] Keep prompt preset and message-chain editing exposed as prompt configuration, and add director controls:
 
 ```html
 <select id="ttw-director-mode">
@@ -185,9 +191,9 @@ git commit -m "feat: migrate prompt settings and category layers"
 <input type="checkbox" id="ttw-director-fallback-on-error">
 ```
 
-- [ ] Update preview to show composed global layers for complete requests and an explicit injection preview labeled as not using global layers.
-- [ ] Wire view events through existing UI helpers and settings persistence; avoid duplicating registry logic inside DOM handlers.
-- [ ] Do not add automated browser/UI tests; perform only import/syntax loading through Node in this task.
+- [x] Update preview to show composed global layers for complete requests and an explicit injection preview labeled as not using global layers.
+- [x] Wire view events through existing UI helpers and settings persistence; avoid duplicating registry logic inside DOM handlers.
+- [x] Do not add automated browser/UI tests; perform only import/syntax loading through Node in this task.
 
 **Verification commands:**
 
@@ -208,6 +214,8 @@ git commit -m "feat: expose registry based prompt editor"
 ```
 
 ## Task 4: Route Non-Director Prompt Call Sites Through The Registry
+
+**Status:** In Progress
 
 **Files:**
 - Modify: `txtToWorldbook/services/promptService.js`
