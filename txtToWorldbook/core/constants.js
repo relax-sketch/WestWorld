@@ -469,6 +469,12 @@ export const defaultAliasMergePrompt = `你是{categoryName}识别专家。请�
 }`;
 
 export const defaultSettings = {
+    promptConfigVersion: 1,
+    promptGlobal: {
+        prefix: '',
+        suffix: '',
+    },
+    promptOverrides: {},
     chunkSize: 8000,
     minChunkSize: 1500,
     enablePlotOutline: false,
@@ -521,6 +527,8 @@ export const defaultSettings = {
         maxTokens: 2048,
     },
     directorEnabled: true,
+    directorMode: 'api',
+    directorFallbackOnError: true,
     directorAutoFallbackToMain: true,
     directorRunEveryTurn: true,
     directorInjectionMode: 'loose',

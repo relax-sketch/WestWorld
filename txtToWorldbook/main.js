@@ -626,6 +626,9 @@ const {
 // - 数据规范化
 
 const coreServices = createCoreServices({
+    promptRegistryDeps: {
+        AppState,
+    },
     promptDeps: {
         AppState,
         getEnabledCategories,
@@ -743,6 +746,7 @@ const coreServices = createCoreServices({
     }),
 });
 const {
+    promptRegistryService,
     promptService,
     parserService,
     apiService,

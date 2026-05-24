@@ -1,0 +1,109 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+    PROMPT_MODULE_IDS,
+    createPromptRegistryService,
+} from '../txtToWorldbook/services/promptRegistryService.js';
+import {
+    defaultDirectorInjectionPrompt,
+    defaultWorldbookPrompt,
+} from '../txtToWorldbook/core/constants.js';
+
+function createState(overrides = {}) {
+    return {
+        settings: {
+            language: 'en',
+            promptGlobal: { prefix: '', suffix: '' },
+            promptOverrides: {},
+            ...overrides,
+        },
+    };
+}
+
+test('registry exposes immutable project defaults for existing prompts', () => {
+    const registry = createPromptRegistryService({ AppState: createState() });
+
+    assert.equal(
+        registry.getResolvedModule(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM).body,
+        defaultWorldbookPrompt,
+    );
+    assert.equal(
+        registry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_INJECTION).body,
+        defaultDirectorInjectionPrompt,
+    );
+});
+
+test('an explicit empty override is preserved and warns rather than restoring default', () => {
+    const AppState = createState({
+        promptOverrides: {
+            [PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM]: { body: '' },
+        },
+    });
+    const registry = createPromptRegistryService({ AppState });
+
+    const resolved = registry.getResolvedModule(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM);
+    const warnings = registry.getWarnings(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM, resolved);
+
+    assert.equal(resolved.body, '');
+    assert.equal(warnings.some((warning) => warning.type === 'empty-body'), true);
+    assert.equal(warnings.some((warning) => warning.type === 'missing-placeholder'), true);
+});
+
+test('complete requests apply global layers once and language prompt when enabled', () => {
+    const AppState = createState({
+        language: 'zh',
+        promptGlobal: { prefix: 'GLOBAL BEFORE', suffix: 'GLOBAL AFTER' },
+        promptOverrides: {
+            [PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM]: { body: 'MAIN {DYNAMIC_JSON_TEMPLATE}' },
+            [PROMPT_MODULE_IDS.WORLDBOOK_PLOT]: { body: 'PLOT' },
+        },
+    });
+    const registry = createPromptRegistryService({ AppState });
+
+    const result = registry.composeRequest([
+        PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM,
+        PROMPT_MODULE_IDS.WORLDBOOK_PLOT,
+    ]);
+
+    assert.equal(result.includes('\u8bf7\u7528\u4e2d\u6587\u56de\u590d\u3002'), true);
+    assert.equal(result.match(/GLOBAL BEFORE/g)?.length, 1);
+    assert.equal(result.match(/GLOBAL AFTER/g)?.length, 1);
+    assert.equal(result.includes('MAIN {DYNAMIC_JSON_TEMPLATE}'), true);
+    assert.equal(result.includes('PLOT'), true);
+});
+
+test('injection rendering can bypass global and language layers', () => {
+    const AppState = createState({
+        language: 'zh',
+        promptGlobal: { prefix: 'GLOBAL BEFORE', suffix: 'GLOBAL AFTER' },
+        promptOverrides: {
+            [PROMPT_MODULE_IDS.DIRECTOR_INJECTION]: { body: 'INJECTION ONLY' },
+        },
+    });
+    const registry = createPromptRegistryService({ AppState });
+
+    const result = registry.composeRequest(
+        [PROMPT_MODULE_IDS.DIRECTOR_INJECTION],
+        {},
+        { includeGlobal: false },
+    );
+
+    assert.equal(result, 'INJECTION ONLY');
+    assert.equal(result.includes('GLOBAL'), false);
+    assert.equal(result.includes('\u8bf7\u7528\u4e2d\u6587'), false);
+});
+
+test('reset override restores the fixed project baseline', () => {
+    const AppState = createState();
+    const registry = createPromptRegistryService({ AppState });
+
+    registry.setOverride(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM, { body: 'CHANGED' });
+    assert.equal(registry.getResolvedModule(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM).body, 'CHANGED');
+
+    registry.resetOverride(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM);
+    assert.equal(
+        registry.getResolvedModule(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM).body,
+        defaultWorldbookPrompt,
+    );
+});
