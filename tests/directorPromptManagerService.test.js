@@ -39,7 +39,7 @@ function makePromptManager() {
     return promptManager;
 }
 
-test('ensureDirectorPromptManagerEntry creates an absolute injection prompt after chatHistory', () => {
+test('ensureDirectorPromptManagerEntry creates a relative injection prompt after chatHistory', () => {
     const promptManager = makePromptManager();
     const result = ensureDirectorPromptManagerEntry(promptManager);
 
@@ -47,9 +47,9 @@ test('ensureDirectorPromptManagerEntry creates an absolute injection prompt afte
     const prompt = promptManager.serviceSettings.prompts.find((item) => item.identifier === DIRECTOR_PROMPT_MANAGER_IDENTIFIER);
     assert.equal(prompt.name, 'WestWorld Director');
     assert.equal(prompt.role, 'system');
-    assert.equal(prompt.injection_position, 1);
-    assert.equal(prompt.injection_depth, 4);
-    assert.equal(prompt.injection_order, 100);
+    assert.equal(prompt.injection_position, 0);
+    assert.equal(Object.hasOwn(prompt, 'injection_depth'), false);
+    assert.equal(Object.hasOwn(prompt, 'injection_order'), false);
     assert.equal(prompt.extension, true);
 
     const order = promptManager.getPromptOrderForCharacter(promptManager.activeCharacter);

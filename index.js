@@ -335,7 +335,7 @@ function getDirectorSkipReason(eventData) {
 
 function getDirectorPromptManagerOptions() {
     return {
-        injectionPosition: INJECTION_POSITION?.ABSOLUTE ?? 1,
+        injectionPosition: INJECTION_POSITION?.RELATIVE ?? 0,
     };
 }
 
