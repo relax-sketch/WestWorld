@@ -531,6 +531,8 @@ export const defaultSettings = {
     directorFallbackOnError: true,
     directorAutoFallbackToMain: true,
     directorRunEveryTurn: true,
+    directorStateStartTag: '<state>',
+    directorStateEndTag: '</state>',
     directorInjectionMode: 'loose',
     forceChapterMarker: true,
     chapterRegexPattern: '^[\\s\\u3000\\uFEFF]*第\\s*[零一二三四五六七八九十百千万0-9]+\\s*[章回卷节部篇][^\\n\\r]{0,80}',

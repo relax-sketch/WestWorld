@@ -126,13 +126,13 @@ export function ensureDirectorPromptManagerEntry(promptManager, options = {}) {
         settings.prompts.push(prompt);
         changed = true;
     } else {
+        const previousInjectionPosition = prompt.injection_position;
         const previousDepth = prompt.injection_depth;
         const previousOrder = prompt.injection_order;
         const updates = {
             name: DIRECTOR_PROMPT_MANAGER_NAME,
             role: 'system',
             system_prompt: false,
-            injection_position: injectionPosition,
             extension: true,
         };
         Object.entries(updates).forEach(([key, value]) => {
@@ -141,6 +141,10 @@ export function ensureDirectorPromptManagerEntry(promptManager, options = {}) {
                 changed = true;
             }
         });
+        if (!Number.isFinite(Number(previousInjectionPosition))) {
+            prompt.injection_position = injectionPosition;
+            changed = true;
+        }
         if (!Number.isFinite(Number(previousDepth))) {
             prompt.injection_depth = DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH;
             changed = true;

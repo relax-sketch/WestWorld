@@ -88,6 +88,17 @@ ${buildAiRoutePresetsHtml()}
         <input type="checkbox" id="ttw-director-run-every-turn" checked>
         <span>每回合运行导演判定</span>
     </label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <label style="display:flex;flex-direction:column;gap:4px;margin:0;">
+            <span style="font-size:12px;color:var(--ttw-text-secondary);">状态开始标签</span>
+            <input type="text" id="ttw-director-state-start-tag" class="ttw-input" placeholder="&lt;state&gt;">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;margin:0;">
+            <span style="font-size:12px;color:var(--ttw-text-secondary);">状态结束标签</span>
+            <input type="text" id="ttw-director-state-end-tag" class="ttw-input" placeholder="&lt;/state&gt;">
+        </label>
+    </div>
+    <div class="ttw-setting-hint">聊天栏从最后一条 AI 回复的状态标签内读取文本，只显示最多四个字。</div>
 </div>
 ${buildApiConfigCard('main', '🧠 主AI配置')}
 ${buildApiConfigCard('director', '🎬 导演AI配置')}
@@ -1042,6 +1053,12 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const directorRunEveryTurnEl = document.getElementById('ttw-director-run-every-turn');
     if (directorRunEveryTurnEl) directorRunEveryTurnEl.checked = AppState.settings.directorRunEveryTurn !== false;
+
+    const directorStateStartTagEl = document.getElementById('ttw-director-state-start-tag');
+    if (directorStateStartTagEl) directorStateStartTagEl.value = AppState.settings.directorStateStartTag || '<state>';
+
+    const directorStateEndTagEl = document.getElementById('ttw-director-state-end-tag');
+    if (directorStateEndTagEl) directorStateEndTagEl.value = AppState.settings.directorStateEndTag || '</state>';
 
     const forceChapterMarkerEl = document.getElementById('ttw-force-chapter-marker');
     if (forceChapterMarkerEl) forceChapterMarkerEl.checked = AppState.settings.forceChapterMarker;

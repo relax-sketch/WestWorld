@@ -138,6 +138,8 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.directorFallbackOnError = document.getElementById('ttw-director-fallback-on-error')?.checked ?? AppState.settings.directorFallbackOnError ?? true;
         AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
+        AppState.settings.directorStateStartTag = document.getElementById('ttw-director-state-start-tag')?.value || AppState.settings.directorStateStartTag || '<state>';
+        AppState.settings.directorStateEndTag = document.getElementById('ttw-director-state-end-tag')?.value || AppState.settings.directorStateEndTag || '</state>';
 
         // Backward compatibility mirror fields
         AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
@@ -206,6 +208,8 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorFallbackOnError = parsed.directorFallbackOnError ?? parsed.directorAutoFallbackToMain ?? true;
                 AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
+                AppState.settings.directorStateStartTag = parsed.directorStateStartTag || AppState.settings.directorStateStartTag || '<state>';
+                AppState.settings.directorStateEndTag = parsed.directorStateEndTag || AppState.settings.directorStateEndTag || '</state>';
 
                 // Backward compatibility mirror fields
                 AppState.settings.customApiProvider = migratedMainApi.provider;

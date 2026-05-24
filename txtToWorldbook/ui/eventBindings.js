@@ -872,6 +872,10 @@ export function bindSettingEvents(deps = {}) {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
+    ['ttw-director-state-start-tag', 'ttw-director-state-end-tag'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', saveCurrentSettings);
+    });
     const directorMode = document.getElementById('ttw-director-mode');
     if (directorMode) directorMode.addEventListener('change', () => {
         AppState.settings.directorMode = directorMode.value;

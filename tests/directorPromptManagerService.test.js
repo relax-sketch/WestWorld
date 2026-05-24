@@ -60,6 +60,7 @@ test('setDirectorPromptManagerContent preserves user depth and order', () => {
     const promptManager = makePromptManager();
     ensureDirectorPromptManagerEntry(promptManager);
     const prompt = promptManager.serviceSettings.prompts.find((item) => item.identifier === DIRECTOR_PROMPT_MANAGER_IDENTIFIER);
+    prompt.injection_position = 2;
     prompt.injection_depth = 7;
     prompt.injection_order = 250;
 
@@ -67,8 +68,22 @@ test('setDirectorPromptManagerContent preserves user depth and order', () => {
 
     assert.equal(result.ok, true);
     assert.equal(prompt.content, 'director sheet');
+    assert.equal(prompt.injection_position, 2);
     assert.equal(prompt.injection_depth, 7);
     assert.equal(prompt.injection_order, 250);
+});
+
+test('ensureDirectorPromptManagerEntry preserves disabled order entry', () => {
+    const promptManager = makePromptManager();
+    ensureDirectorPromptManagerEntry(promptManager);
+    const orderEntry = promptManager.getPromptOrderEntry(promptManager.activeCharacter, DIRECTOR_PROMPT_MANAGER_IDENTIFIER);
+    orderEntry.enabled = false;
+
+    const result = ensureDirectorPromptManagerEntry(promptManager);
+
+    assert.equal(result.ok, true);
+    assert.equal(orderEntry.enabled, false);
+    assert.equal(result.activeEnabled, false);
 });
 
 test('clearDirectorPromptManagerContent keeps the entry but clears stale content', () => {
