@@ -107,3 +107,38 @@ test('reset override restores the fixed project baseline', () => {
         defaultWorldbookPrompt,
     );
 });
+
+test('legacy prompt fields migrate into layered overrides without losing API settings', () => {
+    const AppState = createState();
+    const registry = createPromptRegistryService({ AppState });
+    const legacy = {
+        customWorldbookPrompt: 'LEGACY WORLDBOOK',
+        customDirectorFrameworkPrompt: 'LEGACY FRAMEWORK',
+        customDirectorFrameworkSuffix: 'FRAMEWORK END',
+        customDirectorInjectionPrompt: 'LEGACY INJECTION',
+        customDirectorInjectionSuffix: 'INJECTION END',
+        promptPrefixPreset: 'LEGACY GLOBAL START',
+        customSuffixPrompt: 'LEGACY GLOBAL END',
+        mainApi: { apiKey: 'local-secret' },
+        directorEnabled: false,
+    };
+
+    const migrated = registry.migrateLegacySettings(legacy);
+
+    assert.equal(migrated.promptConfigVersion, 1);
+    assert.deepEqual(migrated.mainApi, { apiKey: 'local-secret' });
+    assert.deepEqual(migrated.promptGlobal, {
+        prefix: 'LEGACY GLOBAL START',
+        suffix: 'LEGACY GLOBAL END',
+    });
+    assert.equal(migrated.promptOverrides[PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM].body, 'LEGACY WORLDBOOK');
+    assert.deepEqual(migrated.promptOverrides[PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK], {
+        body: 'LEGACY FRAMEWORK',
+        suffix: 'FRAMEWORK END',
+    });
+    assert.deepEqual(migrated.promptOverrides[PROMPT_MODULE_IDS.DIRECTOR_INJECTION], {
+        body: 'LEGACY INJECTION',
+        suffix: 'INJECTION END',
+    });
+    assert.equal(migrated.directorMode, 'off');
+});

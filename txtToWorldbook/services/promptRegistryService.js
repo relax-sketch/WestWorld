@@ -206,7 +206,63 @@ export function createPromptRegistryService(deps = {}) {
     }
 
     function migrateLegacySettings(settings = {}) {
-        return { ...settings };
+        const source = settings && typeof settings === 'object' ? settings : {};
+        const alreadyLayered = Number(source.promptConfigVersion) >= 1;
+        const migrated = {
+            ...source,
+            promptConfigVersion: 1,
+            promptGlobal: {
+                prefix: typeof source.promptGlobal?.prefix === 'string' ? source.promptGlobal.prefix : '',
+                suffix: typeof source.promptGlobal?.suffix === 'string' ? source.promptGlobal.suffix : '',
+            },
+            promptOverrides: {
+                ...(source.promptOverrides || {}),
+            },
+        };
+        if (alreadyLayered) return migrated;
+
+        if (!migrated.promptGlobal.prefix && typeof source.promptPrefixPreset === 'string') {
+            migrated.promptGlobal.prefix = source.promptPrefixPreset;
+        }
+        if (!migrated.promptGlobal.suffix && typeof source.customSuffixPrompt === 'string') {
+            migrated.promptGlobal.suffix = source.customSuffixPrompt;
+        }
+
+        const bodyMappings = [
+            ['customWorldbookPrompt', PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM],
+            ['customPlotPrompt', PROMPT_MODULE_IDS.WORLDBOOK_PLOT],
+            ['customStylePrompt', PROMPT_MODULE_IDS.WORLDBOOK_STYLE],
+            ['customMergePrompt', PROMPT_MODULE_IDS.MERGE_IMPORTED],
+            ['customConsolidatePrompt', PROMPT_MODULE_IDS.MERGE_CONSOLIDATE],
+            ['customAliasMergePrompt', PROMPT_MODULE_IDS.MERGE_ALIAS],
+            ['customChapterAssetsPrompt', PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS],
+            ['customDirectorFrameworkPrompt', PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK],
+            ['customDirectorInjectionPrompt', PROMPT_MODULE_IDS.DIRECTOR_INJECTION],
+            ['customRerollPrompt', PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL],
+        ];
+        for (const [legacyKey, moduleId] of bodyMappings) {
+            if (typeof source[legacyKey] !== 'string' || source[legacyKey] === '') continue;
+            migrated.promptOverrides[moduleId] = {
+                ...(migrated.promptOverrides[moduleId] || {}),
+                body: source[legacyKey],
+            };
+        }
+
+        const suffixMappings = [
+            ['customDirectorFrameworkSuffix', PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK],
+            ['customDirectorInjectionSuffix', PROMPT_MODULE_IDS.DIRECTOR_INJECTION],
+        ];
+        for (const [legacyKey, moduleId] of suffixMappings) {
+            if (typeof source[legacyKey] !== 'string' || source[legacyKey] === '') continue;
+            migrated.promptOverrides[moduleId] = {
+                ...(migrated.promptOverrides[moduleId] || {}),
+                suffix: source[legacyKey],
+            };
+        }
+
+        migrated.directorMode = source.directorEnabled === false ? 'off' : 'api';
+        migrated.directorFallbackOnError = source.directorAutoFallbackToMain !== false;
+        return migrated;
     }
 
     return {

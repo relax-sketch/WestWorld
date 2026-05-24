@@ -13,6 +13,50 @@ export function createCategoryPersistenceService(deps) {
         return JSON.parse(JSON.stringify(value));
     }
 
+    function generatedGuide(name) {
+        return `\u57fa\u4e8e\u539f\u6587\u7684${name || ''}\u63cf\u8ff0`;
+    }
+
+    function normalizeCategoryPromptLayers(category, defaultCategory = null) {
+        const current = category || {};
+        const storedDefault = current.promptDefaultLayers || {};
+        const baselineBody = typeof defaultCategory?.contentGuide === 'string'
+            ? defaultCategory.contentGuide
+            : (typeof storedDefault.body === 'string'
+                ? storedDefault.body
+                : (typeof current.contentGuide === 'string' ? current.contentGuide : generatedGuide(current.name)));
+        const promptLayers = current.promptLayers || {};
+        const body = Object.prototype.hasOwnProperty.call(promptLayers, 'body')
+            ? String(promptLayers.body ?? '')
+            : (typeof current.contentGuide === 'string' ? current.contentGuide : baselineBody);
+        return {
+            ...current,
+            contentGuide: body,
+            promptDefaultLayers: {
+                prefix: typeof storedDefault.prefix === 'string' ? storedDefault.prefix : '',
+                body: baselineBody,
+                suffix: typeof storedDefault.suffix === 'string' ? storedDefault.suffix : '',
+            },
+            promptLayers: {
+                prefix: typeof promptLayers.prefix === 'string' ? promptLayers.prefix : '',
+                body,
+                suffix: typeof promptLayers.suffix === 'string' ? promptLayers.suffix : '',
+            },
+        };
+    }
+
+    function normalizeCategories(categories) {
+        const defaults = new Map((defaultWorldbookCategories || []).map((category) => [category.name, category]));
+        return (Array.isArray(categories) ? categories : []).map((category) => (
+            normalizeCategoryPromptLayers(category, defaults.get(category?.name) || null)
+        ));
+    }
+
+    function renderCategoryPrompt(category) {
+        const layers = normalizeCategoryPromptLayers(category).promptLayers;
+        return [layers.prefix, layers.body, layers.suffix].filter((part) => part !== '').join('\n\n');
+    }
+
     function getDefaultCategoriesFingerprint() {
         const normalized = (defaultWorldbookCategories || []).map((category) => ({
             name: category?.name || '',
@@ -54,25 +98,25 @@ export function createCategoryPersistenceService(deps) {
         for (const saved of (Array.isArray(savedCategories) ? savedCategories : [])) {
             const defaultCategory = defaultByName.get(saved?.name);
             if (!defaultCategory) {
-                synced.push(saved);
+                synced.push(normalizeCategoryPromptLayers(saved));
                 continue;
             }
 
             seenDefaultNames.add(defaultCategory.name);
             const userGuide = (saved?.contentGuide || '').trim();
             const defaultGuide = (defaultCategory?.contentGuide || '').trim();
-            synced.push({
+            synced.push(normalizeCategoryPromptLayers({
                 ...saved,
                 isBuiltin: !!defaultCategory.isBuiltin,
                 entryExample: defaultCategory.entryExample,
                 keywordsExample: clone(defaultCategory.keywordsExample || []),
                 contentGuide: userGuide || defaultGuide,
-            });
+            }, defaultCategory));
         }
 
         for (const defaultCategory of defaults) {
             if (seenDefaultNames.has(defaultCategory.name)) continue;
-            synced.push(clone(defaultCategory));
+            synced.push(normalizeCategoryPromptLayers(clone(defaultCategory), defaultCategory));
         }
 
         return synced;
@@ -92,7 +136,7 @@ export function createCategoryPersistenceService(deps) {
         try {
             const saved = await MemoryHistoryDB.getCustomCategories();
             if (saved && Array.isArray(saved) && saved.length > 0) {
-                AppState.persistent.customCategories = saved;
+                AppState.persistent.customCategories = normalizeCategories(saved);
                 hasLoadedSavedCategories = true;
             }
         } catch (error) {
@@ -100,7 +144,7 @@ export function createCategoryPersistenceService(deps) {
         }
 
         if (!hasLoadedSavedCategories) {
-            AppState.persistent.customCategories = clone(defaultWorldbookCategories || []);
+            AppState.persistent.customCategories = normalizeCategories(clone(defaultWorldbookCategories || []));
             await saveCustomCategories();
             setStoredDefaultCategoriesFingerprint(getDefaultCategoriesFingerprint());
             return;
@@ -117,7 +161,7 @@ export function createCategoryPersistenceService(deps) {
     }
 
     async function resetToDefaultCategories() {
-        AppState.persistent.customCategories = JSON.parse(JSON.stringify(defaultWorldbookCategories));
+        AppState.persistent.customCategories = normalizeCategories(JSON.parse(JSON.stringify(defaultWorldbookCategories)));
         await saveCustomCategories();
         setStoredDefaultCategoriesFingerprint(getDefaultCategoriesFingerprint());
         Logger.info('Category', '已重置为默认分类配置');
@@ -129,7 +173,10 @@ export function createCategoryPersistenceService(deps) {
 
         const defaultCategory = defaultWorldbookCategories.find(item => item.name === category.name);
         if (defaultCategory) {
-            AppState.persistent.customCategories[index] = JSON.parse(JSON.stringify(defaultCategory));
+            AppState.persistent.customCategories[index] = normalizeCategoryPromptLayers(
+                JSON.parse(JSON.stringify(defaultCategory)),
+                defaultCategory,
+            );
         } else {
             AppState.persistent.customCategories.splice(index, 1);
         }
@@ -138,6 +185,7 @@ export function createCategoryPersistenceService(deps) {
     }
 
     function getEnabledCategories() {
+        AppState.persistent.customCategories = normalizeCategories(AppState.persistent.customCategories);
         return AppState.persistent.customCategories.filter(category => category.enabled);
     }
 
@@ -150,7 +198,7 @@ export function createCategoryPersistenceService(deps) {
             parts.push(`"${category.name}": {
 "${category.entryExample}": {
 "关键词": ${JSON.stringify(category.keywordsExample)},
-"内容": "${category.contentGuide}"
+"内容": "${renderCategoryPrompt(category)}"
 }
 }`);
         }

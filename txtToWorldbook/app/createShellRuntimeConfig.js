@@ -10,6 +10,7 @@ export function createShellRuntimeConfig(deps = {}) {
         updateSettingsUI,
         updateChapterRegexUI,
         handleProviderChange,
+        promptRegistryService,
         switchApiTab,
         ensureModalStyles,
         bindModalEvents,
@@ -113,6 +114,7 @@ export function createShellRuntimeConfig(deps = {}) {
             updateSettingsUI,
             updateChapterRegexUI,
             handleProviderChange,
+            migrateLegacyPromptSettings: (...args) => promptRegistryService.migrateLegacySettings(...args),
         },
         createModalLifecycleDeps: {
             addModalStyles: ensureModalStyles,

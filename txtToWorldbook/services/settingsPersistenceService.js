@@ -5,6 +5,7 @@ export function createSettingsPersistenceService(deps) {
         updateSettingsUI,
         updateChapterRegexUI,
         handleProviderChange,
+        migrateLegacyPromptSettings = (settings) => settings,
     } = deps;
 
     const LEGACY_CHAPTER_PATTERNS = new Set([
@@ -159,8 +160,19 @@ export function createSettingsPersistenceService(deps) {
             const saved = localStorage.getItem(SETTINGS_STORAGE_KEY)
                 || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
             if (saved) {
-                const parsed = JSON.parse(saved);
-                AppState.settings = { ...defaultSettings, ...parsed };
+                const parsed = migrateLegacyPromptSettings(JSON.parse(saved));
+                AppState.settings = {
+                    ...defaultSettings,
+                    ...parsed,
+                    promptGlobal: {
+                        ...(defaultSettings.promptGlobal || {}),
+                        ...(parsed.promptGlobal || {}),
+                    },
+                    promptOverrides: {
+                        ...(defaultSettings.promptOverrides || {}),
+                        ...(parsed.promptOverrides || {}),
+                    },
+                };
 
                 const migratedMainApi = normalizeApiConfig(
                     parsed.mainApi,

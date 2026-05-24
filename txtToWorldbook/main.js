@@ -1224,6 +1224,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     updateSettingsUI,
     updateChapterRegexUI,
     handleProviderChange,
+    promptRegistryService,
     switchApiTab,
     ensureModalStyles,
     bindModalEvents: () => _bindModalEvents(),
