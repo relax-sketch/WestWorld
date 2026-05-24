@@ -868,7 +868,7 @@ export function bindSettingEvents(deps = {}) {
         });
     });
 
-    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion', 'ttw-director-enabled', 'ttw-director-fallback-main', 'ttw-director-run-every-turn'].forEach((id) => {
+    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion', 'ttw-director-enabled', 'ttw-director-decision-mode', 'ttw-director-run-every-turn'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });

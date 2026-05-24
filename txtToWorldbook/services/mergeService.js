@@ -11,6 +11,8 @@ export function createMergeService(deps = {}) {
         Logger,
         getAllVolumesWorldbook,
         getLanguagePrefix,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         updateStreamContent,
         Semaphore,
         callAPI,
@@ -335,6 +337,15 @@ export function createMergeService(deps = {}) {
         return suspectedGroups;
     }
 
+    function assembleAliasMergePrompt(body) {
+        if (typeof assembleTargetPrompt === 'function' && PROMPT_TARGETS?.ALIAS_MERGE) {
+            return assembleTargetPrompt(PROMPT_TARGETS.ALIAS_MERGE, body, {
+                finalInstruction: '返回JSON格式，不要输出解释、Markdown代码块或额外文字。',
+            });
+        }
+        return `${getLanguagePrefix()}${body}`;
+    }
+
     async function verifyDuplicatesWithAI(suspectedGroups, useParallel = true, threshold = 5, categoryName = '角色') {
         if (suspectedGroups.length === 0) return { pairResults: [], mergedGroups: [] };
 
@@ -386,10 +397,10 @@ export function createMergeService(deps = {}) {
                 result = result.split('{entityUnit}').join(entityUnit);
                 result = result.split('{entityPerson}').join(entityPerson);
                 result = result.split('{pairsContent}').join(pairsContent);
-                return getLanguagePrefix() + result;
+                return assembleAliasMergePrompt(result);
             }
 
-            return getLanguagePrefix() + `你是${categoryName}识别专家。请对以下每一对${categoryLabel}进行判断，判断它们是否为同一${entityType}。
+            return assembleAliasMergePrompt(`你是${categoryName}识别专家。请对以下每一对${categoryLabel}进行判断，判断它们是否为同一${entityType}。
 
 ## 待判断的${categoryLabel}配对
 ${pairsContent}
@@ -413,7 +424,7 @@ ${pairsContent}
         {"pair": 1, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": true, "mainName": "保留的名称", "reason": "判断依据"},
         {"pair": 2, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": false, "reason": "不是同一${entityPerson}的原因"}
     ]
-}`;
+}`);
         };
 
         const pairResults = [];

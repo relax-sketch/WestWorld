@@ -521,6 +521,7 @@ export const defaultSettings = {
         maxTokens: 2048,
     },
     directorEnabled: true,
+    directorDecisionMode: 'api-auto-fallback',
     directorAutoFallbackToMain: true,
     directorRunEveryTurn: true,
     directorInjectionMode: 'loose',

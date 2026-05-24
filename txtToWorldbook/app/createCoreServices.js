@@ -35,7 +35,11 @@ export function createCoreServices(deps = {}) {
     let processingService = null;
     function getProcessingService() {
         if (processingService) return processingService;
-        processingService = createProcessingService(resolveDeps(deps.processingDeps, context));
+        processingService = createProcessingService(resolveDeps(deps.processingDeps, {
+            ...context,
+            assembleTargetPrompt: promptService.assembleTargetPrompt,
+            PROMPT_TARGETS: promptService.PROMPT_TARGETS,
+        }));
         return processingService;
     }
 

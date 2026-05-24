@@ -76,10 +76,13 @@ ${buildAiRoutePresetsHtml()}
         <input type="checkbox" id="ttw-director-enabled" checked>
         <span>启用导演裁判（每回合运行）</span>
     </label>
-    <label class="ttw-checkbox-label" style="margin:0;">
-        <input type="checkbox" id="ttw-director-fallback-main" checked>
-        <span>导演API失败时启用本地导演兜底判定</span>
-    </label>
+    <label class="ttw-label" for="ttw-director-decision-mode">导演判定模式</label>
+    <select id="ttw-director-decision-mode" class="ttw-select">
+        <option value="api-auto-fallback">导演API，失败后本地兜底</option>
+        <option value="api-only">只用导演API，失败则中断</option>
+        <option value="local-only">始终使用本地兜底，不调用导演API</option>
+    </select>
+    <div class="ttw-help-text">本地兜底会根据当前节拍和上下文生成导演执行单，不请求导演API。</div>
     <label class="ttw-checkbox-label" style="margin:0;">
         <input type="checkbox" id="ttw-director-run-every-turn" checked>
         <span>每回合运行导演判定</span>
@@ -1042,8 +1045,13 @@ export function hydrateSettingsFromState(deps = {}) {
     const directorEnabledEl = document.getElementById('ttw-director-enabled');
     if (directorEnabledEl) directorEnabledEl.checked = AppState.settings.directorEnabled !== false;
 
-    const directorFallbackEl = document.getElementById('ttw-director-fallback-main');
-    if (directorFallbackEl) directorFallbackEl.checked = AppState.settings.directorAutoFallbackToMain !== false;
+    const directorDecisionModeEl = document.getElementById('ttw-director-decision-mode');
+    if (directorDecisionModeEl) {
+        const mode = ['api-auto-fallback', 'api-only', 'local-only'].includes(AppState.settings.directorDecisionMode)
+            ? AppState.settings.directorDecisionMode
+            : (AppState.settings.directorAutoFallbackToMain === false ? 'api-only' : 'api-auto-fallback');
+        directorDecisionModeEl.value = mode;
+    }
 
     const directorRunEveryTurnEl = document.getElementById('ttw-director-run-every-turn');
     if (directorRunEveryTurnEl) directorRunEveryTurnEl.checked = AppState.settings.directorRunEveryTurn !== false;

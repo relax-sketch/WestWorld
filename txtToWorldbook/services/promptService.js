@@ -1,3 +1,5 @@
+import { PROMPT_TARGETS, createPromptAssemblyService } from './promptAssemblyService.js';
+
 export function createPromptService(deps = {}) {
     const {
         AppState,
@@ -7,6 +9,7 @@ export function createPromptService(deps = {}) {
         defaultPlotPrompt,
         defaultStylePrompt,
     } = deps;
+    const promptAssemblyService = createPromptAssemblyService({ AppState });
 
     function getLanguagePrefix() {
         const langPrefix = AppState.settings.language === 'zh' ? '请用中文回复。\n\n' : '';
@@ -165,5 +168,12 @@ export function createPromptService(deps = {}) {
         buildSystemPrompt,
         getPreviousMemoryContext,
         getChapterForcePrompt,
+        PROMPT_TARGETS,
+        assembleTargetPrompt: promptAssemblyService.assembleTargetPrompt,
+        assembleDirectorFrameworkPrompt: promptAssemblyService.assembleDirectorFrameworkPrompt,
+        assembleDirectorInjectionPrompt: promptAssemblyService.assembleDirectorInjectionPrompt,
+        getLanguageOnlyPrefix: promptAssemblyService.getLanguageOnlyPrefix,
+        getGlobalPrefix: promptAssemblyService.getGlobalPrefix,
+        getGlobalSuffix: promptAssemblyService.getGlobalSuffix,
     };
 }

@@ -15,6 +15,8 @@
         mergeWorldbookDataWithHistory,
         getChapterForcePrompt,
         getLanguagePrefix,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         buildSystemPrompt,
         getPreviousMemoryContext,
         getEnabledCategories,
@@ -72,6 +74,18 @@
             output = output.split(`{${key}}`).join(value == null ? '' : String(value));
         }
         return output;
+    }
+
+    function assembleProcessingPrompt(target, body, options = {}) {
+        if (typeof assembleTargetPrompt === 'function' && PROMPT_TARGETS?.[target]) {
+            return assembleTargetPrompt(PROMPT_TARGETS[target], body, options);
+        }
+        const legacyPrefix = typeof getLanguagePrefix === 'function' ? getLanguagePrefix() : '';
+        const legacySuffix = String(AppState.settings?.customSuffixPrompt || '').trim();
+        return [legacyPrefix + String(body || '').trim(), legacySuffix, options.finalInstruction || '']
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
     }
 
     const transitionTo = (status) => {
@@ -2378,7 +2392,9 @@ ${snippets}
             PREVIOUS_OUTLINE: previousOutline,
             CHAPTER_CONTENT: memory.content || '',
         });
-        return `${getLanguagePrefix()}${promptBody}`;
+        return assembleProcessingPrompt('DIRECTOR_CHAPTER_ASSETS', promptBody, {
+            finalInstruction: '只输出章节资产JSON，不要输出解释、Markdown代码块或额外文字。',
+        });
 
     }
 
@@ -2651,19 +2667,19 @@ ${snippets}
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += getLanguagePrefix() + buildSystemPrompt();
+        let promptBody = chapterForcePrompt;
+        promptBody += buildSystemPrompt();
 
         const prevContext = getPreviousMemoryContext(index);
         if (prevContext) {
-            prompt += prevContext;
+            promptBody += prevContext;
         }
 
         if (index > 0 && AppState.memory.queue[index - 1].content) {
-            prompt += `\n\n前文结尾（供参考）：\n---\n${AppState.memory.queue[index - 1].content.slice(-800)}\n---\n`;
+            promptBody += `\n\n前文结尾（供参考）：\n---\n${AppState.memory.queue[index - 1].content.slice(-800)}\n---\n`;
         }
 
-        prompt += `\n\n当前需要分析的内容（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
+        promptBody += `\n\n当前需要分析的内容（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
 
         const enabledCatNamesList = getEnabledCategories().map(c => c.name);
         if (AppState.settings.enablePlotOutline) enabledCatNamesList.push('剧情大纲');
@@ -2671,20 +2687,20 @@ ${snippets}
 
         const enabledCatNamesStr = enabledCatNamesList.join('、');
 
-        prompt += `\n\n【输出限制】只允许输出以下分类：${enabledCatNamesStr}。禁止输出未列出的任何其他分类，直接输出JSON。`;
+        promptBody += `\n\n【输出限制】只允许输出以下分类：${enabledCatNamesStr}。禁止输出未列出的任何其他分类。`;
 
         if (AppState.settings.forceChapterMarker) {
-            prompt += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
-            prompt += chapterForcePrompt;
+            promptBody += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
+            promptBody += chapterForcePrompt;
         }
 
         if (customPromptSuffix) {
-            prompt += `\n\n${customPromptSuffix}`;
+            promptBody += `\n\n${customPromptSuffix}`;
         }
 
-        if (AppState.settings.customSuffixPrompt && AppState.settings.customSuffixPrompt.trim()) {
-            prompt += `\n\n${AppState.settings.customSuffixPrompt.trim()}`;
-        }
+        const prompt = assembleProcessingPrompt('TXT_TO_WORLDBOOK', promptBody, {
+            finalInstruction: '直接输出JSON格式结果，不要有其他内容。',
+        });
 
         updateStreamContent(`\n🔄 [第${chapterIndex}章] 开始处理: ${memory.title}\n`);
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
@@ -2910,38 +2926,39 @@ ${'='.repeat(50)}
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += getLanguagePrefix() + buildSystemPrompt();
+        let promptBody = chapterForcePrompt;
+        promptBody += buildSystemPrompt();
 
         const prevContext = getPreviousMemoryContext(index);
         if (prevContext) {
-            prompt += prevContext;
+            promptBody += prevContext;
         }
 
         if (index > 0) {
-            prompt += `\n\n上次阅读结尾：\n---\n${AppState.memory.queue[index - 1].content.slice(-200)}\n---\n`;
+            promptBody += `\n\n上次阅读结尾：\n---\n${AppState.memory.queue[index - 1].content.slice(-200)}\n---\n`;
             const relevantContext = buildRelevantWorldbookContext(memory.content);
             if (relevantContext) {
-                prompt += relevantContext;
+                promptBody += relevantContext;
             }
         }
-        prompt += `\n现在阅读的部分（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
+        promptBody += `\n现在阅读的部分（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
 
         if (index === 0 || index === AppState.memory.startIndex) {
-            prompt += '\n请开始分析小说内容。';
+            promptBody += '\n请开始分析小说内容。';
         } else if (AppState.processing.incrementalMode) {
-            prompt += '\n请增量更新世界书，只输出变更的条目。';
+            promptBody += '\n请增量更新世界书，只输出变更的条目。';
         } else {
-            prompt += '\n请累积补充世界书。';
+            promptBody += '\n请累积补充世界书。';
         }
 
         if (AppState.settings.forceChapterMarker) {
-            prompt += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
-            prompt += '\n直接输出JSON格式结果。';
-            prompt += chapterForcePrompt;
-        } else {
-            prompt += '\n直接输出JSON格式结果。';
+            promptBody += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
+            promptBody += chapterForcePrompt;
         }
+
+        const prompt = assembleProcessingPrompt('TXT_TO_WORLDBOOK', promptBody, {
+            finalInstruction: '直接输出JSON格式结果，不要有其他内容。',
+        });
 
         let chapterAssetsPromise = null;
         const throughputMode = resolveChapterCompletionMode() === 'throughput';

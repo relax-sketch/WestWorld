@@ -50,6 +50,8 @@ export function createFeatureServices(deps = {}) {
         Semaphore,
         callAPI,
         getLanguagePrefix,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         parseAIResponse,
         filterResponseContent,
         handleStopProcessing,
@@ -118,6 +120,8 @@ export function createFeatureServices(deps = {}) {
         Semaphore,
         callAPI,
         getLanguagePrefix,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         parseAIResponse,
     });
 
@@ -215,6 +219,8 @@ export function createFeatureServices(deps = {}) {
         updateWorldbookPreview,
         callAPI,
         getLanguagePrefix,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         parseAIResponse,
         filterResponseContent,
         escapeHtml: ListRenderer.escapeHtml,
@@ -224,6 +230,8 @@ export function createFeatureServices(deps = {}) {
         buildAliasMergePlanHtml,
         handleStopProcessing,
         setManualMergeHighlight,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
     });
 
     return {

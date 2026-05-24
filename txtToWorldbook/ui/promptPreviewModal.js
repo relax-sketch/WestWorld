@@ -5,13 +5,20 @@ export function createPromptPreviewModal(deps = {}) {
         ErrorHandler,
         alertAction,
         buildSystemPrompt,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         getChapterForcePrompt,
         getEnabledCategories,
     } = deps;
 
     function showPromptPreview() {
         try {
-            const prompt = buildSystemPrompt() || '';
+            const promptBody = buildSystemPrompt() || '';
+            const prompt = typeof assembleTargetPrompt === 'function' && PROMPT_TARGETS?.TXT_TO_WORLDBOOK
+                ? assembleTargetPrompt(PROMPT_TARGETS.TXT_TO_WORLDBOOK, promptBody, {
+                    finalInstruction: '直接输出JSON格式结果，不要有其他内容。',
+                })
+                : promptBody;
             const chapterForce = AppState.settings.forceChapterMarker ? getChapterForcePrompt(1) : '(已关闭)';
             const apiMode = AppState.settings.useTavernApi ? '酒馆API' : `自定义API (${AppState.settings.customApiProvider || '未设置'})`;
             const enabledCats = getEnabledCategories().map((c) => c.name).join(', ');

@@ -130,7 +130,12 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.mainApi = normalizeApiConfig(mainApi, AppState.settings.mainApi);
         AppState.settings.directorApi = normalizeApiConfig(directorApi, AppState.settings.directorApi);
         AppState.settings.directorEnabled = document.getElementById('ttw-director-enabled')?.checked ?? AppState.settings.directorEnabled ?? true;
-        AppState.settings.directorAutoFallbackToMain = document.getElementById('ttw-director-fallback-main')?.checked ?? AppState.settings.directorAutoFallbackToMain ?? true;
+        const directorDecisionModeEl = document.getElementById('ttw-director-decision-mode');
+        const selectedDirectorMode = directorDecisionModeEl?.value || AppState.settings.directorDecisionMode || '';
+        AppState.settings.directorDecisionMode = ['api-auto-fallback', 'api-only', 'local-only'].includes(selectedDirectorMode)
+            ? selectedDirectorMode
+            : (AppState.settings.directorAutoFallbackToMain === false ? 'api-only' : 'api-auto-fallback');
+        AppState.settings.directorAutoFallbackToMain = AppState.settings.directorDecisionMode === 'api-auto-fallback';
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
 
         // Backward compatibility mirror fields
@@ -186,6 +191,9 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorApi = migratedDirectorApi;
                 AppState.settings.directorEnabled = parsed.directorEnabled ?? true;
                 AppState.settings.directorAutoFallbackToMain = parsed.directorAutoFallbackToMain ?? true;
+                AppState.settings.directorDecisionMode = ['api-auto-fallback', 'api-only', 'local-only'].includes(parsed.directorDecisionMode)
+                    ? parsed.directorDecisionMode
+                    : (parsed.directorAutoFallbackToMain === false ? 'api-only' : 'api-auto-fallback');
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
 
                 // Backward compatibility mirror fields

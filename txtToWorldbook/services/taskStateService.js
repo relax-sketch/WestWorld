@@ -1,3 +1,10 @@
+import {
+    RESOURCE_TASK_STATE_TYPE,
+    buildResourceTaskState,
+    getIgnoredLegacyTaskStateKeys,
+    stripSensitiveTaskStateFields,
+} from './taskStatePackageService.js';
+
 export function createTaskStateService(deps = {}) {
     const {
         AppState,
@@ -96,10 +103,18 @@ export function createTaskStateService(deps = {}) {
         const tags = Array.isArray(source.tags)
             ? source.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 4)
             : [];
+        const summary = String(
+            source.event_summary
+            || source.eventSummary
+            || source.summary
+            || source.event
+            || source.description
+            || `事件点${index + 1}`
+        ).trim() || `事件点${index + 1}`;
         return {
             id: String(source.id || `b${index + 1}`).trim() || `b${index + 1}`,
-            summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
-            event_summary: String(source.event_summary || source.eventSummary || source.summary || source.event || source.description || `事件点${index + 1}`).trim() || `事件点${index + 1}`,
+            summary,
+            event_summary: summary,
             entryEvent: String(
                 source.entryEvent
                 || source.entry_event
@@ -115,9 +130,14 @@ export function createTaskStateService(deps = {}) {
                 || source.exist_condition
                 || source.existCondition
                 || source['exist condition']
-                || '等待用户行动或关键互动完成'
-            ).trim() || '等待用户行动或关键互动完成',
-            split_reason: String(source.split_reason || source.splitReason || source.reason || '用于保持叙事单元完整。').trim() || '用于保持叙事单元完整。',
+                || '等待用户行动或关键互动完成。'
+            ).trim() || '等待用户行动或关键互动完成。',
+            split_reason: String(
+                source.split_reason
+                || source.splitReason
+                || source.reason
+                || '用于保持叙事单元完整。'
+            ).trim() || '用于保持叙事单元完整。',
             self_check: normalizeSelfCheck(
                 source.self_check
                 || source.selfCheck
@@ -237,46 +257,18 @@ export function createTaskStateService(deps = {}) {
     }
 
     async function saveTaskState() {
-        const normalizedQueue = normalizeMemoryQueue(AppState.memory.queue);
-        const queueLength = normalizedQueue.length;
-        const state = {
-            version: TASK_STATE_VERSION,
-            type: TASK_STATE_TYPE,
-            timestamp: Date.now(),
-            memoryQueue: normalizedQueue,
-            generatedWorldbook: AppState.worldbook.generated,
-            worldbookVolumes: AppState.worldbook.volumes,
-            currentVolumeIndex: AppState.worldbook.currentVolumeIndex,
-            fileHash: AppState.file.hash,
-            settings: AppState.settings,
-            parallelConfig: AppState.config.parallel,
-            categoryLightSettings: AppState.config.categoryLight,
-            customWorldbookCategories: AppState.persistent.customCategories,
-            chapterRegexSettings: AppState.config.chapterRegex,
-            defaultWorldbookEntriesUI: AppState.persistent.defaultEntries,
-            categoryDefaultConfig: AppState.config.categoryDefault,
-            entryPositionConfig: AppState.config.entryPosition,
-            originalFileName: AppState.file.current ? AppState.file.current.name : null,
-            novelName: AppState.file.novelName || '',
-            experience: normalizeExperience(AppState.experience, queueLength),
-            processingState: {
-                incrementalMode: !!AppState.processing.incrementalMode,
-                volumeMode: !!AppState.processing.volumeMode,
-            },
-            queueState: {
-                startIndex: clampStartIndex(AppState.memory.startIndex, queueLength),
-                userSelectedIndex: Number.isInteger(AppState.memory.userSelectedIndex)
-                    ? clampStartIndex(AppState.memory.userSelectedIndex, queueLength)
-                    : null,
-            },
-        };
+        const state = buildResourceTaskState(AppState, {
+            normalizeMemoryQueue,
+            normalizeExperience,
+            clampStartIndex,
+        });
         const timeString = new Date()
             .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
             .replace(/[:/\s]/g, '')
             .replace(/,/g, '-');
 
-        const baseName = getExportBaseName('任务状态');
-        const fileName = `${baseName}-任务状态-${timeString}.json`;
+        const baseName = getExportBaseName('资源工程包');
+        const fileName = `${baseName}-资源工程包-${timeString}.json`;
 
         const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -286,7 +278,7 @@ export function createTaskStateService(deps = {}) {
         a.click();
         URL.revokeObjectURL(url);
         const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
-        ErrorHandler.showUserSuccess(`工程包已导出！已处理: ${processedCount}/${AppState.memory.queue.length}（含故事大纲与当前章节进度）`);
+        ErrorHandler.showUserSuccess(`资源工程包已导出！已处理: ${processedCount}/${AppState.memory.queue.length}（仅含原文分块、导演切拍、世界书和进度，不含API与提示词）`);
     }
 
     async function loadTaskState() {
@@ -300,45 +292,42 @@ export function createTaskStateService(deps = {}) {
                 const content = await file.text();
                 const state = JSON.parse(content);
                 const type = String(state.type || '').trim();
-                if (type && type !== TASK_STATE_TYPE && type !== LEGACY_TASK_STATE_TYPE) {
+                if (type && type !== RESOURCE_TASK_STATE_TYPE && type !== TASK_STATE_TYPE && type !== LEGACY_TASK_STATE_TYPE) {
                     throw new Error('不是有效的工程包文件');
                 }
-                if (!state.memoryQueue || !Array.isArray(state.memoryQueue)) throw new Error('无效的任务状态文件');
 
-                if (state.settings) AppState.settings = { ...defaultSettings, ...state.settings };
-                const normalizedQueue = normalizeMemoryQueue(state.memoryQueue);
+                const ignoredLegacyKeys = getIgnoredLegacyTaskStateKeys(state);
+                const safeState = stripSensitiveTaskStateFields(state);
+                if (!safeState.memoryQueue || !Array.isArray(safeState.memoryQueue)) {
+                    throw new Error('无效的任务状态文件');
+                }
+
+                const normalizedQueue = normalizeMemoryQueue(safeState.memoryQueue);
                 AppState.memory.queue = normalizedQueue;
-                AppState.worldbook.generated = state.generatedWorldbook && typeof state.generatedWorldbook === 'object'
-                    ? state.generatedWorldbook
+                AppState.worldbook.generated = safeState.generatedWorldbook && typeof safeState.generatedWorldbook === 'object'
+                    ? safeState.generatedWorldbook
                     : {};
-                AppState.worldbook.volumes = Array.isArray(state.worldbookVolumes) ? state.worldbookVolumes : [];
-                AppState.worldbook.currentVolumeIndex = clampStartIndex(state.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
-                AppState.file.hash = state.fileHash || null;
+                AppState.worldbook.volumes = Array.isArray(safeState.worldbookVolumes) ? safeState.worldbookVolumes : [];
+                AppState.worldbook.currentVolumeIndex = clampStartIndex(safeState.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
+                AppState.file.hash = safeState.fileHash || null;
 
-                if (state.parallelConfig) AppState.config.parallel = { ...AppState.config.parallel, ...state.parallelConfig };
-                if (state.categoryLightSettings) AppState.config.categoryLight = { ...AppState.config.categoryLight, ...state.categoryLightSettings };
-                if (state.customWorldbookCategories) AppState.persistent.customCategories = state.customWorldbookCategories;
-                if (state.chapterRegexSettings) AppState.config.chapterRegex = state.chapterRegexSettings;
-                if (state.defaultWorldbookEntriesUI) AppState.persistent.defaultEntries = state.defaultWorldbookEntriesUI;
-                if (state.categoryDefaultConfig) AppState.config.categoryDefault = state.categoryDefaultConfig;
-                if (state.entryPositionConfig) AppState.config.entryPosition = state.entryPositionConfig;
-                if (state.processingState) {
-                    AppState.processing.incrementalMode = state.processingState.incrementalMode !== false;
-                    AppState.processing.volumeMode = state.processingState.volumeMode === true;
+                if (safeState.processingState) {
+                    AppState.processing.incrementalMode = safeState.processingState.incrementalMode !== false;
+                    AppState.processing.volumeMode = safeState.processingState.volumeMode === true;
                     AppState.settings.useVolumeMode = AppState.processing.volumeMode;
                 }
 
-                AppState.experience = normalizeExperience(state.experience || AppState.experience, AppState.memory.queue.length);
+                AppState.experience = normalizeExperience(safeState.experience || AppState.experience, AppState.memory.queue.length);
 
-                if (state.novelName) {
-                    AppState.file.novelName = state.novelName;
-                } else if (state.originalFileName) {
-                    AppState.file.novelName = state.originalFileName.replace(/\.[^/.]+$/, '');
+                if (safeState.novelName) {
+                    AppState.file.novelName = safeState.novelName;
+                } else if (safeState.originalFileName) {
+                    AppState.file.novelName = safeState.originalFileName.replace(/\.[^/.]+$/, '');
                 }
 
                 const fileNameEl = document.getElementById('ttw-file-name');
-                if (fileNameEl && state.originalFileName) {
-                    fileNameEl.textContent = state.originalFileName;
+                if (fileNameEl && safeState.originalFileName) {
+                    fileNameEl.textContent = safeState.originalFileName;
                 }
                 const novelNameInput = document.getElementById('ttw-novel-name-input');
                 if (novelNameInput && AppState.file.novelName) {
@@ -352,10 +341,10 @@ export function createTaskStateService(deps = {}) {
                 }
 
                 const firstUnprocessed = AppState.memory.queue.findIndex((m) => !m.processed || m.failed);
-                if (state.queueState && typeof state.queueState === 'object') {
-                    AppState.memory.startIndex = clampStartIndex(state.queueState.startIndex, AppState.memory.queue.length);
-                    AppState.memory.userSelectedIndex = Number.isInteger(state.queueState.userSelectedIndex)
-                        ? clampStartIndex(state.queueState.userSelectedIndex, AppState.memory.queue.length)
+                if (safeState.queueState && typeof safeState.queueState === 'object') {
+                    AppState.memory.startIndex = clampStartIndex(safeState.queueState.startIndex, AppState.memory.queue.length);
+                    AppState.memory.userSelectedIndex = Number.isInteger(safeState.queueState.userSelectedIndex)
+                        ? clampStartIndex(safeState.queueState.userSelectedIndex, AppState.memory.queue.length)
                         : null;
                 } else {
                     AppState.memory.startIndex = firstUnprocessed !== -1 ? firstUnprocessed : 0;
@@ -380,10 +369,13 @@ export function createTaskStateService(deps = {}) {
                 try {
                     await MemoryHistoryDB.saveState(processedCount, { immediate: true });
                 } catch (saveError) {
-                    Logger.error('State', '导入工程包后保存状态失败:', saveError);
+                    Logger.error('State', '导入资源工程包后保存状态失败', saveError);
                 }
 
-                ErrorHandler.showUserSuccess(`工程包导入成功！已处理: ${processedCount}/${AppState.memory.queue.length}（已恢复故事大纲与当前章节进度）`);
+                const ignoredMessage = ignoredLegacyKeys.length > 0
+                    ? `；已忽略旧工程包中的设置字段：${ignoredLegacyKeys.slice(0, 6).join('、')}${ignoredLegacyKeys.length > 6 ? '等' : ''}`
+                    : '';
+                ErrorHandler.showUserSuccess(`资源工程包导入成功！已处理: ${processedCount}/${AppState.memory.queue.length}（未覆盖当前API与提示词）${ignoredMessage}`);
                 const worldbookStartBtn = document.getElementById('ttw-start-btn');
                 if (worldbookStartBtn) worldbookStartBtn.disabled = false;
                 const directorStartBtn = document.getElementById('ttw-start-director-btn');
@@ -419,10 +411,10 @@ export function createTaskStateService(deps = {}) {
                         if (rollResults.length > 0) {
                             const latestRoll = rollResults[rollResults.length - 1];
                             memory.result = latestRoll.result;
-                            Logger.info('Restore', `✅ 恢复第${i + 1}章的result`);
+                            Logger.info('Restore', `已恢复第${i + 1}章的 result`);
                         }
                     } catch (e) {
-                        Logger.error('Restore', `恢复第${i + 1}章result失败:`, e);
+                        Logger.error('Restore', `恢复第${i + 1}章 result 失败:`, e);
                     }
                 }
             }
@@ -541,7 +533,7 @@ export function createTaskStateService(deps = {}) {
             }
             return true;
         } catch (e) {
-            Logger.error('Restore', '恢复状态失败:', e);
+            Logger.error('Restore', '恢复状态失败', e);
             return false;
         }
     }

@@ -27,6 +27,8 @@ export function createUiHelpers(deps = {}) {
         resetSingleCategory,
         setCategoryDefaultConfig,
         buildSystemPrompt,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         getChapterForcePrompt,
         getEnabledCategories,
         handleFetchModelList,
@@ -114,6 +116,8 @@ export function createUiHelpers(deps = {}) {
         ErrorHandler,
         alertAction: deps.alertAction,
         buildSystemPrompt,
+        assembleTargetPrompt,
+        PROMPT_TARGETS,
         getChapterForcePrompt,
         getEnabledCategories,
     });

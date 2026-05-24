@@ -17,6 +17,100 @@ import {
     hashText,
 } from './directorInjectionService.js';
 
+export const DIRECTOR_DECISION_MODES = Object.freeze({
+    API_AUTO_FALLBACK: 'api-auto-fallback',
+    API_ONLY: 'api-only',
+    LOCAL_ONLY: 'local-only',
+});
+
+const DIRECTOR_DECISION_MODE_SET = new Set(Object.values(DIRECTOR_DECISION_MODES));
+
+export function getDirectorDecisionMode(settings = {}) {
+    const mode = String(settings.directorDecisionMode || '').trim();
+    if (DIRECTOR_DECISION_MODE_SET.has(mode)) return mode;
+    if (settings.directorAutoFallbackToMain === false) return DIRECTOR_DECISION_MODES.API_ONLY;
+    return DIRECTOR_DECISION_MODES.API_AUTO_FALLBACK;
+}
+
+export function shouldUseLocalDirectorOnly(settings = {}) {
+    return getDirectorDecisionMode(settings) === DIRECTOR_DECISION_MODES.LOCAL_ONLY;
+}
+
+export function shouldFallbackAfterDirectorFailure(settings = {}) {
+    const mode = getDirectorDecisionMode(settings);
+    return mode === DIRECTOR_DECISION_MODES.API_AUTO_FALLBACK || mode === DIRECTOR_DECISION_MODES.LOCAL_ONLY;
+}
+
+export async function resolveDirectorDecisionFlow(options = {}) {
+    const {
+        settings = {},
+        requestDecision,
+        parseDecision,
+        makeFallbackDecision,
+        onLocalOnly,
+        onBeforeRequest,
+        onRequestSuccess,
+        onParseFailure,
+        onError,
+    } = options;
+
+    if (typeof makeFallbackDecision !== 'function') {
+        throw new Error('makeFallbackDecision is required');
+    }
+
+    const decisionMode = getDirectorDecisionMode(settings);
+    if (decisionMode === DIRECTOR_DECISION_MODES.LOCAL_ONLY) {
+        onLocalOnly?.(decisionMode);
+        return {
+            decision: makeFallbackDecision('manual-local-fallback'),
+            decisionSource: 'fallback-manual',
+            decisionMode,
+        };
+    }
+
+    if (typeof requestDecision !== 'function') {
+        throw new Error('requestDecision is required');
+    }
+
+    try {
+        onBeforeRequest?.(decisionMode);
+        const response = await requestDecision();
+        onRequestSuccess?.(response, decisionMode);
+        const parsed = typeof parseDecision === 'function' ? parseDecision(response) : response;
+
+        if (!parsed) {
+            onParseFailure?.(response, decisionMode);
+            if (!shouldFallbackAfterDirectorFailure(settings)) {
+                throw new Error('导演API返回内容不是有效JSON，且当前模式为只用导演API');
+            }
+            return {
+                decision: makeFallbackDecision('parse-fallback'),
+                decisionSource: 'fallback-parse',
+                decisionMode,
+                response,
+            };
+        }
+
+        return {
+            decision: parsed,
+            decisionSource: 'model',
+            decisionMode,
+            response,
+        };
+    } catch (error) {
+        onError?.(error, decisionMode);
+        if (!shouldFallbackAfterDirectorFailure(settings)) {
+            throw error;
+        }
+        return {
+            decision: makeFallbackDecision('error-fallback'),
+            decisionSource: 'fallback-error',
+            decisionMode,
+            error,
+        };
+    }
+}
+
 export function createDirectorService(deps = {}) {
     const {
         AppState,
@@ -24,6 +118,8 @@ export function createDirectorService(deps = {}) {
         Logger,
         callDirectorAPI,
         getLanguagePrefix,
+        assembleDirectorFrameworkPrompt,
+        assembleDirectorInjectionPrompt,
         debugLog,
         updateStreamContent,
         directorTelemetry,
@@ -744,14 +840,32 @@ export function createDirectorService(deps = {}) {
             COMPACT_BEATS_JSON: JSON.stringify(compactBeats, null, 2),
             FIXED_STAGE_IDX: String(currentBeatIdx),
         });
+        return assembleDirectorFramework(promptBody);
+    }
+
+    function assembleDirectorFramework(body) {
+        if (typeof assembleDirectorFrameworkPrompt === 'function') {
+            return assembleDirectorFrameworkPrompt(body);
+        }
         const prefix = getLanguagePrefix ? getLanguagePrefix() : '';
-        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
-            && (typeof extension_settings !== 'undefined'
-                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
-                : true);
+        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false;
         const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorFrameworkSuffix || '').trim() : '';
-        const suffixBlock = suffix ? `\n\n${suffix}` : '';
-        return `${prefix}${promptBody}${suffixBlock}`;
+        return [prefix + String(body || '').trim(), suffix]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
+    }
+
+    function assembleDirectorInjection(body) {
+        if (typeof assembleDirectorInjectionPrompt === 'function') {
+            return assembleDirectorInjectionPrompt(body);
+        }
+        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false;
+        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorInjectionSuffix || '').trim() : '';
+        return [String(body || '').trim(), suffix]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .join('\n\n');
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
@@ -1071,12 +1185,7 @@ export function createDirectorService(deps = {}) {
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
             START_RECAP: String(directionScript.start || '从当前局面直接接续。'),
         });
-        const suffixEnabled = AppState?.settings?.directorSuffixEnabled !== false
-            && (typeof extension_settings !== 'undefined'
-                ? (extension_settings.westworld || extension_settings.storyweaver || {})?.directorSuffixEnabled !== false
-                : true);
-        const suffix = suffixEnabled ? String(AppState?.settings?.customDirectorInjectionSuffix || '').trim() : '';
-        return suffix ? `${injectionBody}\n\n${suffix}` : injectionBody;
+        return assembleDirectorInjection(injectionBody);
     }
 
     function getDirectorContext(options = {}) {
@@ -1480,7 +1589,16 @@ export function createDirectorService(deps = {}) {
 
         let decision = null;
         let decisionSource = 'model';
-        try {
+        const decisionMode = getDirectorDecisionMode(AppState?.settings || {});
+        if (decisionMode === DIRECTOR_DECISION_MODES.LOCAL_ONLY) {
+            decision = buildFallbackDecision(lockedBeatIdx, beats, 'manual-local-fallback', directionContext);
+            decisionSource = 'fallback-manual';
+            notifyDirectorJudgement('info', `已按设置使用本地导演兜底：节拍 ${lockedBeatIdx + 1}/${beats.length}`);
+            if (typeof updateStreamContent === 'function') {
+                updateStreamContent(`🧭 ${turnPrefix} 已选择本地兜底判定，跳过导演API请求\n`);
+            }
+        } else {
+            try {
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
             }
@@ -1495,6 +1613,9 @@ export function createDirectorService(deps = {}) {
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
                 if (typeof updateStreamContent === 'function') {
                     updateStreamContent(`⚠️ ${turnPrefix} 响应不是有效JSON，已切换回退判定\n`);
+                }
+                if (!shouldFallbackAfterDirectorFailure(AppState?.settings || {})) {
+                    throw new Error('导演API返回内容不是有效JSON，且当前模式为只用导演API');
                 }
                 decision = buildFallbackDecision(lockedBeatIdx, beats, 'parse-fallback', directionContext);
                 decisionSource = 'fallback-parse';
@@ -1532,8 +1653,12 @@ export function createDirectorService(deps = {}) {
                 updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${error?.message || String(error)}\n`);
                 updateStreamContent(`⚠️ ${turnPrefix} 已启用本地回退判定\n`);
             }
+            if (!shouldFallbackAfterDirectorFailure(AppState?.settings || {})) {
+                throw error;
+            }
             decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback', directionContext);
             decisionSource = 'fallback-error';
+        }
         }
 
         // 节拍切换由流程层决定，导演输出仅负责“怎么演”。
