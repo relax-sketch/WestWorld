@@ -1,24 +1,31 @@
-# StoryWeaver 项目 - 代码修改经验记录
+# StoryWeaver 项目 - 编码与文件修改规则
 
-## 编码陷阱（重要！）
+## 最高优先级规则
 
-1. **文件编码**：`txtToWorldbook/core/constants.js` 等文件使用 **UTF-8 with BOM** 编码。BOM 头（`\xef\xbb\xbf`）会导致 `StrReplaceFile` 直接匹配失败。
+所有涉及中文内容、提示词、世界书、角色设定、长文本块的修改，必须优先保证文件编码安全。不要根据终端显示判断文件是否损坏，必须以文件读取结果和字节检查为准。
 
-2. **PowerShell 中文传参死亡陷阱**：
-   - 绝对不要通过 `python -c "..."` 在 PowerShell 中传递包含中文的三引号字符串，会出现不可恢复的 `SyntaxError: unterminated triple-quoted string literal`。
-   - PowerShell 把中文传给 Python 的 `-c` 参数时会发生编码损坏（mojibake），导致 Python 解析失败。
-   - **正确做法**：先把 Python 脚本内容写到临时 `.py` 文件（用 `WriteFile`），再执行 `python temp.py`。
+## 编码陷阱
 
-3. **终端显示问题**：PowerShell 中 Python 打印中文有时显示为乱码（���），但文件内容本身是正确的，不要根据终端显示来判断文件是否已损坏。
+1. 某些文件可能使用 UTF-8 with BOM，例如：
+   - `txtToWorldbook/core/constants.js`
 
-## 推荐修改流程
+   BOM 头为 `\xef\xbb\xbf`，可能导致精确文本替换失败，尤其是基于整块匹配的 `StrReplaceFile`。
 
-对含中文的长文本块进行修改时：
-1. 优先用 Python 脚本文件操作（写临时 `.py` → 执行 → 删除）。
-2. 如果必须用 `StrReplaceFile`，先确认文件是否有 BOM 头；若有，考虑用 Python 处理。
-3. 修改后立刻用 `ReadFile` 验证结果，不要靠 `Shell` 输出判断。
+2. 不要盲目移除 BOM。
+   - 如果文件原本有 BOM，默认保留。
+   - 除非任务明确要求统一编码，否则不要全仓批量转换 BOM / non-BOM。
+   - 修改文件时应尽量保持原始编码形态。
 
-## 人名替换记录
+3. PowerShell 终端显示中文乱码，不等于文件内容损坏。
+   - Python / Node / PowerShell 的终端输出可能出现 `���` 或 mojibake。
+   - 不要根据 Shell 输出判断中文是否正确。
+   - 修改后必须用可靠文件读取方式验证。
 
-- 提示词 AI 人设名：`Amily` / `Amiyl` → `秋青子`
-- 已全部替换完毕。
+## 禁止做法
+
+1. 禁止在 PowerShell 中使用 `python -c "..."` 传递包含中文的长文本、三引号字符串或提示词内容。
+
+   错误示例：
+
+   ```powershell
+   python -c "text = '''大量中文内容'''"

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"$env:USERPROFILE\\\\.codex\" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName, Length)",
+      "PowerShell(if \\(Test-Path \"$env:USERPROFILE\\\\.omx\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.omx\" -Recurse -Depth 2 -ErrorAction SilentlyContinue } else { Write-Output \"No ~/.omx directory\" }; if \\(Test-Path \"$env:USERPROFILE\\\\.omxrc\"\\) { Write-Output \"Found ~/.omxrc\" }; if \\(Test-Path \"$env:USERPROFILE\\\\.config\\\\omx\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.config\\\\omx\" -Recurse -Depth 2 -ErrorAction SilentlyContinue } else { Write-Output \"No ~/.config/omx\" })",
+      "PowerShell($paths = @\\(\\); $cmd = \\(Get-Command codex -ErrorAction SilentlyContinue\\); if \\($cmd\\) { $paths += \"codex: $\\($cmd.Source\\)\" }; $cmd2 = \\(Get-Command omx -ErrorAction SilentlyContinue\\); if \\($cmd2\\) { $paths += \"omx: $\\($cmd2.Source\\)\" }; if \\($paths.Count -eq 0\\) { Write-Output \"Neither codex nor omx found in PATH\" } else { $paths })",
+      "PowerShell(if \\(Test-Path \"$env:USERPROFILE\\\\.codex\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.codex\" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object FullName, Length } else { Write-Output \".codex directory does NOT exist\" })",
+      "PowerShell(dir \"$env:USERPROFILE\\\\.codex\" -Recurse 2>$null)",
+      "PowerShell(npm uninstall -g @openai/codex oh-my-codex 2>&1)",
+      "PowerShell(Remove-Item -Recurse -Force \"$env:USERPROFILE\\\\.codex\" -ErrorAction Stop; Write-Output \".codex deleted successfully\")"
+    ]
+  }
+}

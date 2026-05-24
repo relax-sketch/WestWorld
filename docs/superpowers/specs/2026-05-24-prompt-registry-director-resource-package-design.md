@@ -1,163 +1,426 @@
-# WestWorld 提示词全量开放与导演资源包设计
+# Prompt Registry And Director Resource Package Implementation Plan
 
-## 背景与目标
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-WestWorld 当前已提供若干提示词编辑入口，但仍存在内联提示词、固定拼装约束与导演兜底内容无法修改的情况；工程包还会写入整份设置，从而携带 API 与提示词。本设计的目标是：
+**Goal:** 将项目中的全部可读提示词统一纳入可编辑的注册表体系，为每个模块提供可保存、可恢复默认的 `prefix/body/suffix`，增加导演三态模式与严格的配置/工程包边界，同时保持 SillyTavern PromptManager 与 LittleWhite 注入行为兼容。
 
-1. 所有会发送给 AI 或参与 AI 注入内容构造的可读指令文本，均能由用户修改并保存。
-2. 每个提示词模块均具有独立前缀、正文、后缀与恢复默认能力；全局前缀和全局后缀继续存在。
-3. 导演支持直接使用本地兜底，而非只能等待导演 API 失败后回退。
-4. 工程包只携带资源成果与复现成果所需参数，不携带 API 或任何可编辑提示词配置。
-5. 提示词配置包可以导入导出提示词相关配置，但不携带 API 配置。
-6. 保持 SillyTavern PromptManager 与现有 LittleWhite 对接接口的导演注入语义不变。
+**Architecture:** 新建纯逻辑 `promptRegistryService` 作为固定默认值、覆盖值、拼装和兼容迁移的唯一入口；新建 `packagePolicyService` 集中定义提示词配置包与工程资源包的白名单/过滤规则；UI 从静态 textarea 切换为由注册表渲染的模块编辑器。完整模型请求可使用全局前后缀，PromptManager/LittleWhite 注入只渲染自身模块，永远不经过全局层或主 AI 消息链。
 
-## 已确定的产品决策
+**Tech Stack:** JavaScript ES modules, Node.js `node:test`, existing HTML/CSS settings UI, localStorage persistence, PowerShell byte-level UTF-8/BOM verification.
 
-- 采用集中式提示词注册表与统一组装器，而不是继续在各服务中散落新增字段。
-- 开放范围为“绝对全部开放”：任务模板、辅助任务模板和可读的运行时拼装约束均纳入编辑体系。
-- 动态数据不转为配置，例如章节正文、条目正文、当前节拍与聊天历史仍由运行时注入。
-- 用户可保存缺少必要占位符的模板；界面与预览显示警告，但不阻止保存。
-- 恢复默认始终恢复代码中的当前项目内置文本；用户不能改写默认基线。
-- 全局层保留，最终模型请求按 `全局前缀 -> 模块内容 -> 全局后缀` 组合。
-- 导演使用三态模式：`导演 API`、`本地兜底`、`关闭导演`。
-- 不安排浏览器或桌面 UI 自动化验证；真实手机使用场景与电脑 UI 观感由用户手测。
+---
 
-## 提示词模型
+## Implementation Constraints
 
-### 注册表
+- 已批准规格见 [2026-05-24-prompt-registry-director-resource-package-design.md](../specs/2026-05-24-prompt-registry-director-resource-package-design.md)；本计划实现该规格，不重新扩大范围。
+- 自动验证仅使用 Node 单元/服务测试、序列化测试、接口契约测试和编码检查。手机是真实使用环境，电脑/手机 UI 交互验证由用户手工完成；本计划不安排浏览器测试。
+- `txtToWorldbook/core/constants.js`、`txtToWorldbook/ui/settingsPanel.js`、`txtToWorldbook/ui/eventBindings.js` 当前为 UTF-8 with BOM。修改它们时必须保留 BOM；其他被修改文件保留其原编码形态。
+- 当前工作区中用户已有的 `AGENTS.md`、`.claude/` 和删除状态文件不属于本功能。每次提交只 `git add` 本任务列出的命名文件，不批量暂存。
+- `directorMode` 控制现有“每轮导演判定/注入”流程：`api`、`local-fallback`、`off`。章节资源中的“导演切拍/章节资产提取”仍是已有 AI 生成任务，因为当前代码没有可替代它的本地提取算法。
+- PromptManager/LittleWhite 兼容边界不可破坏：`buildInjection()` 与 `getDirectorPromptForLittleWhiteBox()` 输出不应用 `promptGlobal.prefix`、`promptGlobal.suffix` 或主 API 消息链；标记、identifier、position 与返回结构保持协议兼容。
 
-新增统一提示词注册表，登记所有可编辑文本模块。每个注册项包含：
+## File Responsibility Map
 
-- 稳定 `id`，用于设置存储、预览、导入导出与旧设置迁移。
-- 界面分组与显示名称。
-- 固定的默认 `prefix`、`body`、`suffix`。
-- 允许使用的动态占位符及需要警告的关键占位符。
-- 用途类型：完整模型请求、嵌入完整请求的片段、或导演注入载体内容。
+| Area | Files | Responsibility |
+| --- | --- | --- |
+| Prompt schema | `txtToWorldbook/core/constants.js`, new `txtToWorldbook/services/promptRegistryService.js` | Fixed defaults, module IDs, override resolution, warning calculation, rendering and legacy migration |
+| Persistence/category | `txtToWorldbook/services/settingsPersistenceService.js`, `txtToWorldbook/services/categoryPersistenceService.js` | Persist new prompt configuration and migrate category guides into layered prompt values |
+| Prompt UI | new `txtToWorldbook/ui/promptEditorView.js`, `txtToWorldbook/ui/settingsPanel.js`, `txtToWorldbook/ui/eventBindings.js`, `txtToWorldbook/ui/promptPreviewModal.js`, UI wiring files | Render all modules, edit/reset/save, warnings, previews, director mode controls |
+| Call sites | `txtToWorldbook/services/promptService.js`, `processingService.js`, `repairService.js`, `rerollService.js`, `importMergeService.js`, `mergeWorkflowService.js`, `mergeService.js`, `txtToWorldbook/ui/chapterExperienceView.js` | Route every AI instruction/wrapper through registry rendering |
+| Director compatibility | `txtToWorldbook/services/directorService.js`, `txtToWorldbook/services/directorInjectionService.js`, `txtToWorldbook/index.js` | Three-state execution, editable local fallback modules, preserved injection contract |
+| Package boundaries | new `txtToWorldbook/services/packagePolicyService.js`, `importExportService.js`, `taskStateService.js`, `infra/memoryHistoryDB.js`, feature wiring | Export/import prompt config without API; save/load engineering resources without prompts/API |
+| Verification/docs | `tests/*.test.js`, `README.md`, `westworld.md` | Regression tests, user-visible documentation, encoding audit |
 
-用户设置只保存覆盖值。未覆盖字段读取注册表默认值；执行“恢复默认”时删除对应覆盖值，并回显固定默认值。
+## Task 1: Add The Prompt Registry Core And Settings Schema
 
-### 覆盖清单
+**Files:**
+- Modify: `txtToWorldbook/core/constants.js`
+- Create: `txtToWorldbook/services/promptRegistryService.js`
+- Modify: `txtToWorldbook/app/createCoreServices.js`
+- Modify: `txtToWorldbook/main.js`
+- Create: `tests/promptRegistryService.test.js`
 
-注册表至少覆盖以下现有能力及其可读拼装规则：
+- [ ] Before editing, record the current BOM state of `txtToWorldbook/core/constants.js` and confirm it is UTF-8 with BOM.
+- [ ] Add failing tests for immutable defaults, explicit empty overrides, global composition, no-global module rendering, restore-default behavior, and missing-placeholder warnings.
+- [ ] Add new settings defaults without deleting existing legacy fields yet:
 
-- 通用层：中文回复指令、全局前缀、全局后缀、主 AI 消息链。
-- 世界书处理：TXT 转世界书主模板、分类提取指南、剧情大纲、文风配置、上一章上下文包装、正文输入包装、输出分类限制、强制章节标记及串行/并行提示片段。
-- 整理与合并：整理条目正文、整理强制输出规则、导入世界书 AI 合并、别名合并判断。
-- 重抽与修复：章节重抽追加要求、单条重抽模板、批量重抽追加要求、失败章节修复模板。
-- 导演资产与交互：导演切拍章节资产、入场事件识别、导演 API 判定、导演注入演员执行单、本地兜底判定/执行单、章节开场白。
+```js
+promptConfigVersion: 1,
+promptGlobal: {
+  prefix: '',
+  suffix: '',
+},
+promptOverrides: {},
+directorMode: 'api',
+directorFallbackOnError: true,
+```
 
-对复用同一模板的流程，例如章节重抽继承 TXT 转世界书主请求，应在预览中显示其最终使用链路，而不是复制出语义不一致的默认正文。
+- [ ] Define stable module identifiers and fixed baseline content derived from the existing prompt literals/default constants:
 
-### 组合规则
+```js
+export const PROMPT_MODULE_IDS = Object.freeze({
+  LANGUAGE_ZH: 'common.language.zh',
+  WORLDBOOK_SYSTEM: 'worldbook.system',
+  WORLDBOOK_PLOT: 'worldbook.plot',
+  WORLDBOOK_STYLE: 'worldbook.style',
+  WORLDBOOK_PREVIOUS_CONTEXT: 'worldbook.previous-context',
+  WORLDBOOK_RELEVANT_CONTEXT: 'worldbook.relevant-context',
+  WORLDBOOK_FORCE_CHAPTER: 'worldbook.force-chapter',
+  WORLDBOOK_PARALLEL_REQUEST: 'worldbook.extract.parallel',
+  WORLDBOOK_SERIAL_REQUEST: 'worldbook.extract.serial',
+  WORLDBOOK_REROLL_EXTRA: 'worldbook.reroll.extra',
+  WORLDBOOK_REPAIR: 'worldbook.repair',
+  WORLDBOOK_SINGLE_REROLL: 'worldbook.reroll.single-entry',
+  MERGE_IMPORTED: 'merge.imported-entry',
+  MERGE_CONSOLIDATE: 'merge.consolidate',
+  MERGE_CONSOLIDATE_RULES: 'merge.consolidate.rules',
+  MERGE_ALIAS: 'merge.alias',
+  DIRECTOR_CHAPTER_ASSETS: 'director.chapter-assets',
+  DIRECTOR_ENTRY_EVENTS: 'director.entry-events',
+  DIRECTOR_FRAMEWORK: 'director.framework',
+  DIRECTOR_INJECTION: 'director.injection',
+  DIRECTOR_FALLBACK_NEW_BEAT: 'director.fallback.new-beat',
+  DIRECTOR_FALLBACK_IN_BEAT: 'director.fallback.in-beat',
+  DIRECTOR_FALLBACK_END: 'director.fallback.end',
+  CHAPTER_OPENING: 'chapter.opening',
+});
+```
 
-- 完整模型请求只应用一次全局前缀与全局后缀。
-- 作为父模板组成部分的约束片段，只应用该片段自身的 `prefix/body/suffix`，不得再次嵌套全局层。
-- 主 AI 消息链仅包装实际发给主 AI 的完整请求；导演 API 请求沿用当前单消息发送路径，除非现有行为另有约束。
-- 可编辑文本中的占位符在运行时被数据替换。缺失关键占位符时保存成功，但模块列表与最终预览均显示警告。
+- [ ] Implement a pure service API whose default definitions are never written back as editable defaults:
 
-## 界面与设置持久化
+```js
+listModules()
+getResolvedModule(id)
+setOverride(id, layers)
+resetOverride(id)
+renderModule(id, variables = {})
+composeRequest(moduleIds, variablesById = {}, { includeGlobal = true } = {})
+getWarnings(id, layers = getResolvedModule(id))
+migrateLegacySettings(settings)
+```
 
-### 编辑界面
+- [ ] Resolve overrides using property presence, not truthiness, so `{ body: '' }` remains an intentional saved value and produces warnings instead of silently restoring a default.
+- [ ] Ensure `composeRequest()` appends the Chinese language module when appropriate, applies `promptGlobal.prefix` and `promptGlobal.suffix` exactly once, and supports `{ includeGlobal: false }` for injection-only rendering.
+- [ ] Wire the new pure service through core creation/main dependency injection without migrating call sites in this task.
+- [ ] Re-run tests and verify the BOM state of `constants.js` remains unchanged.
 
-现有“提示词编辑”页签改为注册表驱动的模块列表，按以下分组展示：
+**Test command:**
 
-- 通用层
-- 世界书处理
-- 整理、合并与重抽
-- 导演切拍与演出
-- 修复与章节交互
-- 运行时约束片段
+```powershell
+npm test -- --test-name-pattern="prompt registry"
+```
 
-每个模块提供：
+**Expected result:** New prompt registry tests pass; existing tests continue to load modules without syntax/import failures.
 
-- 模块前缀、正文模板、模块后缀三个编辑区。
-- 保存与恢复默认操作。
-- 占位符说明与缺失警告。
-- 预览该模块在代表性上下文下的最终组装结果。
+**Commit:**
 
-### 设置结构与迁移
+```powershell
+git add txtToWorldbook/core/constants.js txtToWorldbook/services/promptRegistryService.js txtToWorldbook/app/createCoreServices.js txtToWorldbook/main.js tests/promptRegistryService.test.js
+git commit -m "feat: add layered prompt registry core"
+```
 
-- 新设置使用按 `id` 索引的提示词覆盖集合，保存各模块发生修改的 `prefix/body/suffix`。
-- 全局层、提示词预设与消息链属于提示词配置的一部分。
-- 首次加载时，将现有 `customWorldbookPrompt`、`customDirectorFrameworkPrompt`、`customDirectorFrameworkSuffix`、`customDirectorInjectionPrompt`、`customDirectorInjectionSuffix`、`customSuffixPrompt` 等旧字段迁移到对应覆盖项。
-- 迁移保持向后兼容读取，但新保存以注册表覆盖结构为准，避免继续增加分散字段。
+## Task 2: Migrate Legacy Prompt Settings And Category Prompt Layers
 
-## 导演模式与外部注入兼容
+**Files:**
+- Modify: `txtToWorldbook/services/settingsPersistenceService.js`
+- Modify: `txtToWorldbook/services/categoryPersistenceService.js`
+- Modify: `tests/promptRegistryService.test.js`
+- Create: `tests/categoryPersistenceService.test.js`
 
-### 三态模式
+- [ ] Add failing tests that migrate legacy `custom*Prompt`, existing director suffixes, shared prefix selection, and existing `contentGuide` values without losing user content.
+- [ ] Make local settings load call `migrateLegacySettings()` once when `promptConfigVersion` is absent or older, retaining local API values in localStorage.
+- [ ] Map existing editable defaults into the new modules, including existing director suffix settings; retain legacy read compatibility only as needed for migration.
+- [ ] Upgrade category prompt state to layered values:
 
-- `导演 API`：构造完整导演判定请求并调用导演 API；此请求可以应用全局层和导演判定模块自身层。
-- `本地兜底`：不调用导演 API，直接从当前章节、节拍和上下文生成本地判定，并渲染导演执行单。
-- `关闭导演`：不生成新执行单，按现有生命周期清理过期待注入内容。
-- `导演 API` 模式单独提供“API 失败后自动转本地兜底”开关；关闭后 API 失败仅记录失败并跳过本轮新注入。
+```js
+promptLayers: {
+  prefix: '',
+  body: existingContentGuide,
+  suffix: '',
+}
+```
 
-旧设置迁移规则：
+- [ ] For built-in categories, use the existing `DEFAULT_WORLDBOOK_CATEGORIES[].contentGuide` as the immutable body baseline; for user-created categories, create the initial baseline from the current generated body text and keep later user edits as overrides.
+- [ ] Update `generateDynamicJsonTemplate()` to render each category's layered content, while preserving non-prompt structural fields used to build the output JSON shape.
+- [ ] Confirm warning-only validation allows blank category body or missing runtime placeholders to be saved.
 
-- 原 `directorEnabled === false` 映射为 `关闭导演`。
-- 原启用导演映射为 `导演 API`。
-- 原 API 失败兜底布尔值映射为 `导演 API` 模式下的失败回退开关。
+**Test command:**
 
-### PromptManager 与 LittleWhite 边界
+```powershell
+node --test tests/promptRegistryService.test.js tests/categoryPersistenceService.test.js
+```
 
-导演执行单属于写入外部上下文的注入载体，而不是一次模型请求本身，因此：
+**Expected result:** Legacy prompt values and category content migrate into layered overrides; empty saved values are retained; generated templates use rendered category prompt content.
 
-- `buildInjection()` 生成的执行单不应用全局前缀、全局后缀或主 AI 消息链。
-- 写入 SillyTavern 当前预设的 PromptManager 内容保持现有注入位置、角色、复用、清空和检测生命周期。
-- `getDirectorPromptForLittleWhiteBox()` 保持现有返回结构与含义，包括 `role`、`content`、`identifier`、`position`、`depth`、上下文和元数据。
-- 注入执行单自身仍对应可编辑模块，可修改模块前缀、正文与后缀，并恢复当前项目内置模板。
-- 注入 marker、稳定 identifier 和协议元数据不得作为普通提示词配置开放编辑，以免破坏 PromptManager 检测、清理与 LittleWhite 对接。
+**Commit:**
 
-## 导入导出边界
+```powershell
+git add txtToWorldbook/services/settingsPersistenceService.js txtToWorldbook/services/categoryPersistenceService.js tests/promptRegistryService.test.js tests/categoryPersistenceService.test.js
+git commit -m "feat: migrate prompt settings and category layers"
+```
 
-### 提示词配置包
+## Task 3: Build The Registry-Driven Prompt Editor And Preview
 
-提示词配置包应包含：
+**Files:**
+- Create: `txtToWorldbook/ui/promptEditorView.js`
+- Modify: `txtToWorldbook/ui/settingsPanel.js`
+- Modify: `txtToWorldbook/ui/eventBindings.js`
+- Modify: `txtToWorldbook/ui/promptPreviewModal.js`
+- Modify: `txtToWorldbook/ui/createUiHelpers.js`
+- Modify: `txtToWorldbook/main.js`
 
-- 全局前后缀。
-- 注册表模块覆盖值。
-- 提示词预设。
-- 消息链及提示词编辑所需的配置元数据。
+- [ ] Before editing, record and later preserve BOM for `settingsPanel.js` and `eventBindings.js`.
+- [ ] Replace the hard-coded prompt textarea list with a registry host and a new view that enumerates every registered module, including category modules and local fallback modules.
+- [ ] Provide editable and savable `prefix`, `body`, and `suffix` inputs for every prompt module; render global prefix/global suffix separately above module cards.
+- [ ] Add per-module “恢复默认” actions that call `resetOverride(id)` and restore the immutable project default rather than rewriting the baseline.
+- [ ] Display warnings beside a module when required placeholders are absent or a module is blank; do not block save.
+- [ ] Keep prompt preset and message-chain editing exposed as prompt configuration, and add director controls:
 
-提示词配置包不得包含：
+```html
+<select id="ttw-director-mode">
+  <option value="api">导演 API</option>
+  <option value="local-fallback">本地兜底</option>
+  <option value="off">关闭导演</option>
+</select>
+<input type="checkbox" id="ttw-director-fallback-on-error">
+```
 
-- 主 AI 与导演 AI 的 API Key、endpoint、provider、model、max tokens。
-- 任何 API 路由预设或其他可还原 API 连接信息。
+- [ ] Update preview to show composed global layers for complete requests and an explicit injection preview labeled as not using global layers.
+- [ ] Wire view events through existing UI helpers and settings persistence; avoid duplicating registry logic inside DOM handlers.
+- [ ] Do not add automated browser/UI tests; perform only import/syntax loading through Node in this task.
 
-### 工程包
+**Verification commands:**
 
-工程包应包含：
+```powershell
+node --check txtToWorldbook/ui/promptEditorView.js
+node --check txtToWorldbook/ui/settingsPanel.js
+node --check txtToWorldbook/ui/eventBindings.js
+node --check txtToWorldbook/ui/promptPreviewModal.js
+```
 
-- 章节队列、各章节处理状态与结果。
-- 生成的世界书与分卷资源。
-- 导演切拍、章节摘要、开场白、当前章节/节拍与导演结果状态。
-- 自定义分类、默认条目与条目位置等用于解释或复现成果的资源配置。
-- 与成果恢复直接相关的处理状态，例如当前处理进度、分卷状态和选择位置。
+**Expected result:** All four modules parse successfully; BOM checks show `settingsPanel.js` and `eventBindings.js` retain UTF-8 BOM.
 
-工程包不得包含：
+**Commit:**
 
-- API 配置、API 路由预设或凭据。
-- 全局提示词层、模块提示词覆盖值、提示词预设或消息链。
-- 仅影响下一次运行方式而不解释既有成果的纯运行偏好。
+```powershell
+git add txtToWorldbook/ui/promptEditorView.js txtToWorldbook/ui/settingsPanel.js txtToWorldbook/ui/eventBindings.js txtToWorldbook/ui/promptPreviewModal.js txtToWorldbook/ui/createUiHelpers.js txtToWorldbook/main.js
+git commit -m "feat: expose registry based prompt editor"
+```
 
-导入旧工程包时，如文件包含历史整份 `settings`，仅按白名单吸收资源解释相关字段；API 与提示词字段始终忽略，且不得覆盖本机当前设置。
+## Task 4: Route Non-Director Prompt Call Sites Through The Registry
 
-## 编码安全要求
+**Files:**
+- Modify: `txtToWorldbook/services/promptService.js`
+- Modify: `txtToWorldbook/services/processingService.js`
+- Modify: `txtToWorldbook/services/repairService.js`
+- Modify: `txtToWorldbook/services/rerollService.js`
+- Modify: `txtToWorldbook/services/importMergeService.js`
+- Modify: `txtToWorldbook/services/mergeWorkflowService.js`
+- Modify: `txtToWorldbook/services/mergeService.js`
+- Modify: `txtToWorldbook/ui/chapterExperienceView.js`
+- Create: `tests/promptCompositionCallSites.test.js`
 
-- 含中文长文本的已有文件保持原编码形态。已确认 `txtToWorldbook/core/constants.js`、`txtToWorldbook/ui/settingsPanel.js` 与 `txtToWorldbook/ui/eventBindings.js` 为 UTF-8 with BOM，实施修改后必须仍保留 BOM。
-- 修改中文提示词与长文本后，以严格 UTF-8 解码与 BOM 字节检查验证文件，不以 PowerShell 终端显示判断内容是否损坏。
-- 不在 PowerShell 中使用包含中文长文本或提示词的 `python -c` 写入方式。
-- 当前 `AGENTS.md` 已记录上述约束，本功能不要求再次改写规则文件。
+- [ ] Write failing service-level tests for representative worldbook, repair, reroll, consolidate, alias merge, imported merge, and chapter-opening requests. Assert each rendered module can contribute prefix/body/suffix and each complete outbound request sees the global layer once.
+- [ ] Change `promptService` to use registry rendering for language, system, plot, style, previous-memory context, relevant-worldbook context, and force-chapter text while retaining existing main-only message-chain behavior.
+- [ ] Replace inline instructions/wrappers in `processingService` with registry modules for parallel/serial extraction, relevant context, reroll extra constraints, chapter assets, and entry-event refinement.
+- [ ] Replace inline repair and reroll prompt fragments with `WORLDBOOK_REPAIR` and `WORLDBOOK_SINGLE_REROLL` rendering.
+- [ ] Route imported merge, consolidate body/rules, and alias merge through `MERGE_IMPORTED`, `MERGE_CONSOLIDATE`, `MERGE_CONSOLIDATE_RULES`, and `MERGE_ALIAS`.
+- [ ] Route the chapter opening instruction through `CHAPTER_OPENING` instead of a local inline string.
+- [ ] Search prompt-bearing code after conversion and either map any remaining user-visible instruction string into a module or document why it is protocol metadata/runtime data and not editable prompt content.
 
-## 验收与测试边界
+**Search command:**
 
-自动化验证仅覆盖可由仓库稳定执行的逻辑，不包含浏览器或桌面 UI 自动化：
+```powershell
+rg -n "请|输出|必须|任务|prompt|Prompt|contentGuide|custom[A-Z].*Prompt" txtToWorldbook/services txtToWorldbook/ui txtToWorldbook/index.js
+```
 
-- 注册表默认值、覆盖保存、恢复默认与关键占位符警告计算。
-- 完整主/导演请求的全局与模块组装顺序，以及导演注入内容明确不带全局层。
-- 导演三态模式和 API 失败回退开关的调用分支。
-- PromptManager 注入协议与 `getDirectorPromptForLittleWhiteBox()` 返回结构兼容性。
-- 新旧提示词配置与工程包的迁移/导入导出过滤，尤其是不泄漏 API 与工程包不携带提示词。
-- 现有 Node 测试套件及新增服务级测试。
-- 被修改中文/BOM 文件的编码复核。
+**Test command:**
 
-手机端真实运行体验与电脑端界面布局、交互观感由用户进行手工验证，不作为自动化测试阻塞项。
+```powershell
+node --test tests/promptRegistryService.test.js tests/promptCompositionCallSites.test.js
+```
+
+**Expected result:** Service-level requests render editable module layers and apply global layers exactly once; remaining matching strings are defaults, runtime values, UI labels, or documented non-editable protocol metadata.
+
+**Commit:**
+
+```powershell
+git add txtToWorldbook/services/promptService.js txtToWorldbook/services/processingService.js txtToWorldbook/services/repairService.js txtToWorldbook/services/rerollService.js txtToWorldbook/services/importMergeService.js txtToWorldbook/services/mergeWorkflowService.js txtToWorldbook/services/mergeService.js txtToWorldbook/ui/chapterExperienceView.js tests/promptCompositionCallSites.test.js
+git commit -m "feat: compose all non director prompts from registry"
+```
+
+## Task 5: Implement Director Three-State Behavior And Preserve Injection Compatibility
+
+**Files:**
+- Modify: `txtToWorldbook/services/directorService.js`
+- Modify: `txtToWorldbook/services/directorInjectionService.js` only if dependency wiring or testability requires it; do not change protocol constants
+- Modify: `txtToWorldbook/index.js`
+- Modify: `txtToWorldbook/ui/eventBindings.js`
+- Modify: `txtToWorldbook/ui/settingsPanel.js`
+- Modify: `tests/directorGateService.test.js`
+- Modify: `tests/directorInjectionService.test.js`
+- Modify: `tests/directorPromptManagerService.test.js`
+- Create: `tests/directorModeService.test.js`
+
+- [ ] Add failing tests for each mode:
+
+```js
+directorMode: 'api'            // calls director API; may fall back only when toggle is true
+directorMode: 'local-fallback' // does not call director API; builds editable local decision
+directorMode: 'off'            // returns a skip status and removes/avoids injection
+```
+
+- [ ] Add tests that `directorFallbackOnError: false` does not silently generate a local injection after API error or parse failure.
+- [ ] Compose `DIRECTOR_FRAMEWORK` as a complete director API request with the global layer once.
+- [ ] Render `DIRECTOR_FALLBACK_NEW_BEAT`, `DIRECTOR_FALLBACK_IN_BEAT`, and `DIRECTOR_FALLBACK_END` as editable local fallback content selected by existing decision context.
+- [ ] Render `DIRECTOR_INJECTION` with module-specific prefix/body/suffix only:
+
+```js
+const content = promptRegistryService.renderModule(
+  PROMPT_MODULE_IDS.DIRECTOR_INJECTION,
+  variables
+);
+```
+
+- [ ] Preserve `getDirectorPromptForLittleWhiteBox()` return shape and the existing PromptManager identifier/position/depth behavior. Assert in tests that global prefix/global suffix and main message-chain text do not appear in injection content.
+- [ ] Update `index.js` preparation logic so `off` or API-error-with-fallback-disabled clears/respects skipped injection instead of calling an unconditional local fallback accessor.
+- [ ] Keep `DIRECTOR_INJECTION_MARKER` and `DIRECTOR_INJECTION_IDENTIFIER` fixed protocol metadata; do not expose them in the prompt editor.
+- [ ] Retain the per-turn director meaning of the mode selector; do not reroute the chapter-assets extraction task to local fallback.
+- [ ] Recheck BOM after the two UI file edits in this task.
+
+**Test command:**
+
+```powershell
+node --test tests/directorGateService.test.js tests/directorInjectionService.test.js tests/directorPromptManagerService.test.js tests/directorModeService.test.js
+```
+
+**Expected result:** All director modes behave distinctly; API fallback honors its toggle; PromptManager/LittleWhite injection schema remains compatible and contains no global prompt layers.
+
+**Commit:**
+
+```powershell
+git add txtToWorldbook/services/directorService.js txtToWorldbook/services/directorInjectionService.js txtToWorldbook/index.js txtToWorldbook/ui/eventBindings.js txtToWorldbook/ui/settingsPanel.js tests/directorGateService.test.js tests/directorInjectionService.test.js tests/directorPromptManagerService.test.js tests/directorModeService.test.js
+git commit -m "feat: add director modes without altering injection contract"
+```
+
+## Task 6: Separate Prompt Configuration Packages From Engineering Resource Packages
+
+**Files:**
+- Create: `txtToWorldbook/services/packagePolicyService.js`
+- Modify: `txtToWorldbook/services/importExportService.js`
+- Modify: `txtToWorldbook/services/taskStateService.js`
+- Modify: `txtToWorldbook/infra/memoryHistoryDB.js`
+- Modify: `txtToWorldbook/app/createFeatureServices.js`
+- Modify: `txtToWorldbook/main.js`
+- Create: `tests/packagePolicyService.test.js`
+- Create: `tests/taskStatePackagePolicy.test.js`
+
+- [ ] Add failing tests proving prompt config export includes editable prompt material but excludes API fields:
+
+```js
+{
+  promptConfigVersion,
+  promptGlobal,
+  promptOverrides,
+  promptPrefixPresets,
+  selectedPromptPrefixPreset,
+  promptMessageChain,
+  categoryPromptLayers
+}
+```
+
+- [ ] Add failing tests proving engineering/task export retains resources and result-reproduction parameters but excludes `mainApi`, `directorApi`, keys, route presets, prompt settings, category prompt text, and message chain.
+- [ ] Implement pure policy functions with explicit whitelists rather than cloning `AppState.settings`:
+
+```js
+buildPromptConfigPackage(state)
+applyPromptConfigPackage(state, payload)
+buildResourcePackage(state)
+applyResourcePackage(state, payload)
+filterLegacyPromptImport(payload)
+filterLegacyResourceImport(payload)
+```
+
+- [ ] Make prompt configuration import/export preserve local API provider/address/model/key and route preset settings unchanged, including when importing older full-settings files.
+- [ ] Make task/project package load avoid restoring any API or editable prompt values from both new and legacy payloads.
+- [ ] Strip category `contentGuide` and `promptLayers` from engineering packages while keeping category identity/output-structure data required to interpret stored processing results.
+- [ ] Update memory snapshot restoration so old `savedState.settings` cannot overwrite local API or prompt configuration during result-history recovery.
+- [ ] Pass the policy dependency through feature creation/main wiring.
+
+**Test command:**
+
+```powershell
+node --test tests/packagePolicyService.test.js tests/taskStatePackagePolicy.test.js
+```
+
+**Expected result:** Prompt configuration round-trips independently of API settings; engineering/resource round-trips retain outputs and resume metadata but never carry editable prompt or API data.
+
+**Commit:**
+
+```powershell
+git add txtToWorldbook/services/packagePolicyService.js txtToWorldbook/services/importExportService.js txtToWorldbook/services/taskStateService.js txtToWorldbook/infra/memoryHistoryDB.js txtToWorldbook/app/createFeatureServices.js txtToWorldbook/main.js tests/packagePolicyService.test.js tests/taskStatePackagePolicy.test.js
+git commit -m "feat: split prompt configuration from resource packages"
+```
+
+## Task 7: Document Behavior, Audit Encoding, And Run Final Verification
+
+**Files:**
+- Modify: `README.md`
+- Modify: `westworld.md`
+- Modify: any already-created test file only if a failing verification exposes a missing assertion
+
+- [ ] Document that every prompt module exposes editable prefix/body/suffix, warning-only placeholder validation, immutable restore-default baselines, and global prefix/suffix behavior.
+- [ ] Document director modes, including the separate API-error fallback toggle and the fact that PromptManager/LittleWhite injection does not consume global layers.
+- [ ] Document export boundaries: prompt configuration package contains prompt editing data but no API; engineering resource package contains processing/director outputs and resume parameters but no prompt/API configuration.
+- [ ] Document that UI interaction acceptance is manually performed on the user's mobile/desktop environment; do not add browser automation to verification.
+- [ ] Run the complete Node test suite:
+
+```powershell
+npm test
+```
+
+**Expected result:** The Node test process exits successfully with no failed tests.
+
+- [ ] Verify all touched Chinese/prompt-bearing files decode as strict UTF-8 and ensure the three original BOM files remain BOM-prefixed:
+
+```powershell
+$files = @(
+  'txtToWorldbook/core/constants.js',
+  'txtToWorldbook/ui/settingsPanel.js',
+  'txtToWorldbook/ui/eventBindings.js',
+  'txtToWorldbook/services/promptRegistryService.js',
+  'txtToWorldbook/services/directorService.js',
+  'txtToWorldbook/services/packagePolicyService.js',
+  'README.md',
+  'westworld.md'
+)
+$strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
+foreach ($file in $files) {
+  $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $file))
+  $null = $strictUtf8.GetString($bytes)
+  $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+  Write-Output "$file UTF8=true BOM=$hasBom"
+}
+```
+
+**Expected result:** Every listed file reports `UTF8=true`; `constants.js`, `settingsPanel.js`, and `eventBindings.js` report `BOM=True`, unless a separately approved encoding change supersedes this plan.
+
+- [ ] Inspect the worktree and stage only documentation/tests changed by this final task; leave `AGENTS.md`, `.claude/`, and unrelated deletions untouched.
+
+**Commit:**
+
+```powershell
+git add README.md westworld.md
+git commit -m "docs: explain prompt registry and package boundaries"
+```
+
+## Final Completion Checklist
+
+- [ ] Every AI-readable instruction and editable director injection fragment is represented by a registered module or an explicit category prompt layer.
+- [ ] Every module exposes savable `prefix/body/suffix`, warning-only validation, and immutable restore-default behavior.
+- [ ] Global prefix/suffix apply exactly once to complete outbound model requests and never apply to PromptManager/LittleWhite injection.
+- [ ] Director `api`, `local-fallback`, and `off` modes work, and API failure fallback is independently selectable.
+- [ ] Prompt configuration export/import excludes API fields; engineering resource packages exclude API and editable prompt configuration.
+- [ ] Existing resource payloads retain data needed to interpret or resume processed director/worldbook results.
+- [ ] Node tests pass and encoding/BOM checks pass.
+- [ ] UI behavior is handed to the user for manual validation in the actual mobile/desktop environment, with no browser automation claimed.
