@@ -549,6 +549,8 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
             const reason = prepared?.reason || 'director-content-empty';
             const shouldRespectSkip = [
                 'directorEnabled=false',
+                'directorMode=off',
+                'directorFallbackOnError=false',
                 'directorRunEveryTurn=false',
                 'state-missing',
                 'chapter-missing',

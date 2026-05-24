@@ -843,6 +843,7 @@ const directorTelemetry = createDirectorTelemetryService({
 });
 const directorService = createDirectorService({
     AppState,
+    promptRegistryService,
     MemoryHistoryDB,
     Logger,
     callDirectorAPI,
@@ -1402,7 +1403,7 @@ open = shellRuntimeBindings.open;
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
     publicApi.prepareDirectorInjectionForGeneration = (...args) => directorService.prepareDirectorInjectionForGeneration(...args);
     publicApi.recordDirectorPromptReadyInspection = (...args) => directorService.recordDirectorPromptReadyInspection(...args);
-    publicApi.isDirectorEnabled = () => AppState.settings.directorEnabled !== false;
+    publicApi.isDirectorEnabled = () => (AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api')) !== 'off';
     publicApi.getDirectorRuntimeStatus = () => directorTelemetry.getStatus();
     publicApi.getDirectorLogs = (limit) => directorTelemetry.getLogs(limit);
     publicApi.clearDirectorLogs = () => directorTelemetry.clearLogs();
