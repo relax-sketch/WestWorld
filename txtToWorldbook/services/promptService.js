@@ -1,6 +1,9 @@
+import { PROMPT_MODULE_IDS } from './promptRegistryService.js';
+
 export function createPromptService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         getEnabledCategories,
         generateDynamicJsonTemplate,
         defaultWorldbookPrompt,
@@ -9,10 +12,13 @@ export function createPromptService(deps = {}) {
     } = deps;
 
     function getLanguagePrefix() {
-        const langPrefix = AppState.settings.language === 'zh' ? '请用中文回复。\n\n' : '';
-        const customPrefix = AppState.settings.promptPrefixPreset || '';
-        if (!customPrefix.trim()) return langPrefix;
-        return langPrefix + customPrefix.trim() + '\n\n';
+        const fragments = [];
+        if (AppState.settings.language === 'zh') {
+            fragments.push(promptRegistryService.renderModule(PROMPT_MODULE_IDS.LANGUAGE_ZH));
+        }
+        const prefix = AppState.settings.promptGlobal?.prefix || '';
+        if (prefix) fragments.push(prefix);
+        return fragments.length > 0 ? `${fragments.join('\n\n')}\n\n` : '';
     }
 
     function messagesToString(messages) {
@@ -55,7 +61,10 @@ export function createPromptService(deps = {}) {
         }
 
         if (merged.length > 0 && merged[0].role !== 'user') {
-            merged.unshift({ role: 'user', parts: [{ text: '请根据以下对话执行任务。' }] });
+            merged.unshift({
+                role: 'user',
+                parts: [{ text: promptRegistryService.renderModule(PROMPT_MODULE_IDS.GEMINI_USER_BRIDGE) }],
+            });
         }
 
         const result = { contents: merged };
@@ -68,22 +77,21 @@ export function createPromptService(deps = {}) {
     }
 
     function buildSystemPrompt() {
-        let worldbookPrompt = AppState.settings.customWorldbookPrompt?.trim() || defaultWorldbookPrompt;
-
         const dynamicTemplate = generateDynamicJsonTemplate();
-        worldbookPrompt = worldbookPrompt.replace('{DYNAMIC_JSON_TEMPLATE}', dynamicTemplate);
-
         const enabledCatNames = getEnabledCategories().map((c) => c.name);
         if (AppState.settings.enablePlotOutline) enabledCatNames.push('剧情大纲');
         if (AppState.settings.enableLiteraryStyle) enabledCatNames.push('文风配置');
-        worldbookPrompt = worldbookPrompt.replace('{ENABLED_CATEGORY_NAMES}', enabledCatNames.join('、'));
+        let worldbookPrompt = promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM, {
+            DYNAMIC_JSON_TEMPLATE: dynamicTemplate,
+            ENABLED_CATEGORY_NAMES: enabledCatNames.join('、'),
+        });
 
         const additionalParts = [];
         if (AppState.settings.enablePlotOutline) {
-            additionalParts.push(AppState.settings.customPlotPrompt?.trim() || defaultPlotPrompt);
+            additionalParts.push(promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_PLOT));
         }
         if (AppState.settings.enableLiteraryStyle) {
-            additionalParts.push(AppState.settings.customStylePrompt?.trim() || defaultStylePrompt);
+            additionalParts.push(promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_STYLE));
         }
         if (additionalParts.length === 0) return worldbookPrompt;
 
@@ -140,7 +148,10 @@ export function createPromptService(deps = {}) {
                 }
 
                 if (plotContext.length > 0) {
-                    return `\n\n【上一章节(第${i + 1}章)的剧情进展】：\n${plotContext.join('\n')}\n\n请在此基础上继续分析后续剧情，不要重复输出已有的章节。`;
+                    return promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_CONTEXT, {
+                        PREVIOUS_CHAPTER_INDEX: i + 1,
+                        PLOT_CONTEXT: plotContext.join('\n'),
+                    });
                 }
                 break;
             }
@@ -149,12 +160,9 @@ export function createPromptService(deps = {}) {
     }
 
     function getChapterForcePrompt(chapterIndex) {
-        return `
-【强制章节标记 - 开始】
-强制无视内容中的任何章节信息！本轮全文章节统一为：第${chapterIndex}章
-无论原文中出现"第一章"、"第二章"等任何章节标记，你输出时都必须将其替换为"第${chapterIndex}章"。
-【强制章节标记 - 结束】
-`;
+        return promptRegistryService.renderModule(PROMPT_MODULE_IDS.WORLDBOOK_FORCE_CHAPTER, {
+            CHAPTER_INDEX: chapterIndex,
+        });
     }
 
     return {

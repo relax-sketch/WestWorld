@@ -1,6 +1,7 @@
 ﻿export function createProcessingService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Semaphore,
         updateMemoryQueueUI,
@@ -14,7 +15,6 @@
         postProcessResultWithChapterIndex,
         mergeWorldbookDataWithHistory,
         getChapterForcePrompt,
-        getLanguagePrefix,
         buildSystemPrompt,
         getPreviousMemoryContext,
         getEnabledCategories,
@@ -31,7 +31,6 @@
         handleRepairMemoryWithSplit,
         setProcessingStatus,
         getProcessingStatus,
-        defaultChapterAssetsPrompt,
     } = deps;
 
     const SPLIT_TYPES = new Set([
@@ -458,7 +457,9 @@
         candidates.sort((a, b) => b.score - a.score);
         const top = candidates.slice(0, maxEntries);
         const lines = top.map((item) => `- [${item.category}] ${item.entryName}: ${item.content}`);
-        return `\n\n相关世界书摘录（精简，不是全量）：\n${lines.join('\n')}\n`;
+        return promptRegistryService.renderModule('worldbook.relevant-context', {
+            LINES: lines.join('\n'),
+        });
     }
 
     function ensureChapterRuntime(memory, index) {
@@ -605,26 +606,9 @@
             return `${idx + 1}. ${snippet}`;
         }).join('\n');
 
-        const prompt = `${getLanguagePrefix()}你是酒馆国家的臣民，职业是入场事件识别助手AI，名字是:"秋青子"
-
-任务：根据以下每个节拍的原文前40字，识别出该节拍的"入场事件"（开场事件/触发条件）。
-
-【要求】
-- 每个入场事件必须写成"谁+在哪里+做了什么"的格式
-- 50字以内
-- 必须基于提供的原文前40字内容来识别
-- 如果前40字明显不足以判断，可以结合上下文合理推断，但仍需给出具体的人、地点、动作
-
-【输入】
-${snippets}
-
-输出JSON格式（只输出JSON，不要代码块，不要解释）：
-{
-  "entry_events": [
-    {"index": 0, "entry_event": "xxx"},
-    {"index": 1, "entry_event": "yyy"}
-  ]
-}`;
+        const prompt = promptRegistryService.composeRequest(['director.entry-events'], {
+            'director.entry-events': { SNIPPETS: snippets },
+        });
 
         try {
             updateStreamContent(`🎯 [第${chapterIndex}章] 发起入场事件精炼请求（${beats.length}个节拍）\n`);
@@ -2362,23 +2346,26 @@ ${snippets}
         const chapterIndex = index + 1;
         const chapterTitle = memory.chapterTitle || `第${chapterIndex}章`;
         const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
-        const previousOutline = previousMemory?.chapterOutline ? `\n上一章摘要：${previousMemory.chapterOutline}` : '';
+        const previousOutline = previousMemory?.chapterOutline
+            ? promptRegistryService.renderModule('director.chapter-assets.previous-outline', {
+                PREVIOUS_OUTLINE: previousMemory.chapterOutline,
+            })
+            : '';
         const retryText = String(retryHint || '').replace(/\s+/g, ' ').trim();
         const retryBlock = retryText
-            ? `\n\n上一次输出问题（本次优先修复）：\n- ${retryText}\n- 先保证切点可定位、数量可执行，再考虑补充说明字段。`
+            ? promptRegistryService.renderModule('director.chapter-assets.retry', { RETRY_TEXT: retryText })
             : '';
 
-        const template = String(AppState?.settings?.customChapterAssetsPrompt || '').trim()
-            || defaultChapterAssetsPrompt;
-        const promptBody = renderPromptTemplate(template, {
-            MIN_ANCHOR_LEN: String(MIN_ANCHOR_LEN),
-            MAX_ANCHOR_LEN: String(MAX_ANCHOR_LEN),
-            RETRY_BLOCK: retryBlock,
-            CHAPTER_TITLE: chapterTitle,
-            PREVIOUS_OUTLINE: previousOutline,
-            CHAPTER_CONTENT: memory.content || '',
+        return promptRegistryService.composeRequest(['director.chapter-assets'], {
+            'director.chapter-assets': {
+                MIN_ANCHOR_LEN: String(MIN_ANCHOR_LEN),
+                MAX_ANCHOR_LEN: String(MAX_ANCHOR_LEN),
+                RETRY_BLOCK: retryBlock,
+                CHAPTER_TITLE: chapterTitle,
+                PREVIOUS_OUTLINE: previousOutline,
+                CHAPTER_CONTENT: memory.content || '',
+            },
         });
-        return `${getLanguagePrefix()}${promptBody}`;
 
     }
 
@@ -2651,40 +2638,37 @@ ${snippets}
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += getLanguagePrefix() + buildSystemPrompt();
-
         const prevContext = getPreviousMemoryContext(index);
-        if (prevContext) {
-            prompt += prevContext;
-        }
-
-        if (index > 0 && AppState.memory.queue[index - 1].content) {
-            prompt += `\n\n前文结尾（供参考）：\n---\n${AppState.memory.queue[index - 1].content.slice(-800)}\n---\n`;
-        }
-
-        prompt += `\n\n当前需要分析的内容（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
-
         const enabledCatNamesList = getEnabledCategories().map(c => c.name);
         if (AppState.settings.enablePlotOutline) enabledCatNamesList.push('剧情大纲');
         if (AppState.settings.enableLiteraryStyle) enabledCatNamesList.push('文风配置');
 
         const enabledCatNamesStr = enabledCatNamesList.join('、');
-
-        prompt += `\n\n【输出限制】只允许输出以下分类：${enabledCatNamesStr}。禁止输出未列出的任何其他分类，直接输出JSON。`;
-
-        if (AppState.settings.forceChapterMarker) {
-            prompt += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
-            prompt += chapterForcePrompt;
-        }
-
-        if (customPromptSuffix) {
-            prompt += `\n\n${customPromptSuffix}`;
-        }
-
-        if (AppState.settings.customSuffixPrompt && AppState.settings.customSuffixPrompt.trim()) {
-            prompt += `\n\n${AppState.settings.customSuffixPrompt.trim()}`;
-        }
+        const forceReminder = AppState.settings.forceChapterMarker
+            ? promptRegistryService.renderModule('worldbook.force-reminder', { CHAPTER_INDEX: chapterIndex })
+            : '';
+        const rerollExtra = customPromptSuffix
+            ? promptRegistryService.renderModule('worldbook.reroll.extra', { CUSTOM_REQUIREMENT: customPromptSuffix })
+            : '';
+        const previousEndContext = index > 0 && AppState.memory.queue[index - 1].content
+            ? promptRegistryService.renderModule('worldbook.previous-end.parallel', {
+                PREVIOUS_END: AppState.memory.queue[index - 1].content.slice(-800),
+            })
+            : '';
+        const prompt = promptRegistryService.composeRequest(['worldbook.extract.parallel'], {
+            'worldbook.extract.parallel': {
+                CHAPTER_FORCE: chapterForcePrompt,
+                SYSTEM_PROMPT: buildSystemPrompt(),
+                PREVIOUS_CONTEXT: prevContext,
+                PREVIOUS_END_CONTEXT: previousEndContext,
+                CHAPTER_INDEX: chapterIndex,
+                CHAPTER_CONTENT: memory.content,
+                ENABLED_CATEGORY_NAMES: enabledCatNamesStr,
+                FORCE_REMINDER: forceReminder,
+                CHAPTER_FORCE_REPEAT: chapterForcePrompt,
+                REROLL_EXTRA: rerollExtra,
+            },
+        });
 
         updateStreamContent(`\n🔄 [第${chapterIndex}章] 开始处理: ${memory.title}\n`);
         debugLog(`[第${chapterIndex}章] 开始, prompt长度=${prompt.length}字符, 重试=${retryCount}`);
@@ -2910,38 +2894,36 @@ ${'='.repeat(50)}
 
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += getLanguagePrefix() + buildSystemPrompt();
-
         const prevContext = getPreviousMemoryContext(index);
-        if (prevContext) {
-            prompt += prevContext;
-        }
-
-        if (index > 0) {
-            prompt += `\n\n上次阅读结尾：\n---\n${AppState.memory.queue[index - 1].content.slice(-200)}\n---\n`;
-            const relevantContext = buildRelevantWorldbookContext(memory.content);
-            if (relevantContext) {
-                prompt += relevantContext;
-            }
-        }
-        prompt += `\n现在阅读的部分（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
-
+        const relevantContext = index > 0 ? buildRelevantWorldbookContext(memory.content) : '';
+        let modeModuleId = 'worldbook.extract.serial-accumulate';
         if (index === 0 || index === AppState.memory.startIndex) {
-            prompt += '\n请开始分析小说内容。';
+            modeModuleId = 'worldbook.extract.serial-start';
         } else if (AppState.processing.incrementalMode) {
-            prompt += '\n请增量更新世界书，只输出变更的条目。';
-        } else {
-            prompt += '\n请累积补充世界书。';
+            modeModuleId = 'worldbook.extract.serial-incremental';
         }
-
-        if (AppState.settings.forceChapterMarker) {
-            prompt += `\n\n【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第${chapterIndex}章"！`;
-            prompt += '\n直接输出JSON格式结果。';
-            prompt += chapterForcePrompt;
-        } else {
-            prompt += '\n直接输出JSON格式结果。';
-        }
+        const forceReminder = AppState.settings.forceChapterMarker
+            ? promptRegistryService.renderModule('worldbook.force-reminder', { CHAPTER_INDEX: chapterIndex })
+            : '';
+        const previousEndContext = index > 0 && AppState.memory.queue[index - 1].content
+            ? promptRegistryService.renderModule('worldbook.previous-end.serial', {
+                PREVIOUS_END: AppState.memory.queue[index - 1].content.slice(-200),
+            })
+            : '';
+        const prompt = promptRegistryService.composeRequest(['worldbook.extract.serial'], {
+            'worldbook.extract.serial': {
+                CHAPTER_FORCE: chapterForcePrompt,
+                SYSTEM_PROMPT: buildSystemPrompt(),
+                PREVIOUS_CONTEXT: prevContext,
+                PREVIOUS_END_CONTEXT: previousEndContext,
+                RELEVANT_CONTEXT: relevantContext,
+                CHAPTER_INDEX: chapterIndex,
+                CHAPTER_CONTENT: memory.content,
+                MODE_INSTRUCTION: promptRegistryService.renderModule(modeModuleId),
+                FORCE_REMINDER: forceReminder,
+                CHAPTER_FORCE_REPEAT: chapterForcePrompt,
+            },
+        });
 
         let chapterAssetsPromise = null;
         const throughputMode = resolveChapterCompletionMode() === 'throughput';

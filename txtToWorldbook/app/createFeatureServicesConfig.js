@@ -1,6 +1,7 @@
 export function createFeatureServicesConfig(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
@@ -59,6 +60,7 @@ export function createFeatureServicesConfig(deps = {}) {
 
     return {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,

@@ -671,6 +671,7 @@ const coreServices = createCoreServices({
     },
     processingDeps: ({ apiService, parserService }) => ({
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Semaphore,
         updateMemoryQueueUI,
@@ -705,6 +706,7 @@ const coreServices = createCoreServices({
     }),
     rerollDeps: ({ apiService, parserService }) => ({
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         updateStopButtonVisibility,
         updateStreamContent,
@@ -814,6 +816,7 @@ const {
 } = worldbookRuntimeService;
 const repairService = createRepairService({
     AppState,
+    promptRegistryService,
     MemoryHistoryDB,
     updateProgress: (...args) => updateProgress(...args),
     updateMemoryQueueUI: (...args) => updateMemoryQueueUI(...args),
@@ -1011,6 +1014,7 @@ const {
 
 const chapterExperienceView = createChapterExperienceView({
     AppState,
+    promptRegistryService,
     ErrorHandler,
     confirmAction,
     callAPI,
@@ -1113,6 +1117,7 @@ const {
 } = createFeatureServices({
     ...createFeatureServicesConfig({
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,

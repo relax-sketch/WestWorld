@@ -1,6 +1,7 @@
 ﻿export function createRerollService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         updateStopButtonVisibility,
         updateStreamContent,
@@ -13,7 +14,6 @@
         callAPI,
         parseAIResponse,
         getChapterForcePrompt,
-        getLanguagePrefix,
         getPreviousMemoryContext,
         Semaphore,
         updateProgress,
@@ -146,54 +146,49 @@
         const chapterIndex = memoryIndex + 1;
         const chapterForcePrompt = AppState.settings.forceChapterMarker ? getChapterForcePrompt(chapterIndex) : '';
 
-        let prompt = chapterForcePrompt;
-        prompt += getLanguagePrefix();
-
         const categoryConfig = AppState.persistent.customCategories.find(c => c.name === category);
-        const contentGuide = categoryConfig ? categoryConfig.contentGuide : '';
-
-        prompt += '\n你是一个专业的小说世界书条目生成助手。请根据以下原文内容，专门重新生成指定的条目。\n';
-        prompt += '\n【任务说明】\n';
-        prompt += `- 只需要生成一个条目：分类="${category}"，条目名称="${entryName}"\n`;
-        prompt += '- 请基于原文内容重新分析并生成该条目的信息\n';
-        prompt += `- 输出格式必须是JSON，结构为：{ "${category}": { "${entryName}": { "关键词": [...], "内容": "..." } } }\n`;
-
-        if (contentGuide) {
-            prompt += `\n【该分类的内容指南】\n${contentGuide}\n`;
-        }
+        const contentGuide = categoryConfig?.promptLayers
+            ? [categoryConfig.promptLayers.prefix, categoryConfig.promptLayers.body, categoryConfig.promptLayers.suffix].filter(Boolean).join('\n\n')
+            : (categoryConfig?.contentGuide || '');
 
         const prevContext = getPreviousMemoryContext(memoryIndex);
-        if (prevContext) {
-            prompt += prevContext;
-        }
-
-        if (memoryIndex > 0 && AppState.memory.queue[memoryIndex - 1].content) {
-            prompt += `\n\n前文结尾（供参考）：\n---\n${AppState.memory.queue[memoryIndex - 1].content.slice(-500)}\n---\n`;
-        }
-
-        prompt += `\n\n需要分析的原文内容（第${chapterIndex}章）：\n---\n${memory.content}\n---\n`;
-
         const currentEntry = memory.result?.[category]?.[entryName];
-        if (currentEntry) {
-            prompt += '\n\n【当前条目信息（供参考，请重新分析生成）】\n';
-            prompt += JSON.stringify(currentEntry, null, 2);
-        }
-
-        prompt += '\n\n请重新分析原文，生成更准确、更详细的条目信息。';
-
-        if (customPrompt) {
-            prompt += `\n\n【用户额外要求】\n${customPrompt}`;
-        }
-
-        if (AppState.settings.forceChapterMarker && (category === '剧情大纲' || category === '剧情节点' || category === '章节剧情')) {
-            prompt += `\n\n【重要提醒】条目名称必须包含"第${chapterIndex}章"！`;
-        }
-
-        if (AppState.settings.customSuffixPrompt && AppState.settings.customSuffixPrompt.trim()) {
-            prompt += `\n\n${AppState.settings.customSuffixPrompt.trim()}`;
-        }
-
-        prompt += '\n\n直接输出JSON格式结果，不要有其他内容。';
+        const categoryGuideContext = contentGuide
+            ? promptRegistryService.renderModule('worldbook.reroll.category-guide', { CATEGORY_GUIDE: contentGuide })
+            : '';
+        const previousEndContext = memoryIndex > 0 && AppState.memory.queue[memoryIndex - 1].content
+            ? promptRegistryService.renderModule('worldbook.reroll.previous-end', {
+                PREVIOUS_END: AppState.memory.queue[memoryIndex - 1].content.slice(-500),
+            })
+            : '';
+        const currentEntryContext = currentEntry
+            ? promptRegistryService.renderModule('worldbook.reroll.current-entry', {
+                CURRENT_ENTRY: JSON.stringify(currentEntry, null, 2),
+            })
+            : '';
+        const customRequirement = customPrompt
+            ? promptRegistryService.renderModule('worldbook.reroll.extra', { CUSTOM_REQUIREMENT: customPrompt })
+            : '';
+        const forceReminder = AppState.settings.forceChapterMarker
+            && (category === '剧情大纲' || category === '剧情节点' || category === '章节剧情')
+            ? promptRegistryService.renderModule('worldbook.force-reminder', { CHAPTER_INDEX: chapterIndex })
+            : '';
+        const prompt = promptRegistryService.composeRequest(['worldbook.reroll.single-entry'], {
+            'worldbook.reroll.single-entry': {
+                CHAPTER_INDEX: chapterIndex,
+                CHAPTER_FORCE: chapterForcePrompt,
+                CATEGORY: category,
+                ENTRY_NAME: entryName,
+                JSON_SHAPE: `{ "${category}": { "${entryName}": { "关键词": [...], "内容": "..." } } }`,
+                CATEGORY_GUIDE_CONTEXT: categoryGuideContext,
+                PREVIOUS_CONTEXT: prevContext,
+                PREVIOUS_END_CONTEXT: previousEndContext,
+                CONTENT: memory.content,
+                CURRENT_ENTRY_CONTEXT: currentEntryContext,
+                CUSTOM_REQUIREMENT: customRequirement,
+                FORCE_REMINDER: forceReminder,
+            },
+        });
 
         try {
             memory.processing = true;

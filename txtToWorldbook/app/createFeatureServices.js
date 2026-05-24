@@ -13,6 +13,7 @@ import { createRuntimeActionsFacade } from './runtimeActionsFacade.js';
 export function createFeatureServices(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
@@ -103,6 +104,7 @@ export function createFeatureServices(deps = {}) {
 
     const importMergeService = createImportMergeService({
         AppState,
+        promptRegistryService,
         Logger,
         ErrorHandler,
         ModalFactory,
@@ -192,6 +194,7 @@ export function createFeatureServices(deps = {}) {
 
     const mergeWorkflowService = createMergeWorkflowService({
         AppState,
+        promptRegistryService,
         ErrorHandler,
         ModalFactory,
         getEntryTotalTokens,

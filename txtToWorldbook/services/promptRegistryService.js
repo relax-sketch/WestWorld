@@ -12,22 +12,36 @@ import {
 
 export const PROMPT_MODULE_IDS = Object.freeze({
     LANGUAGE_ZH: 'common.language.zh',
+    GEMINI_USER_BRIDGE: 'common.gemini.user-bridge',
     WORLDBOOK_SYSTEM: 'worldbook.system',
     WORLDBOOK_PLOT: 'worldbook.plot',
     WORLDBOOK_STYLE: 'worldbook.style',
     WORLDBOOK_PREVIOUS_CONTEXT: 'worldbook.previous-context',
     WORLDBOOK_RELEVANT_CONTEXT: 'worldbook.relevant-context',
+    WORLDBOOK_PREVIOUS_END_PARALLEL: 'worldbook.previous-end.parallel',
+    WORLDBOOK_PREVIOUS_END_SERIAL: 'worldbook.previous-end.serial',
     WORLDBOOK_FORCE_CHAPTER: 'worldbook.force-chapter',
+    WORLDBOOK_FORCE_REMINDER: 'worldbook.force-reminder',
     WORLDBOOK_PARALLEL_REQUEST: 'worldbook.extract.parallel',
     WORLDBOOK_SERIAL_REQUEST: 'worldbook.extract.serial',
+    WORLDBOOK_SERIAL_START: 'worldbook.extract.serial-start',
+    WORLDBOOK_SERIAL_INCREMENTAL: 'worldbook.extract.serial-incremental',
+    WORLDBOOK_SERIAL_ACCUMULATE: 'worldbook.extract.serial-accumulate',
     WORLDBOOK_REROLL_EXTRA: 'worldbook.reroll.extra',
     WORLDBOOK_REPAIR: 'worldbook.repair',
+    WORLDBOOK_REPAIR_EXISTING: 'worldbook.repair.existing-worldbook',
     WORLDBOOK_SINGLE_REROLL: 'worldbook.reroll.single-entry',
+    WORLDBOOK_SINGLE_REROLL_CATEGORY_GUIDE: 'worldbook.reroll.category-guide',
+    WORLDBOOK_SINGLE_REROLL_PREVIOUS_END: 'worldbook.reroll.previous-end',
+    WORLDBOOK_SINGLE_REROLL_CURRENT_ENTRY: 'worldbook.reroll.current-entry',
     MERGE_IMPORTED: 'merge.imported-entry',
     MERGE_CONSOLIDATE: 'merge.consolidate',
     MERGE_CONSOLIDATE_RULES: 'merge.consolidate.rules',
     MERGE_ALIAS: 'merge.alias',
+    MERGE_ALIAS_PAIR: 'merge.alias.pair',
     DIRECTOR_CHAPTER_ASSETS: 'director.chapter-assets',
+    DIRECTOR_CHAPTER_ASSETS_PREVIOUS: 'director.chapter-assets.previous-outline',
+    DIRECTOR_CHAPTER_ASSETS_RETRY: 'director.chapter-assets.retry',
     DIRECTOR_ENTRY_EVENTS: 'director.entry-events',
     DIRECTOR_FRAMEWORK: 'director.framework',
     DIRECTOR_INJECTION: 'director.injection',
@@ -35,6 +49,9 @@ export const PROMPT_MODULE_IDS = Object.freeze({
     DIRECTOR_FALLBACK_IN_BEAT: 'director.fallback.in-beat',
     DIRECTOR_FALLBACK_END: 'director.fallback.end',
     CHAPTER_OPENING: 'chapter.opening',
+    CHAPTER_OPENING_NO_SUMMARY: 'chapter.opening.no-summary',
+    CHAPTER_OPENING_NO_CARRY: 'chapter.opening.no-carry',
+    CHAPTER_OPENING_NO_LEAD: 'chapter.opening.no-lead',
 });
 
 function moduleDefinition(id, body = '', options = {}) {
@@ -50,10 +67,168 @@ function moduleDefinition(id, body = '', options = {}) {
     });
 }
 
+const defaultPreviousContextPrompt = `【上一章节(第{PREVIOUS_CHAPTER_INDEX}章)的剧情进展】：
+{PLOT_CONTEXT}
+
+请在此基础上继续分析后续剧情，不要重复输出已有的章节。`;
+
+const defaultRelevantContextPrompt = `相关世界书摘录（精简，不是全量）：
+{LINES}`;
+
+const defaultChapterForcePrompt = `【强制章节标记 - 开始】
+强制无视内容中的任何章节信息！本轮全文章节统一为：第{CHAPTER_INDEX}章
+无论原文中出现"第一章"、"第二章"等任何章节标记，你输出时都必须将其替换为"第{CHAPTER_INDEX}章"。
+【强制章节标记 - 结束】`;
+
+const defaultChapterForceReminderPrompt = `【重要提醒】如果输出剧情大纲或剧情节点或章节剧情，条目名称必须包含"第{CHAPTER_INDEX}章"！`;
+
+const defaultParallelRequestPrompt = `{CHAPTER_FORCE}
+
+{SYSTEM_PROMPT}
+
+{PREVIOUS_CONTEXT}
+{PREVIOUS_END_CONTEXT}
+
+当前需要分析的内容（第{CHAPTER_INDEX}章）：
+---
+{CHAPTER_CONTENT}
+---
+
+【输出限制】只允许输出以下分类：{ENABLED_CATEGORY_NAMES}。禁止输出未列出的任何其他分类，直接输出JSON。
+
+{FORCE_REMINDER}
+{CHAPTER_FORCE_REPEAT}
+{REROLL_EXTRA}`;
+
+const defaultSerialRequestPrompt = `{CHAPTER_FORCE}
+
+{SYSTEM_PROMPT}
+
+{PREVIOUS_CONTEXT}
+{PREVIOUS_END_CONTEXT}
+{RELEVANT_CONTEXT}
+
+现在阅读的部分（第{CHAPTER_INDEX}章）：
+---
+{CHAPTER_CONTENT}
+---
+
+{MODE_INSTRUCTION}
+
+{FORCE_REMINDER}
+直接输出JSON格式结果。
+{CHAPTER_FORCE_REPEAT}`;
+
+const defaultRerollExtraPrompt = `【用户额外要求】
+{CUSTOM_REQUIREMENT}`;
+
+const defaultRepairPrompt = `{CHAPTER_FORCE}
+
+你是世界书生成专家。请提取关键信息。
+
+输出JSON格式：
+{DYNAMIC_JSON_TEMPLATE}
+
+{PREVIOUS_CONTEXT}
+{EXISTING_WORLDBOOK_CONTEXT}
+阅读内容（第{CHAPTER_INDEX}章）：
+---
+{CONTENT}
+---
+
+请输出JSON。
+{CHAPTER_FORCE}`;
+
+const defaultSingleRerollPrompt = `{CHAPTER_FORCE}
+
+你是一个专业的小说世界书条目生成助手。请根据以下原文内容，专门重新生成指定的条目。
+
+【任务说明】
+- 只需要生成一个条目：分类="{CATEGORY}"，条目名称="{ENTRY_NAME}"
+- 请基于原文内容重新分析并生成该条目的信息
+- 输出格式必须是JSON，结构为：{JSON_SHAPE}
+
+{CATEGORY_GUIDE_CONTEXT}
+{PREVIOUS_CONTEXT}
+{PREVIOUS_END_CONTEXT}
+
+需要分析的原文内容（第{CHAPTER_INDEX}章）：
+---
+{CONTENT}
+---
+
+{CURRENT_ENTRY_CONTEXT}
+
+请重新分析原文，生成更准确、更详细的条目信息。
+{CUSTOM_REQUIREMENT}
+{FORCE_REMINDER}
+
+直接输出JSON格式结果，不要有其他内容。`;
+
+const defaultConsolidateRulesPrompt = `【强制输出要求】
+1. 去重目标是字段重复，不是删减事实。
+2. 同字段同内容只保留一份，禁止重复输出。
+3. 同字段不同信息必须融合保留，不得覆盖或遗漏。
+4. 禁止输出“字段补充1/补充2/补充N”键名，补充信息必须并入主字段。
+5. 若同一字段有多条信息，写在同一个字段值内（用“；”分隔）。
+6. 尽量采用“字段: 值”的结构化格式输出。
+7. 不要输出解释文字，只输出整理后的正文。`;
+
+const defaultAliasPairPrompt = `配对{PAIR_INDEX}: 「{NAME_A}」vs「{NAME_B}」
+  【{NAME_A}】关键词: {KEYWORDS_A}
+  内容摘要: {CONTENT_A}{TRUNCATED_A}
+  【{NAME_B}】关键词: {KEYWORDS_B}
+  内容摘要: {CONTENT_B}{TRUNCATED_B}`;
+
+const defaultChapterAssetsRetryPrompt = `上一次输出问题（本次优先修复）：
+- {RETRY_TEXT}
+- 先保证切点可定位、数量可执行，再考虑补充说明字段。`;
+
+const defaultEntryEventsPrompt = `你是酒馆国家的臣民，职业是入场事件识别助手AI，名字是:"秋青子"
+
+任务：根据以下每个节拍的原文前40字，识别出该节拍的"入场事件"（开场事件/触发条件）。
+
+【要求】
+- 每个入场事件必须写成"谁+在哪里+做了什么"的格式
+- 50字以内
+- 必须基于提供的原文前40字内容来识别
+- 如果前40字明显不足以判断，可以结合上下文合理推断，但仍需给出具体的人、地点、动作
+
+【输入】
+{SNIPPETS}
+
+输出JSON格式（只输出JSON，不要代码块，不要解释）：
+{
+  "entry_events": [
+    {"index": 0, "entry_event": "xxx"},
+    {"index": 1, "entry_event": "yyy"}
+  ]
+}`;
+
+const defaultChapterOpeningPrompt = `你是互动小说旁白。请生成“承上启下型开场白”。
+
+硬性要求：
+1) 仅输出 100 字以内中文，不要解释规则，不要输出JSON，不要分点。
+2) 只能用于衔接上文并引入本章，不要推进剧情。
+3) 先承上，再启下：承上必须参考“承上素材（尾部截断）”；启下必须参考“启下素材（头部截断）”。
+4) 不得泄露本章后续目标、流程、关键节点、核心冲突、转折或结局。
+
+当前章节：{CHAPTER_TITLE}
+当前章节摘要（参考）：{CHAPTER_SUMMARY}
+承上来源：{CARRY_SOURCE}
+承上素材（尾部截断100字）：{CARRY_TEXT}
+启下素材（头部截断100字）：{LEAD_TEXT}
+
+请直接输出开场白正文：`;
+
 export const DEFAULT_PROMPT_MODULE_DEFINITIONS = Object.freeze({
     [PROMPT_MODULE_IDS.LANGUAGE_ZH]: moduleDefinition(
         PROMPT_MODULE_IDS.LANGUAGE_ZH,
         '\u8bf7\u7528\u4e2d\u6587\u56de\u590d\u3002',
+    ),
+    [PROMPT_MODULE_IDS.GEMINI_USER_BRIDGE]: moduleDefinition(
+        PROMPT_MODULE_IDS.GEMINI_USER_BRIDGE,
+        '请根据以下对话执行任务。',
     ),
     [PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM]: moduleDefinition(
         PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM,
@@ -62,26 +237,54 @@ export const DEFAULT_PROMPT_MODULE_DEFINITIONS = Object.freeze({
     ),
     [PROMPT_MODULE_IDS.WORLDBOOK_PLOT]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PLOT, defaultPlotPrompt),
     [PROMPT_MODULE_IDS.WORLDBOOK_STYLE]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_STYLE, defaultStylePrompt),
-    [PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_CONTEXT]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_CONTEXT),
-    [PROMPT_MODULE_IDS.WORLDBOOK_RELEVANT_CONTEXT]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_RELEVANT_CONTEXT),
-    [PROMPT_MODULE_IDS.WORLDBOOK_FORCE_CHAPTER]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_FORCE_CHAPTER),
-    [PROMPT_MODULE_IDS.WORLDBOOK_PARALLEL_REQUEST]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PARALLEL_REQUEST),
-    [PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_REQUEST]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_REQUEST),
-    [PROMPT_MODULE_IDS.WORLDBOOK_REROLL_EXTRA]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_REROLL_EXTRA),
-    [PROMPT_MODULE_IDS.WORLDBOOK_REPAIR]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_REPAIR),
-    [PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL),
+    [PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_CONTEXT]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_CONTEXT, defaultPreviousContextPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_RELEVANT_CONTEXT]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_RELEVANT_CONTEXT, defaultRelevantContextPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_END_PARALLEL]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_END_PARALLEL, `前文结尾（供参考）：
+---
+{PREVIOUS_END}
+---`),
+    [PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_END_SERIAL]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PREVIOUS_END_SERIAL, `上次阅读结尾：
+---
+{PREVIOUS_END}
+---`),
+    [PROMPT_MODULE_IDS.WORLDBOOK_FORCE_CHAPTER]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_FORCE_CHAPTER, defaultChapterForcePrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_FORCE_REMINDER]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_FORCE_REMINDER, defaultChapterForceReminderPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_PARALLEL_REQUEST]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_PARALLEL_REQUEST, defaultParallelRequestPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_REQUEST]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_REQUEST, defaultSerialRequestPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_START]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_START, '请开始分析小说内容。'),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_INCREMENTAL]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_INCREMENTAL, '请增量更新世界书，只输出变更的条目。'),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_ACCUMULATE]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SERIAL_ACCUMULATE, '请累积补充世界书。'),
+    [PROMPT_MODULE_IDS.WORLDBOOK_REROLL_EXTRA]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_REROLL_EXTRA, defaultRerollExtraPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_REPAIR]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_REPAIR, defaultRepairPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_REPAIR_EXISTING]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_REPAIR_EXISTING, `当前世界书：
+{EXISTING_WORLDBOOK}`),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL, defaultSingleRerollPrompt),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_CATEGORY_GUIDE]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_CATEGORY_GUIDE, `【该分类的内容指南】
+{CATEGORY_GUIDE}`),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_PREVIOUS_END]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_PREVIOUS_END, `前文结尾（供参考）：
+---
+{PREVIOUS_END}
+---`),
+    [PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_CURRENT_ENTRY]: moduleDefinition(PROMPT_MODULE_IDS.WORLDBOOK_SINGLE_REROLL_CURRENT_ENTRY, `【当前条目信息（供参考，请重新分析生成）】
+{CURRENT_ENTRY}`),
     [PROMPT_MODULE_IDS.MERGE_IMPORTED]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_IMPORTED, defaultMergePrompt),
     [PROMPT_MODULE_IDS.MERGE_CONSOLIDATE]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_CONSOLIDATE, defaultConsolidatePrompt),
-    [PROMPT_MODULE_IDS.MERGE_CONSOLIDATE_RULES]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_CONSOLIDATE_RULES),
+    [PROMPT_MODULE_IDS.MERGE_CONSOLIDATE_RULES]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_CONSOLIDATE_RULES, defaultConsolidateRulesPrompt),
     [PROMPT_MODULE_IDS.MERGE_ALIAS]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_ALIAS, defaultAliasMergePrompt),
+    [PROMPT_MODULE_IDS.MERGE_ALIAS_PAIR]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_ALIAS_PAIR, defaultAliasPairPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS, defaultChapterAssetsPrompt),
-    [PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS),
+    [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_PREVIOUS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_PREVIOUS, '上一章摘要：{PREVIOUS_OUTLINE}'),
+    [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_RETRY]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_RETRY, defaultChapterAssetsRetryPrompt),
+    [PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS, defaultEntryEventsPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK, defaultDirectorFrameworkPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_INJECTION]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_INJECTION, defaultDirectorInjectionPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_NEW_BEAT]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_NEW_BEAT),
     [PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_IN_BEAT]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_IN_BEAT),
     [PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_END]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_FALLBACK_END),
-    [PROMPT_MODULE_IDS.CHAPTER_OPENING]: moduleDefinition(PROMPT_MODULE_IDS.CHAPTER_OPENING),
+    [PROMPT_MODULE_IDS.CHAPTER_OPENING]: moduleDefinition(PROMPT_MODULE_IDS.CHAPTER_OPENING, defaultChapterOpeningPrompt),
+    [PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_SUMMARY]: moduleDefinition(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_SUMMARY, '无'),
+    [PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_CARRY]: moduleDefinition(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_CARRY, '无可用AI尾部承接（非首章且聊天中暂无AI输出）'),
+    [PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_LEAD]: moduleDefinition(PROMPT_MODULE_IDS.CHAPTER_OPENING_NO_LEAD, '本章开头素材缺失'),
 });
 
 function copyLayers(layers = {}) {
@@ -170,7 +373,7 @@ export function createPromptRegistryService(deps = {}) {
         return renderLayers(getResolvedModule(id), variables);
     }
 
-    function composeRequest(moduleIds, variablesById = {}, options = {}) {
+    function composeFragments(fragments = [], options = {}) {
         const includeGlobal = options.includeGlobal !== false;
         const settings = getSettings();
         const rendered = [];
@@ -180,14 +383,21 @@ export function createPromptRegistryService(deps = {}) {
         if (includeGlobal && typeof settings.promptGlobal.prefix === 'string' && settings.promptGlobal.prefix !== '') {
             rendered.push(settings.promptGlobal.prefix);
         }
-        for (const id of moduleIds) {
-            const content = renderModule(id, variablesById[id] || {});
+        for (const fragment of fragments) {
+            const content = String(fragment || '');
             if (content !== '') rendered.push(content);
         }
         if (includeGlobal && typeof settings.promptGlobal.suffix === 'string' && settings.promptGlobal.suffix !== '') {
             rendered.push(settings.promptGlobal.suffix);
         }
         return rendered.join('\n\n');
+    }
+
+    function composeRequest(moduleIds, variablesById = {}, options = {}) {
+        return composeFragments(
+            moduleIds.map((id) => renderModule(id, variablesById[id] || {})),
+            options,
+        );
     }
 
     function getWarnings(id, layers = getResolvedModule(id)) {
@@ -271,6 +481,7 @@ export function createPromptRegistryService(deps = {}) {
         setOverride,
         resetOverride,
         renderModule,
+        composeFragments,
         composeRequest,
         getWarnings,
         migrateLegacySettings,

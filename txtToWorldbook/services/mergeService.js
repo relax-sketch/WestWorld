@@ -8,9 +8,9 @@
 export function createMergeService(deps = {}) {
     const {
         AppState,
+        promptRegistryService,
         Logger,
         getAllVolumesWorldbook,
-        getLanguagePrefix,
         updateStreamContent,
         Semaphore,
         callAPI,
@@ -363,11 +363,17 @@ export function createMergeService(deps = {}) {
                 const contentA = (entryA?.['内容'] || '').substring(0, 300);
                 const contentB = (entryB?.['内容'] || '').substring(0, 300);
 
-                return `配对${startIndex + i + 1}: 「${nameA}」vs「${nameB}」
-  【${nameA}】关键词: ${keywordsA}
-  内容摘要: ${contentA}${contentA.length >= 300 ? '...' : ''}
-  【${nameB}】关键词: ${keywordsB}
-  内容摘要: ${contentB}${contentB.length >= 300 ? '...' : ''}`;
+                return promptRegistryService.renderModule('merge.alias.pair', {
+                    PAIR_INDEX: startIndex + i + 1,
+                    NAME_A: nameA,
+                    NAME_B: nameB,
+                    KEYWORDS_A: keywordsA,
+                    KEYWORDS_B: keywordsB,
+                    CONTENT_A: contentA,
+                    CONTENT_B: contentB,
+                    TRUNCATED_A: contentA.length >= 300 ? '...' : '',
+                    TRUNCATED_B: contentB.length >= 300 ? '...' : '',
+                });
             }).join('\n\n');
         };
 
@@ -377,43 +383,16 @@ export function createMergeService(deps = {}) {
         const entityPerson = categoryName === '角色' ? '人' : '事物';
 
         const buildPrompt = (pairsContent) => {
-            const customPrompt = AppState.settings?.customAliasMergePrompt;
-            if (customPrompt) {
-                let result = customPrompt;
-                result = result.split('{categoryName}').join(categoryName);
-                result = result.split('{categoryLabel}').join(categoryLabel);
-                result = result.split('{entityType}').join(entityType);
-                result = result.split('{entityUnit}').join(entityUnit);
-                result = result.split('{entityPerson}').join(entityPerson);
-                result = result.split('{pairsContent}').join(pairsContent);
-                return getLanguagePrefix() + result;
-            }
-
-            return getLanguagePrefix() + `你是${categoryName}识别专家。请对以下每一对${categoryLabel}进行判断，判断它们是否为同一${entityType}。
-
-## 待判断的${categoryLabel}配对
-${pairsContent}
-
-## 判断依据
-- 仔细阅读每个条目的关键词和内容摘要
-- 根据描述的核心特征、身份、背景等信息判断
-- 考虑：全名vs简称、别名、昵称、代号等称呼变化
-- 如果内容描述明显指向同一${entityUnit}，则判定为相同
-- 【重要】即使名字相似，如果核心特征明显不同，也要判定为不同
-
-## 要求
-- 对每一对分别判断
-- 如果是同一${entityPerson}，选择更完整/更常用的名称作为mainName
-- 如果不是同一${entityPerson}，说明原因
-- 返回JSON格式
-
-## 输出格式
-{
-    "results": [
-        {"pair": 1, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": true, "mainName": "保留的名称", "reason": "判断依据"},
-        {"pair": 2, "nameA": "条目A名", "nameB": "条目B名", "isSamePerson": false, "reason": "不是同一${entityPerson}的原因"}
-    ]
-}`;
+            return promptRegistryService.composeRequest(['merge.alias'], {
+                'merge.alias': {
+                    categoryName,
+                    categoryLabel,
+                    entityType,
+                    entityUnit,
+                    entityPerson,
+                    pairsContent,
+                },
+            });
         };
 
         const pairResults = [];

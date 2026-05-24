@@ -73,6 +73,21 @@ test('complete requests apply global layers once and language prompt when enable
     assert.equal(result.includes('PLOT'), true);
 });
 
+test('complete requests can wrap pre-rendered runtime fragments with global layers once', () => {
+    const AppState = createState({
+        language: 'zh',
+        promptGlobal: { prefix: 'GLOBAL BEFORE', suffix: 'GLOBAL AFTER' },
+    });
+    const registry = createPromptRegistryService({ AppState });
+
+    const result = registry.composeFragments(['RUNTIME CONTEXT', 'RUNTIME CONTENT']);
+
+    assert.equal(result.match(/GLOBAL BEFORE/g)?.length, 1);
+    assert.equal(result.match(/GLOBAL AFTER/g)?.length, 1);
+    assert.equal(result.includes('RUNTIME CONTEXT'), true);
+    assert.equal(result.includes('RUNTIME CONTENT'), true);
+});
+
 test('injection rendering can bypass global and language layers', () => {
     const AppState = createState({
         language: 'zh',
