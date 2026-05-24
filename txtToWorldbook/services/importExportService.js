@@ -2,7 +2,7 @@ export function createImportExportService(deps = {}) {
     const {
         AppState,
         ErrorHandler,
-        defaultSettings,
+        packagePolicyService,
         getAllVolumesWorldbook,
         convertToSillyTavernFormat,
         getExportBaseName,
@@ -10,8 +10,6 @@ export function createImportExportService(deps = {}) {
         saveCustomCategories,
         updateSettingsUI,
         renderCategoriesList,
-        renderDefaultWorldbookEntriesUI,
-        updateChapterRegexUI,
     } = deps;
 
     function exportCharacterCard() {
@@ -170,35 +168,7 @@ export function createImportExportService(deps = {}) {
     function exportSettings() {
         saveCurrentSettings();
 
-        const exportData = {
-            version: '2.9.0',
-            type: 'AppState.settings',
-            timestamp: Date.now(),
-            settings: { ...AppState.settings },
-            categoryLightSettings: AppState.config.categoryLight,
-            parallelConfig: AppState.config.parallel,
-            customWorldbookCategories: AppState.persistent.customCategories,
-            chapterRegexSettings: AppState.config.chapterRegex,
-            defaultWorldbookEntriesUI: AppState.persistent.defaultEntries,
-            categoryDefaultConfig: AppState.config.categoryDefault,
-            entryPositionConfig: AppState.config.entryPosition,
-            prompts: {
-                worldbookPrompt: AppState.settings.customWorldbookPrompt,
-                consolidatePrompt: AppState.settings.customConsolidatePrompt,
-                chapterAssetsPrompt: AppState.settings.customChapterAssetsPrompt,
-                directorFrameworkPrompt: AppState.settings.customDirectorFrameworkPrompt,
-                directorInjectionPrompt: AppState.settings.customDirectorInjectionPrompt,
-                plotPrompt: AppState.settings.customPlotPrompt,
-                stylePrompt: AppState.settings.customStylePrompt,
-                mergePrompt: AppState.settings.customMergePrompt,
-                rerollPrompt: AppState.settings.customRerollPrompt,
-                batchRerollPrompt: AppState.settings.customBatchRerollPrompt,
-                defaultWorldbookEntries: AppState.settings.defaultWorldbookEntries,
-            },
-            consolidatePromptPresets: AppState.settings.consolidatePromptPresets,
-            consolidateCategoryPresetMap: AppState.settings.consolidateCategoryPresetMap,
-            promptMessageChain: AppState.settings.promptMessageChain,
-        };
+        const exportData = packagePolicyService.buildPromptConfigPackage(AppState);
         const timeString = new Date()
             .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
             .replace(/[:/\s]/g, '')
@@ -211,7 +181,7 @@ export function createImportExportService(deps = {}) {
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
-        ErrorHandler.showUserSuccess('配置已导出！（包含提示词配置、整理条目预设和默认世界书条目）');
+        ErrorHandler.showUserSuccess('提示词配置包已导出！（不包含 API 地址、模型或 Key）');
     }
 
     function importSettings() {
@@ -224,89 +194,18 @@ export function createImportExportService(deps = {}) {
             try {
                 const content = await file.text();
                 const data = JSON.parse(content);
-                if (data.type !== 'AppState.settings') throw new Error('不是有效的配置文件');
-
-                if (data.settings) {
-                    AppState.settings = { ...defaultSettings, ...data.settings };
-                }
-                if (data.parallelConfig) {
-                    AppState.config.parallel = { ...AppState.config.parallel, ...data.parallelConfig };
-                }
-                if (data.categoryLightSettings) {
-                    AppState.config.categoryLight = { ...AppState.config.categoryLight, ...data.categoryLightSettings };
-                }
-                if (data.customWorldbookCategories) {
-                    AppState.persistent.customCategories = data.customWorldbookCategories;
-                    await saveCustomCategories();
-                }
-                if (data.chapterRegexSettings) {
-                    AppState.config.chapterRegex = data.chapterRegexSettings;
-                }
-                if (data.defaultWorldbookEntriesUI) {
-                    AppState.persistent.defaultEntries = data.defaultWorldbookEntriesUI;
-                }
-                if (data.categoryDefaultConfig) {
-                    AppState.config.categoryDefault = data.categoryDefaultConfig;
-                }
-                if (data.entryPositionConfig) {
-                    AppState.config.entryPosition = data.entryPositionConfig;
-                }
-                if (data.plotOutlineExportConfig) {
-                    AppState.config.plotOutline = data.plotOutlineExportConfig;
-                }
-                if (data.promptMessageChain) {
-                    AppState.settings.promptMessageChain = data.promptMessageChain;
-                }
-                if (data.consolidatePromptPresets) {
-                    AppState.settings.consolidatePromptPresets = data.consolidatePromptPresets;
-                }
-                if (data.consolidateCategoryPresetMap) {
-                    AppState.settings.consolidateCategoryPresetMap = data.consolidateCategoryPresetMap;
+                if (data.type !== 'WestWorld.promptConfig' && data.type !== 'AppState.settings') {
+                    throw new Error('不是有效的提示词配置文件');
                 }
 
-                if (data.prompts) {
-                    if (data.prompts.worldbookPrompt !== undefined) {
-                        AppState.settings.customWorldbookPrompt = data.prompts.worldbookPrompt;
-                    }
-                    if (data.prompts.consolidatePrompt !== undefined) {
-                        AppState.settings.customConsolidatePrompt = data.prompts.consolidatePrompt;
-                    }
-                    if (data.prompts.chapterAssetsPrompt !== undefined) {
-                        AppState.settings.customChapterAssetsPrompt = data.prompts.chapterAssetsPrompt;
-                    }
-                    if (data.prompts.directorFrameworkPrompt !== undefined) {
-                        AppState.settings.customDirectorFrameworkPrompt = data.prompts.directorFrameworkPrompt;
-                    }
-                    if (data.prompts.directorInjectionPrompt !== undefined) {
-                        AppState.settings.customDirectorInjectionPrompt = data.prompts.directorInjectionPrompt;
-                    }
-                    if (data.prompts.plotPrompt !== undefined) {
-                        AppState.settings.customPlotPrompt = data.prompts.plotPrompt;
-                    }
-                    if (data.prompts.stylePrompt !== undefined) {
-                        AppState.settings.customStylePrompt = data.prompts.stylePrompt;
-                    }
-                    if (data.prompts.mergePrompt !== undefined) {
-                        AppState.settings.customMergePrompt = data.prompts.mergePrompt;
-                    }
-                    if (data.prompts.rerollPrompt !== undefined) {
-                        AppState.settings.customRerollPrompt = data.prompts.rerollPrompt;
-                    }
-                    if (data.prompts.batchRerollPrompt !== undefined) {
-                        AppState.settings.customBatchRerollPrompt = data.prompts.batchRerollPrompt;
-                    }
-                    if (data.prompts.defaultWorldbookEntries !== undefined) {
-                        AppState.settings.defaultWorldbookEntries = data.prompts.defaultWorldbookEntries;
-                    }
-                }
+                packagePolicyService.applyPromptConfigPackage(AppState, data);
+                await saveCustomCategories();
 
                 updateSettingsUI();
                 renderCategoriesList();
-                renderDefaultWorldbookEntriesUI();
-                updateChapterRegexUI();
                 saveCurrentSettings();
 
-                ErrorHandler.showUserSuccess('配置导入成功！');
+                ErrorHandler.showUserSuccess('提示词配置导入成功！本机 API 设置保持不变。');
             } catch (error) {
                 ErrorHandler.showUserError('导入失败: ' + error.message);
             }

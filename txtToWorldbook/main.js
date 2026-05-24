@@ -94,6 +94,7 @@ import { createRepairService } from './services/repairService.js';
 import { createWorldbookRuntimeService } from './services/worldbookRuntimeService.js';
 import { createDirectorService } from './services/directorService.js';
 import { createDirectorTelemetryService } from './services/directorTelemetryService.js';
+import { createPackagePolicyService } from './services/packagePolicyService.js';
 import { createAppContext } from './app/createApp.js';
 import { createCoreServices } from './app/createCoreServices.js';
 import { createFeatureServicesConfig } from './app/createFeatureServicesConfig.js';
@@ -759,6 +760,7 @@ const {
     getRerollService,
     getRerollModals,
 } = coreServices;
+const packagePolicyService = createPackagePolicyService();
 const {
     getLanguagePrefix,
     messagesToString,
@@ -1119,12 +1121,12 @@ const {
     ...createFeatureServicesConfig({
         AppState,
         promptRegistryService,
+        packagePolicyService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
         ModalFactory,
         confirmAction,
-        defaultSettings,
         defaultMergePrompt,
         defaultConsolidatePrompt,
         naturalSortEntryNames,

@@ -2,10 +2,10 @@ export function createTaskStateService(deps = {}) {
     const {
         AppState,
         MemoryHistoryDB,
+        packagePolicyService,
         Logger,
         ErrorHandler,
         confirmAction,
-        defaultSettings,
         getExportBaseName,
         rebuildWorldbookFromMemories,
         showQueueSection,
@@ -22,7 +22,7 @@ export function createTaskStateService(deps = {}) {
 
     const TASK_STATE_TYPE = 'WestWorld.taskState';
     const LEGACY_TASK_STATE_TYPE = 'StoryWeaver.taskState';
-    const TASK_STATE_VERSION = '3.5.1';
+    const TASK_STATE_VERSION = '3.6.0';
     const SPLIT_TYPES = new Set([
         'scene_change',
         'time_jump',
@@ -239,36 +239,25 @@ export function createTaskStateService(deps = {}) {
     async function saveTaskState() {
         const normalizedQueue = normalizeMemoryQueue(AppState.memory.queue);
         const queueLength = normalizedQueue.length;
-        const state = {
-            version: TASK_STATE_VERSION,
-            type: TASK_STATE_TYPE,
-            timestamp: Date.now(),
-            memoryQueue: normalizedQueue,
-            generatedWorldbook: AppState.worldbook.generated,
-            worldbookVolumes: AppState.worldbook.volumes,
-            currentVolumeIndex: AppState.worldbook.currentVolumeIndex,
-            fileHash: AppState.file.hash,
-            settings: AppState.settings,
-            parallelConfig: AppState.config.parallel,
-            categoryLightSettings: AppState.config.categoryLight,
-            customWorldbookCategories: AppState.persistent.customCategories,
-            chapterRegexSettings: AppState.config.chapterRegex,
-            defaultWorldbookEntriesUI: AppState.persistent.defaultEntries,
-            categoryDefaultConfig: AppState.config.categoryDefault,
-            entryPositionConfig: AppState.config.entryPosition,
-            originalFileName: AppState.file.current ? AppState.file.current.name : null,
-            novelName: AppState.file.novelName || '',
-            experience: normalizeExperience(AppState.experience, queueLength),
-            processingState: {
-                incrementalMode: !!AppState.processing.incrementalMode,
-                volumeMode: !!AppState.processing.volumeMode,
+        const state = packagePolicyService.buildResourcePackage({
+            ...AppState,
+            memory: {
+                ...AppState.memory,
+                queue: normalizedQueue,
             },
-            queueState: {
-                startIndex: clampStartIndex(AppState.memory.startIndex, queueLength),
-                userSelectedIndex: Number.isInteger(AppState.memory.userSelectedIndex)
-                    ? clampStartIndex(AppState.memory.userSelectedIndex, queueLength)
-                    : null,
-            },
+        });
+        state.version = TASK_STATE_VERSION;
+        state.type = TASK_STATE_TYPE;
+        state.experience = normalizeExperience(AppState.experience, queueLength);
+        state.processingState = {
+            incrementalMode: !!AppState.processing.incrementalMode,
+            volumeMode: !!AppState.processing.volumeMode,
+        };
+        state.queueState = {
+            startIndex: clampStartIndex(AppState.memory.startIndex, queueLength),
+            userSelectedIndex: Number.isInteger(AppState.memory.userSelectedIndex)
+                ? clampStartIndex(AppState.memory.userSelectedIndex, queueLength)
+                : null,
         };
         const timeString = new Date()
             .toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -298,14 +287,16 @@ export function createTaskStateService(deps = {}) {
             if (!file) return;
             try {
                 const content = await file.text();
-                const state = JSON.parse(content);
-                const type = String(state.type || '').trim();
+                const importedState = JSON.parse(content);
+                const type = String(importedState.type || '').trim();
                 if (type && type !== TASK_STATE_TYPE && type !== LEGACY_TASK_STATE_TYPE) {
                     throw new Error('不是有效的工程包文件');
                 }
-                if (!state.memoryQueue || !Array.isArray(state.memoryQueue)) throw new Error('无效的任务状态文件');
+                if (!importedState.memoryQueue || !Array.isArray(importedState.memoryQueue)) {
+                    throw new Error('无效的任务状态文件');
+                }
+                const state = packagePolicyService.applyResourcePackage(AppState, importedState);
 
-                if (state.settings) AppState.settings = { ...defaultSettings, ...state.settings };
                 const normalizedQueue = normalizeMemoryQueue(state.memoryQueue);
                 AppState.memory.queue = normalizedQueue;
                 AppState.worldbook.generated = state.generatedWorldbook && typeof state.generatedWorldbook === 'object'
@@ -315,13 +306,6 @@ export function createTaskStateService(deps = {}) {
                 AppState.worldbook.currentVolumeIndex = clampStartIndex(state.currentVolumeIndex || 0, AppState.worldbook.volumes.length || 1);
                 AppState.file.hash = state.fileHash || null;
 
-                if (state.parallelConfig) AppState.config.parallel = { ...AppState.config.parallel, ...state.parallelConfig };
-                if (state.categoryLightSettings) AppState.config.categoryLight = { ...AppState.config.categoryLight, ...state.categoryLightSettings };
-                if (state.customWorldbookCategories) AppState.persistent.customCategories = state.customWorldbookCategories;
-                if (state.chapterRegexSettings) AppState.config.chapterRegex = state.chapterRegexSettings;
-                if (state.defaultWorldbookEntriesUI) AppState.persistent.defaultEntries = state.defaultWorldbookEntriesUI;
-                if (state.categoryDefaultConfig) AppState.config.categoryDefault = state.categoryDefaultConfig;
-                if (state.entryPositionConfig) AppState.config.entryPosition = state.entryPositionConfig;
                 if (state.processingState) {
                     AppState.processing.incrementalMode = state.processingState.incrementalMode !== false;
                     AppState.processing.volumeMode = state.processingState.volumeMode === true;
@@ -458,16 +442,16 @@ export function createTaskStateService(deps = {}) {
             autoRestore = false,
         } = options;
         try {
-            const savedState = await MemoryHistoryDB.loadState();
-            if (!savedState || !savedState.memoryQueue || savedState.memoryQueue.length <= 0) {
+            const rawSavedState = await MemoryHistoryDB.loadState();
+            if (!rawSavedState || !rawSavedState.memoryQueue || rawSavedState.memoryQueue.length <= 0) {
                 if (showNoStateTip) {
                     ErrorHandler.showUserSuccess('当前没有可读取的任务快照。');
                 }
                 return false;
             }
 
-            const processedCount = savedState.memoryQueue.filter((m) => m.processed).length;
-            const totalCount = savedState.memoryQueue.length;
+            const processedCount = rawSavedState.memoryQueue.filter((m) => m.processed).length;
+            const totalCount = rawSavedState.memoryQueue.length;
             const isFinished = totalCount > 0 && processedCount >= totalCount;
             const summary = isFinished ? '检测到上次任务快照（已完成）' : '检测到上次任务快照（未完成）';
             const title = isFinished ? '恢复上次任务' : '恢复未完成任务';
@@ -478,7 +462,7 @@ export function createTaskStateService(deps = {}) {
                 return false;
             }
 
-            if (savedState.settings) AppState.settings = { ...defaultSettings, ...savedState.settings };
+            const savedState = packagePolicyService.applyResourcePackage(AppState, rawSavedState);
             AppState.memory.queue = normalizeMemoryQueue(savedState.memoryQueue);
             AppState.worldbook.generated = savedState.generatedWorldbook && typeof savedState.generatedWorldbook === 'object'
                 ? savedState.generatedWorldbook

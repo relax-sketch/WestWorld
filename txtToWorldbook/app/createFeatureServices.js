@@ -14,12 +14,12 @@ export function createFeatureServices(deps = {}) {
     const {
         AppState,
         promptRegistryService,
+        packagePolicyService,
         MemoryHistoryDB,
         Logger,
         ErrorHandler,
         ModalFactory,
         confirmAction,
-        defaultSettings,
         defaultMergePrompt,
         defaultConsolidatePrompt,
         naturalSortEntryNames,
@@ -159,10 +159,10 @@ export function createFeatureServices(deps = {}) {
     const taskStateService = createTaskStateService({
         AppState,
         MemoryHistoryDB,
+        packagePolicyService,
         Logger,
         ErrorHandler,
         confirmAction,
-        defaultSettings,
         getExportBaseName,
         rebuildWorldbookFromMemories,
         showQueueSection,
@@ -180,7 +180,7 @@ export function createFeatureServices(deps = {}) {
     const importExportService = createImportExportService({
         AppState,
         ErrorHandler,
-        defaultSettings,
+        packagePolicyService,
         getAllVolumesWorldbook,
         convertToSillyTavernFormat,
         getExportBaseName,
@@ -188,8 +188,6 @@ export function createFeatureServices(deps = {}) {
         saveCustomCategories,
         updateSettingsUI,
         renderCategoriesList,
-        renderDefaultWorldbookEntriesUI,
-        updateChapterRegexUI,
     });
 
     const mergeWorkflowService = createMergeWorkflowService({
