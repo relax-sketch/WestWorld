@@ -319,6 +319,8 @@ git commit -m "feat: add director modes without altering injection contract"
 
 ## Task 6: Separate Prompt Configuration Packages From Engineering Resource Packages
 
+**Status:** Completed (`7cbd6ee`)
+
 **Files:**
 - Create: `txtToWorldbook/services/packagePolicyService.js`
 - Modify: `txtToWorldbook/services/importExportService.js`
@@ -329,7 +331,7 @@ git commit -m "feat: add director modes without altering injection contract"
 - Create: `tests/packagePolicyService.test.js`
 - Create: `tests/taskStatePackagePolicy.test.js`
 
-- [ ] Add failing tests proving prompt config export includes editable prompt material but excludes API fields:
+- [x] Add failing tests proving prompt config export includes editable prompt material but excludes API fields:
 
 ```js
 {
@@ -343,8 +345,8 @@ git commit -m "feat: add director modes without altering injection contract"
 }
 ```
 
-- [ ] Add failing tests proving engineering/task export retains resources and result-reproduction parameters but excludes `mainApi`, `directorApi`, keys, route presets, prompt settings, category prompt text, and message chain.
-- [ ] Implement pure policy functions with explicit whitelists rather than cloning `AppState.settings`:
+- [x] Add failing tests proving engineering/task export retains resources and result-reproduction parameters but excludes `mainApi`, `directorApi`, keys, route presets, prompt settings, category prompt text, and message chain.
+- [x] Implement pure policy functions with explicit whitelists rather than cloning `AppState.settings`:
 
 ```js
 buildPromptConfigPackage(state)
@@ -355,11 +357,13 @@ filterLegacyPromptImport(payload)
 filterLegacyResourceImport(payload)
 ```
 
-- [ ] Make prompt configuration import/export preserve local API provider/address/model/key and route preset settings unchanged, including when importing older full-settings files.
-- [ ] Make task/project package load avoid restoring any API or editable prompt values from both new and legacy payloads.
-- [ ] Strip category `contentGuide` and `promptLayers` from engineering packages while keeping category identity/output-structure data required to interpret stored processing results.
-- [ ] Update memory snapshot restoration so old `savedState.settings` cannot overwrite local API or prompt configuration during result-history recovery.
-- [ ] Pass the policy dependency through feature creation/main wiring.
+- [x] Make prompt configuration import/export preserve local API provider/address/model/key and route preset settings unchanged, including when importing older full-settings files.
+- [x] Make task/project package load avoid restoring any API or editable prompt values from both new and legacy payloads.
+- [x] Strip category `contentGuide` and `promptLayers` from engineering packages while keeping category identity/output-structure data required to interpret stored processing results.
+- [x] Update memory snapshot restoration so old `savedState.settings` cannot overwrite local API or prompt configuration during result-history recovery.
+- [x] Pass the policy dependency through feature creation/main wiring.
+
+**Audit note:** The engineering-package whitelist also removes category prompt examples, cached `directorLastInjectionPrompt`, and director diagnostic prompt previews; it retains director decisions, chapter beats, generated worldbooks, and resume parameters. `memoryHistoryDB.js` already writes snapshots without `settings`, so the legacy `savedState.settings` protection was correctly implemented at its restoration boundary in `taskStateService.js` rather than adding unrelated storage churn.
 
 **Test command:**
 
