@@ -1,5 +1,5 @@
 # WestWorld —— 小说沉浸式体验插件（SillyTavern扩展）
-
+个人更新了大量功能
 **核心理念**: "主角的代入感，剧情的完整性，自由的边界感"  
 **目标平台**: SillyTavern Extension
 
