@@ -261,6 +261,8 @@ git commit -m "feat: compose all non director prompts from registry"
 
 ## Task 5: Implement Director Three-State Behavior And Preserve Injection Compatibility
 
+**Status:** Completed (`7606845`)
+
 **Files:**
 - Modify: `txtToWorldbook/services/directorService.js`
 - Modify: `txtToWorldbook/services/directorInjectionService.js` only if dependency wiring or testability requires it; do not change protocol constants
@@ -272,7 +274,7 @@ git commit -m "feat: compose all non director prompts from registry"
 - Modify: `tests/directorPromptManagerService.test.js`
 - Create: `tests/directorModeService.test.js`
 
-- [ ] Add failing tests for each mode:
+- [x] Add failing tests for each mode:
 
 ```js
 directorMode: 'api'            // calls director API; may fall back only when toggle is true
@@ -280,10 +282,10 @@ directorMode: 'local-fallback' // does not call director API; builds editable lo
 directorMode: 'off'            // returns a skip status and removes/avoids injection
 ```
 
-- [ ] Add tests that `directorFallbackOnError: false` does not silently generate a local injection after API error or parse failure.
-- [ ] Compose `DIRECTOR_FRAMEWORK` as a complete director API request with the global layer once.
-- [ ] Render `DIRECTOR_FALLBACK_NEW_BEAT`, `DIRECTOR_FALLBACK_IN_BEAT`, and `DIRECTOR_FALLBACK_END` as editable local fallback content selected by existing decision context.
-- [ ] Render `DIRECTOR_INJECTION` with module-specific prefix/body/suffix only:
+- [x] Add tests that `directorFallbackOnError: false` does not silently generate a local injection after API error or parse failure.
+- [x] Compose `DIRECTOR_FRAMEWORK` as a complete director API request with the global layer once.
+- [x] Render `DIRECTOR_FALLBACK_NEW_BEAT`, `DIRECTOR_FALLBACK_IN_BEAT`, and `DIRECTOR_FALLBACK_END` as editable local fallback content selected by existing decision context.
+- [x] Render `DIRECTOR_INJECTION` with module-specific prefix/body/suffix only:
 
 ```js
 const content = promptRegistryService.renderModule(
@@ -292,11 +294,13 @@ const content = promptRegistryService.renderModule(
 );
 ```
 
-- [ ] Preserve `getDirectorPromptForLittleWhiteBox()` return shape and the existing PromptManager identifier/position/depth behavior. Assert in tests that global prefix/global suffix and main message-chain text do not appear in injection content.
-- [ ] Update `index.js` preparation logic so `off` or API-error-with-fallback-disabled clears/respects skipped injection instead of calling an unconditional local fallback accessor.
-- [ ] Keep `DIRECTOR_INJECTION_MARKER` and `DIRECTOR_INJECTION_IDENTIFIER` fixed protocol metadata; do not expose them in the prompt editor.
-- [ ] Retain the per-turn director meaning of the mode selector; do not reroute the chapter-assets extraction task to local fallback.
-- [ ] Recheck BOM after the two UI file edits in this task.
+- [x] Preserve `getDirectorPromptForLittleWhiteBox()` return shape and the existing PromptManager identifier/position/depth behavior. Assert in tests that global prefix/global suffix and main message-chain text do not appear in injection content.
+- [x] Update `index.js` preparation logic so `off` or API-error-with-fallback-disabled clears/respects skipped injection instead of calling an unconditional local fallback accessor.
+- [x] Keep `DIRECTOR_INJECTION_MARKER` and `DIRECTOR_INJECTION_IDENTIFIER` fixed protocol metadata; do not expose them in the prompt editor.
+- [x] Retain the per-turn director meaning of the mode selector; do not reroute the chapter-assets extraction task to local fallback.
+- [x] Recheck BOM after the two UI file edits in this task.
+
+**Audit note:** The mode controls were already introduced during Task 3, so Task 5 reused them without rewriting the UI files and rechecked that `settingsPanel.js` and `eventBindings.js` remain strict UTF-8 with BOM. Director context, normalization, local fallback, and actor-injection guidance fragments that enter model-visible content are now registry modules; resource-state beat normalization remains outside prompt configuration.
 
 **Test command:**
 
