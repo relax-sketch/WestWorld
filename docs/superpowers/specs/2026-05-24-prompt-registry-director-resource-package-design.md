@@ -215,7 +215,7 @@ git commit -m "feat: expose registry based prompt editor"
 
 ## Task 4: Route Non-Director Prompt Call Sites Through The Registry
 
-**Status:** In Progress
+**Status:** Completed (`b9b1e1b`)
 
 **Files:**
 - Modify: `txtToWorldbook/services/promptService.js`
@@ -228,13 +228,15 @@ git commit -m "feat: expose registry based prompt editor"
 - Modify: `txtToWorldbook/ui/chapterExperienceView.js`
 - Create: `tests/promptCompositionCallSites.test.js`
 
-- [ ] Write failing service-level tests for representative worldbook, repair, reroll, consolidate, alias merge, imported merge, and chapter-opening requests. Assert each rendered module can contribute prefix/body/suffix and each complete outbound request sees the global layer once.
-- [ ] Change `promptService` to use registry rendering for language, system, plot, style, previous-memory context, relevant-worldbook context, and force-chapter text while retaining existing main-only message-chain behavior.
-- [ ] Replace inline instructions/wrappers in `processingService` with registry modules for parallel/serial extraction, relevant context, reroll extra constraints, chapter assets, and entry-event refinement.
-- [ ] Replace inline repair and reroll prompt fragments with `WORLDBOOK_REPAIR` and `WORLDBOOK_SINGLE_REROLL` rendering.
-- [ ] Route imported merge, consolidate body/rules, and alias merge through `MERGE_IMPORTED`, `MERGE_CONSOLIDATE`, `MERGE_CONSOLIDATE_RULES`, and `MERGE_ALIAS`.
-- [ ] Route the chapter opening instruction through `CHAPTER_OPENING` instead of a local inline string.
-- [ ] Search prompt-bearing code after conversion and either map any remaining user-visible instruction string into a module or document why it is protocol metadata/runtime data and not editable prompt content.
+- [x] Write failing service-level tests for representative worldbook, repair, reroll, consolidate, alias merge, imported merge, and chapter-opening requests. Assert each rendered module can contribute prefix/body/suffix and each complete outbound request sees the global layer once.
+- [x] Change `promptService` to use registry rendering for language, system, plot, style, previous-memory context, relevant-worldbook context, and force-chapter text while retaining existing main-only message-chain behavior.
+- [x] Replace inline instructions/wrappers in `processingService` with registry modules for parallel/serial extraction, relevant context, reroll extra constraints, chapter assets, and entry-event refinement.
+- [x] Replace inline repair and reroll prompt fragments with `WORLDBOOK_REPAIR` and `WORLDBOOK_SINGLE_REROLL` rendering.
+- [x] Route imported merge, consolidate body/rules, and alias merge through `MERGE_IMPORTED`, `MERGE_CONSOLIDATE`, `MERGE_CONSOLIDATE_RULES`, and `MERGE_ALIAS`.
+- [x] Route the chapter opening instruction through `CHAPTER_OPENING` instead of a local inline string.
+- [x] Search prompt-bearing code after conversion and either map any remaining user-visible instruction string into a module or document why it is protocol metadata/runtime data and not editable prompt content.
+
+**Audit note:** Remaining prompt-bearing director composition is isolated to `directorService.js` for Task 5; prompt package serialization is isolated to `importExportService.js` for Task 6. Other remaining search matches are category compatibility/baseline storage, UI text, logging, error messages, or validation text rather than outbound editable prompt content.
 
 **Search command:**
 
