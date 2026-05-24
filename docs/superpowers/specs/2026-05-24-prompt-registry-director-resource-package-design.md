@@ -382,16 +382,18 @@ git commit -m "feat: split prompt configuration from resource packages"
 
 ## Task 7: Document Behavior, Audit Encoding, And Run Final Verification
 
+**Status:** Completed (`4aba467`)
+
 **Files:**
 - Modify: `README.md`
 - Modify: `westworld.md`
 - Modify: any already-created test file only if a failing verification exposes a missing assertion
 
-- [ ] Document that every prompt module exposes editable prefix/body/suffix, warning-only placeholder validation, immutable restore-default baselines, and global prefix/suffix behavior.
-- [ ] Document director modes, including the separate API-error fallback toggle and the fact that PromptManager/LittleWhite injection does not consume global layers.
-- [ ] Document export boundaries: prompt configuration package contains prompt editing data but no API; engineering resource package contains processing/director outputs and resume parameters but no prompt/API configuration.
-- [ ] Document that UI interaction acceptance is manually performed on the user's mobile/desktop environment; do not add browser automation to verification.
-- [ ] Run the complete Node test suite:
+- [x] Document that every prompt module exposes editable prefix/body/suffix, warning-only placeholder validation, immutable restore-default baselines, and global prefix/suffix behavior.
+- [x] Document director modes, including the separate API-error fallback toggle and the fact that PromptManager/LittleWhite injection does not consume global layers.
+- [x] Document export boundaries: prompt configuration package contains prompt editing data but no API; engineering resource package contains processing/director outputs and resume parameters but no prompt/API configuration.
+- [x] Document that UI interaction acceptance is manually performed on the user's mobile/desktop environment; do not add browser automation to verification.
+- [x] Run the complete Node test suite:
 
 ```powershell
 npm test
@@ -399,7 +401,7 @@ npm test
 
 **Expected result:** The Node test process exits successfully with no failed tests.
 
-- [ ] Verify all touched Chinese/prompt-bearing files decode as strict UTF-8 and ensure the three original BOM files remain BOM-prefixed:
+- [x] Verify all touched Chinese/prompt-bearing files decode as strict UTF-8 and ensure the three original BOM files remain BOM-prefixed:
 
 ```powershell
 $files = @(
@@ -423,7 +425,9 @@ foreach ($file in $files) {
 
 **Expected result:** Every listed file reports `UTF8=true`; `constants.js`, `settingsPanel.js`, and `eventBindings.js` report `BOM=True`, unless a separately approved encoding change supersedes this plan.
 
-- [ ] Inspect the worktree and stage only documentation/tests changed by this final task; leave `AGENTS.md`, `.claude/`, and unrelated deletions untouched.
+- [x] Inspect the worktree and stage only documentation/tests changed by this final task; leave `AGENTS.md`, `.claude/`, and unrelated deletions untouched.
+
+**Verification note:** `npm test` completed with 38 passing tests and no failures. Strict UTF-8 decoding passed for all touched prompt-bearing files; `constants.js`, `settingsPanel.js`, `eventBindings.js`, and the already-BOM `main.js` retain their BOM state. Per the agreed test plan, no browser/UI automation was run.
 
 **Commit:**
 
@@ -434,11 +438,11 @@ git commit -m "docs: explain prompt registry and package boundaries"
 
 ## Final Completion Checklist
 
-- [ ] Every AI-readable instruction and editable director injection fragment is represented by a registered module or an explicit category prompt layer.
-- [ ] Every module exposes savable `prefix/body/suffix`, warning-only validation, and immutable restore-default behavior.
-- [ ] Global prefix/suffix apply exactly once to complete outbound model requests and never apply to PromptManager/LittleWhite injection.
-- [ ] Director `api`, `local-fallback`, and `off` modes work, and API failure fallback is independently selectable.
-- [ ] Prompt configuration export/import excludes API fields; engineering resource packages exclude API and editable prompt configuration.
-- [ ] Existing resource payloads retain data needed to interpret or resume processed director/worldbook results.
-- [ ] Node tests pass and encoding/BOM checks pass.
-- [ ] UI behavior is handed to the user for manual validation in the actual mobile/desktop environment, with no browser automation claimed.
+- [x] Every AI-readable instruction and editable director injection fragment is represented by a registered module or an explicit category prompt layer.
+- [x] Every module exposes savable `prefix/body/suffix`, warning-only validation, and immutable restore-default behavior.
+- [x] Global prefix/suffix apply exactly once to complete outbound model requests and never apply to PromptManager/LittleWhite injection.
+- [x] Director `api`, `local-fallback`, and `off` modes work, and API failure fallback is independently selectable.
+- [x] Prompt configuration export/import excludes API fields; engineering resource packages exclude API and editable prompt configuration.
+- [x] Existing resource payloads retain data needed to interpret or resume processed director/worldbook results.
+- [x] Node tests pass and encoding/BOM checks pass.
+- [x] UI behavior is handed to the user for manual validation in the actual mobile/desktop environment, with no browser automation claimed.
