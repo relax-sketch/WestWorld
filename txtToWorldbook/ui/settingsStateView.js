@@ -6,6 +6,7 @@ export function createSettingsStateView(deps = {}) {
         handleUseTavernApiChange,
         handleProviderChange,
         renderMessageChainUI,
+        renderPromptEditor,
     } = deps;
 
     function updateSettingsUI() {
@@ -15,6 +16,9 @@ export function createSettingsStateView(deps = {}) {
             handleProviderChange,
             renderMessageChainUI,
         });
+        if (typeof renderPromptEditor === 'function') {
+            renderPromptEditor();
+        }
     }
 
     function updateChapterRegexUI() {

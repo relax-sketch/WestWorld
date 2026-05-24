@@ -868,9 +868,21 @@ export function bindSettingEvents(deps = {}) {
         });
     });
 
-    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion', 'ttw-director-enabled', 'ttw-director-fallback-main', 'ttw-director-run-every-turn'].forEach((id) => {
+    ['ttw-incremental-mode', 'ttw-volume-mode', 'ttw-enable-plot', 'ttw-enable-style', 'ttw-force-chapter-marker', 'ttw-allow-recursion', 'ttw-director-run-every-turn'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
+    });
+    const directorMode = document.getElementById('ttw-director-mode');
+    if (directorMode) directorMode.addEventListener('change', () => {
+        AppState.settings.directorMode = directorMode.value;
+        AppState.settings.directorEnabled = directorMode.value !== 'off';
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+    });
+    const directorFallback = document.getElementById('ttw-director-fallback-on-error');
+    if (directorFallback) directorFallback.addEventListener('change', () => {
+        AppState.settings.directorFallbackOnError = directorFallback.checked;
+        AppState.settings.directorAutoFallbackToMain = directorFallback.checked;
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
     });
 
     // --- Prompt Prefix Presets ---
@@ -1060,8 +1072,12 @@ function bindPromptPrefixPresetEvents(deps) {
         deleteBtn.style.display = select.value !== '' ? 'inline-block' : 'none';
     }
 
-    textarea.value = AppState.settings.promptPrefixPreset || '';
+    textarea.value = AppState.settings.promptGlobal?.prefix || AppState.settings.promptPrefixPreset || '';
     textarea.addEventListener('input', () => {
+        AppState.settings.promptGlobal = {
+            ...(AppState.settings.promptGlobal || {}),
+            prefix: textarea.value,
+        };
         AppState.settings.promptPrefixPreset = textarea.value;
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
     });
@@ -1075,6 +1091,10 @@ function bindPromptPrefixPresetEvents(deps) {
         if (!Number.isFinite(idx) || idx < 0) return;
         const preset = getPresets()[idx];
         if (!preset) return;
+        AppState.settings.promptGlobal = {
+            ...(AppState.settings.promptGlobal || {}),
+            prefix: preset.prefix,
+        };
         AppState.settings.promptPrefixPreset = preset.prefix;
         setSelected(preset.name);
         textarea.value = preset.prefix;

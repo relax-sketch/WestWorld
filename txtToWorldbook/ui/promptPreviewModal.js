@@ -7,11 +7,19 @@ export function createPromptPreviewModal(deps = {}) {
         buildSystemPrompt,
         getChapterForcePrompt,
         getEnabledCategories,
+        promptRegistryService,
     } = deps;
 
     function showPromptPreview() {
         try {
             const prompt = buildSystemPrompt() || '';
+            const fullPrompt = [
+                AppState.settings.language === 'zh' ? promptRegistryService?.renderModule('common.language.zh') : '',
+                AppState.settings.promptGlobal?.prefix || '',
+                prompt,
+                AppState.settings.promptGlobal?.suffix || '',
+            ].filter(Boolean).join('\n\n');
+            const injectionPrompt = promptRegistryService?.renderModule('director.injection') || '';
             const chapterForce = AppState.settings.forceChapterMarker ? getChapterForcePrompt(1) : '(已关闭)';
             const apiMode = AppState.settings.useTavernApi ? '酒馆API' : `自定义API (${AppState.settings.customApiProvider || '未设置'})`;
             const enabledCats = getEnabledCategories().map((c) => c.name).join(', ');
@@ -29,7 +37,7 @@ export function createPromptPreviewModal(deps = {}) {
             const isParallelEnabled = AppState.config && AppState.config.parallel && AppState.config.parallel.enabled;
             const parallelMode = (AppState.config && AppState.config.parallel && AppState.config.parallel.mode) || '关闭';
 
-            const previewContent = `当前提示词预览:\n\nAPI模式: ${apiMode}\n并行模式: ${isParallelEnabled ? parallelMode : '关闭'}\n强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n启用分类: ${enabledCats}\n\n【消息链 (${enabledChain.length}条消息)】\n${chainInfo}\n\n【章节强制标记示例】\n${chapterForce}\n\n【系统提示词】\n${prompt}`;
+            const previewContent = `当前提示词预览:\n\nAPI模式: ${apiMode}\n并行模式: ${isParallelEnabled ? parallelMode : '关闭'}\n强制章节标记: ${AppState.settings.forceChapterMarker ? '开启' : '关闭'}\n启用分类: ${enabledCats}\n\n【消息链 (${enabledChain.length}条消息)】\n${chainInfo}\n\n【章节强制标记示例】\n${chapterForce}\n\n【完整模型请求（含全局层）】\n${fullPrompt}\n\n【导演注入演员（不含全局层）】\n${injectionPrompt}`;
 
             const bodyHtml = `<textarea readonly style="width: 100%; height: 400px; resize: vertical; box-sizing: border-box; background: rgba(0,0,0,0.3); color: #ccc; border: 1px solid #555; padding: 10px; font-family: monospace; border-radius: 4px; white-space: pre-wrap;">${previewContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`;
             const footerHtml = '<button class="ttw-btn ttw-btn-primary" id="ttw-close-prompt-preview">关闭</button>';

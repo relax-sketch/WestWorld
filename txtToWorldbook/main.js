@@ -964,6 +964,7 @@ const {
 
 const {
     renderMessageChainUI,
+    bindPromptEditorEvents,
     updateSettingsUI,
     updateChapterRegexUI,
     renderCategoriesList,
@@ -1003,6 +1004,7 @@ const {
     buildSystemPrompt,
     getChapterForcePrompt,
     getEnabledCategories,
+    promptRegistryService,
     handleFetchModelList,
     handleQuickTestModel,
 });
@@ -1250,6 +1252,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     bindSettingEventsUI,
     bindCollapsePanelEventsUI,
     bindPromptEventsUI,
+    bindPromptEditorEvents,
     bindMessageChainEventsUI,
     bindFileEventsUI,
     bindActionEventsUI,

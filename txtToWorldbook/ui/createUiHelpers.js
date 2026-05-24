@@ -10,6 +10,7 @@ import { createModelActionsView } from './modelActionsView.js';
 import { createApiModeView } from './apiModeView.js';
 import { createSettingsActionsFacade } from './settingsActionsFacade.js';
 import { createProgressView } from './progressView.js';
+import { createPromptEditorView } from './promptEditorView.js';
 
 export function createUiHelpers(deps = {}) {
     const {
@@ -29,6 +30,7 @@ export function createUiHelpers(deps = {}) {
         buildSystemPrompt,
         getChapterForcePrompt,
         getEnabledCategories,
+        promptRegistryService,
         handleFetchModelList,
         handleQuickTestModel,
     } = deps;
@@ -45,11 +47,24 @@ export function createUiHelpers(deps = {}) {
     });
     const { renderMessageChainUI } = messageChainView;
 
+    const promptEditorView = createPromptEditorView({
+        AppState,
+        promptRegistryService,
+        saveCurrentSettings,
+        saveCustomCategories,
+        ErrorHandler,
+    });
+    const {
+        renderPromptEditor,
+        bindPromptEditorEvents,
+    } = promptEditorView;
+
     const settingsStateView = createSettingsStateView({
         AppState,
         handleUseTavernApiChange: () => apiModeView?.handleUseTavernApiChange(),
         handleProviderChange: (target = 'main') => apiModeView?.handleProviderChange(target),
         renderMessageChainUI,
+        renderPromptEditor,
     });
     const {
         updateSettingsUI,
@@ -116,6 +131,7 @@ export function createUiHelpers(deps = {}) {
         buildSystemPrompt,
         getChapterForcePrompt,
         getEnabledCategories,
+        promptRegistryService,
     });
 
     const modelActionsView = createModelActionsView({
@@ -157,6 +173,7 @@ export function createUiHelpers(deps = {}) {
 
     return {
         renderMessageChainUI,
+        bindPromptEditorEvents,
         updateSettingsUI,
         updateChapterRegexUI,
         renderCategoriesList,
