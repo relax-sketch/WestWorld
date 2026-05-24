@@ -3,6 +3,7 @@ export const DIRECTOR_PROMPT_MANAGER_NAME = 'WestWorld Director';
 export const DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH = 4;
 export const DEFAULT_DIRECTOR_PROMPT_MANAGER_ORDER = 100;
 export const DEFAULT_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION = 1;
+const ABSOLUTE_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION = 1;
 
 function clampInteger(value, fallback, min, max) {
     const parsed = Number(value);
@@ -72,32 +73,36 @@ function ensureOrderReferences(promptManager, identifier) {
 }
 
 export function createDirectorPromptManagerPrompt(options = {}) {
-    return {
+    const injectionPosition = Number.isFinite(Number(options.injectionPosition))
+        ? Number(options.injectionPosition)
+        : DEFAULT_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION;
+    const prompt = {
         identifier: options.identifier || DIRECTOR_PROMPT_MANAGER_IDENTIFIER,
         name: options.name || DIRECTOR_PROMPT_MANAGER_NAME,
         role: options.role || 'system',
         content: String(options.content || ''),
         system_prompt: false,
         position: 0,
-        injection_position: Number.isFinite(Number(options.injectionPosition))
-            ? Number(options.injectionPosition)
-            : DEFAULT_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION,
-        injection_depth: clampInteger(
-            options.depth,
-            DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH,
-            0,
-            999,
-        ),
-        injection_order: clampInteger(
-            options.order,
-            DEFAULT_DIRECTOR_PROMPT_MANAGER_ORDER,
-            -10000,
-            10000,
-        ),
+        injection_position: injectionPosition,
         injection_trigger: [],
         forbid_overrides: false,
         extension: true,
     };
+    if (injectionPosition === ABSOLUTE_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION) {
+        prompt.injection_depth = clampInteger(
+            options.depth,
+            DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH,
+            0,
+            999,
+        );
+        prompt.injection_order = clampInteger(
+            options.order,
+            DEFAULT_DIRECTOR_PROMPT_MANAGER_ORDER,
+            -10000,
+            10000,
+        );
+    }
+    return prompt;
 }
 
 export function ensureDirectorPromptManagerEntry(promptManager, options = {}) {
@@ -145,13 +150,18 @@ export function ensureDirectorPromptManagerEntry(promptManager, options = {}) {
             prompt.injection_position = injectionPosition;
             changed = true;
         }
-        if (!Number.isFinite(Number(previousDepth))) {
-            prompt.injection_depth = DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH;
-            changed = true;
-        }
-        if (!Number.isFinite(Number(previousOrder))) {
-            prompt.injection_order = DEFAULT_DIRECTOR_PROMPT_MANAGER_ORDER;
-            changed = true;
+        const resolvedInjectionPosition = Number.isFinite(Number(prompt.injection_position))
+            ? Number(prompt.injection_position)
+            : injectionPosition;
+        if (resolvedInjectionPosition === ABSOLUTE_DIRECTOR_PROMPT_MANAGER_INJECTION_POSITION) {
+            if (!Number.isFinite(Number(previousDepth))) {
+                prompt.injection_depth = DEFAULT_DIRECTOR_PROMPT_MANAGER_DEPTH;
+                changed = true;
+            }
+            if (!Number.isFinite(Number(previousOrder))) {
+                prompt.injection_order = DEFAULT_DIRECTOR_PROMPT_MANAGER_ORDER;
+                changed = true;
+            }
         }
         if (options.content !== undefined && prompt.content !== String(options.content || '')) {
             prompt.content = String(options.content || '');

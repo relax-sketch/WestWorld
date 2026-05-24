@@ -86,6 +86,30 @@ test('ensureDirectorPromptManagerEntry preserves disabled order entry', () => {
     assert.equal(result.activeEnabled, false);
 });
 
+test('ensureDirectorPromptManagerEntry does not add depth or order for relative prompts', () => {
+    const promptManager = makePromptManager();
+    promptManager.serviceSettings.prompts.push({
+        identifier: DIRECTOR_PROMPT_MANAGER_IDENTIFIER,
+        name: 'WestWorld Director',
+        role: 'system',
+        content: '',
+        system_prompt: false,
+        injection_position: 0,
+        extension: true,
+    });
+    promptManager.serviceSettings.prompt_order[0].order.push({
+        identifier: DIRECTOR_PROMPT_MANAGER_IDENTIFIER,
+        enabled: true,
+    });
+
+    const result = ensureDirectorPromptManagerEntry(promptManager);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.prompt.injection_position, 0);
+    assert.equal(Object.hasOwn(result.prompt, 'injection_depth'), false);
+    assert.equal(Object.hasOwn(result.prompt, 'injection_order'), false);
+});
+
 test('clearDirectorPromptManagerContent keeps the entry but clears stale content', () => {
     const promptManager = makePromptManager();
     setDirectorPromptManagerContent(promptManager, 'old content');
