@@ -1076,6 +1076,30 @@ export function createDirectorService(deps = {}) {
         });
     }
 
+    function isDecisionForBeat(decision, beatIndex, meta = null, chapterIndex = null) {
+        if (!decision || typeof decision !== 'object') return false;
+        if (!Number.isInteger(decision.stage_idx) || decision.stage_idx !== beatIndex) return false;
+        if (meta && Number.isInteger(meta.chapterIndex) && Number.isInteger(chapterIndex)) {
+            return meta.chapterIndex === chapterIndex;
+        }
+        return true;
+    }
+
+    function getDecisionForCurrentBeat(memory, chapterIndex, beatIndex) {
+        const localDecision = memory?.directorDecision || null;
+        if (isDecisionForBeat(localDecision, beatIndex)) {
+            return localDecision;
+        }
+
+        const lastDecision = AppState.experience?.directorLastDecision || null;
+        const lastMeta = AppState.experience?.directorLastInjectionMeta || null;
+        if (isDecisionForBeat(lastDecision, beatIndex, lastMeta, chapterIndex)) {
+            return lastDecision;
+        }
+
+        return null;
+    }
+
     function getDirectorContext(options = {}) {
         void options;
         normalizeDirectorBeatState(AppState);
@@ -1095,7 +1119,7 @@ export function createDirectorService(deps = {}) {
             ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beatCount - 1)))
             : 0;
         const beat = beats[beatIndex] || null;
-        const decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
+        const decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex);
         const directionScript = decision?.direction_script || {};
 
         return {
@@ -1150,12 +1174,10 @@ export function createDirectorService(deps = {}) {
             if (!memory) return { ok: false, reason: 'chapter-missing', content: '', meta: {} };
             ensureMemoryDirectorRuntime(memory, chapterIndex);
             const beats = ensureChapterBeats(memory);
-            let decision = memory.directorDecision || AppState.experience?.directorLastDecision || null;
-            const beatIndex = Number.isInteger(decision?.stage_idx)
-                ? Math.max(0, Math.min(decision.stage_idx, Math.max(0, beats.length - 1)))
-                : (Number.isInteger(memory.chapterCurrentBeatIndex)
-                    ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beats.length - 1)))
-                    : 0);
+            const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
+                ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beats.length - 1)))
+                : 0;
+            let decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex);
             if (!decision) {
                 const directionContext = buildDirectionContext({
                     beats,

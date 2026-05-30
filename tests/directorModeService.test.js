@@ -164,6 +164,50 @@ test('director context and actor injection guidance fragments are editable regis
     assert.equal(result.content.includes('EDITABLE STAY REQUIREMENT'), true);
 });
 
+test('littlewhite current prompt follows the manually switched beat', () => {
+    const setup = createService({
+        mode: 'local-fallback',
+        overrides: {
+            [PROMPT_MODULE_IDS.DIRECTOR_INJECTION]: {
+                prefix: '',
+                body: '{CURRENT_BEAT_SUMMARY}|{DIRECTION_ACTION_CHAIN}',
+                suffix: '',
+            },
+        },
+    });
+    const memory = setup.AppState.memory.queue[0];
+    memory.chapterScript.beats.push({
+        id: 'b2',
+        summary: 'second beat',
+        entryEvent: 'second entry',
+        exitCondition: 'second exit',
+        original_text: 'second original',
+    });
+    memory.chapterCurrentBeatIndex = 1;
+    memory.directorDecision = {
+        stage_idx: 0,
+        direction_script: {
+            start: 'old start',
+            action_chain: 'old start->old middle->old end',
+            end: 'old end',
+        },
+        at: Date.now(),
+    };
+    setup.AppState.experience.directorLastDecision = { ...memory.directorDecision };
+    setup.AppState.experience.directorLastInjectionMeta = {
+        chapterIndex: 0,
+        beatIndex: 0,
+        source: 'test-old',
+    };
+
+    const littleWhite = setup.service.getDirectorPromptForLittleWhiteBox({ includeMarker: false });
+
+    assert.equal(littleWhite.ok, true);
+    assert.equal(littleWhite.injection.content.includes('second beat'), true);
+    assert.equal(littleWhite.injection.content.includes('old start'), false);
+    assert.equal(littleWhite.meta.beatIndex, 1);
+});
+
 test('off mode skips director prompt preparation without calling API', async () => {
     const setup = createService({ mode: 'off' });
     const result = await prepare(setup.service);

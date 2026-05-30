@@ -483,41 +483,45 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
         return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
     }
-
-    if (promptEntry.activeEnabled === false) {
-        markDirectorGateSkipped('prompt-manager-entry-disabled', promptEntry.status || promptEntry);
-        return { ok: false, reason: 'prompt-manager-entry-disabled' };
-    }
-
-    const reusableExternal = getReusableExternalPreparedDirectorPrompt();
-    if (reusableExternal) {
-        markDirectorEvent('PROMPT_MANAGER_EXTERNAL_REUSED', {
-            type: generationType,
-            params: generationParams,
-            prepared: reusableExternal.prepared,
-            status: reusableExternal.status,
+    const promptManagerEntryDisabled = promptEntry.activeEnabled === false;
+    if (promptManagerEntryDisabled) {
+        markDirectorEvent('PROMPT_MANAGER_ENTRY_DISABLED_DIRECTOR_ONLY', {
+            status: promptEntry.status || promptEntry,
         });
-        return {
-            ok: true,
-            reused: true,
-            reason: 'external-prepared',
-            externalPrepared: reusableExternal.prepared,
-            status: reusableExternal.status,
-        };
+        clearDirectorPromptManager('prompt-manager-entry-disabled');
     }
 
-    if (isRegenerateOrSwipe) {
-        const status = getDirectorPromptManagerStatusSafe();
-        if (!status?.contentLength) {
-            markDirectorGateSkipped('prompt-manager-reuse-empty', status || promptEntry);
-            return { ok: false, reason: 'prompt-manager-reuse-empty' };
+    if (!promptManagerEntryDisabled) {
+        const reusableExternal = getReusableExternalPreparedDirectorPrompt();
+        if (reusableExternal) {
+            markDirectorEvent('PROMPT_MANAGER_EXTERNAL_REUSED', {
+                type: generationType,
+                params: generationParams,
+                prepared: reusableExternal.prepared,
+                status: reusableExternal.status,
+            });
+            return {
+                ok: true,
+                reused: true,
+                reason: 'external-prepared',
+                externalPrepared: reusableExternal.prepared,
+                status: reusableExternal.status,
+            };
         }
-        markDirectorEvent('PROMPT_MANAGER_REUSED', {
-            type: generationType,
-            params: generationParams,
-            status,
-        });
-        return { ok: true, reused: true, reason: 'regenerate-or-swipe' };
+
+        if (isRegenerateOrSwipe) {
+            const status = getDirectorPromptManagerStatusSafe();
+            if (!status?.contentLength) {
+                markDirectorGateSkipped('prompt-manager-reuse-empty', status || promptEntry);
+                return { ok: false, reason: 'prompt-manager-reuse-empty' };
+            }
+            markDirectorEvent('PROMPT_MANAGER_REUSED', {
+                type: generationType,
+                params: generationParams,
+                status,
+            });
+            return { ok: true, reused: true, reason: 'regenerate-or-swipe' };
+        }
     }
 
     clearDirectorPromptManager('generation-started');
@@ -578,6 +582,24 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
                 meta: fallbackPrompt.meta || null,
             });
             promptToSet = fallbackPrompt;
+        }
+
+        if (promptManagerEntryDisabled) {
+            clearDirectorPromptManager('prompt-manager-entry-disabled');
+            const status = getDirectorPromptManagerStatusSafe();
+            markDirectorEvent('PROMPT_MANAGER_ENTRY_DISABLED_DIRECTOR_READY', {
+                contentLength: String(promptToSet.content || '').length,
+                meta: promptToSet.meta || null,
+                status,
+            });
+            return {
+                ok: true,
+                reason: 'prompt-manager-entry-disabled',
+                promptManagerDisabled: true,
+                injectionSkipped: true,
+                meta: promptToSet.meta || null,
+                status,
+            };
         }
 
         const setResult = setDirectorPromptManagerDirectorContent(promptToSet.content);
