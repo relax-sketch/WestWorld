@@ -123,28 +123,51 @@ export function createProcessingService(deps = {}) {
         return Math.max(1, Math.min(10, limit));
     }
 
+    function resolveChapterAssetsConcurrency() {
+        const parsed = parseInt(AppState.settings?.chapterAssetsConcurrency, 10);
+        return Number.isFinite(parsed) ? Math.max(1, Math.min(64, parsed)) : 2;
+    }
+
+    function resolveChapterAssetsApiTarget() {
+        return String(AppState.settings?.chapterAssetsApiTarget || '').trim() === 'main'
+            ? 'main'
+            : 'director';
+    }
+
+    function shouldWaitForPreviousChapterAssets() {
+        return AppState.settings?.chapterAssetsWaitForPrevious !== false;
+    }
+
     function setupApiSemaphores() {
         const mainLimit = resolveApiConcurrency('main');
         const directorLimit = resolveApiConcurrency('director');
+        const chapterAssetsLimit = resolveChapterAssetsConcurrency();
         AppState.processing.mainApiSemaphore = new Semaphore(mainLimit);
         AppState.processing.directorApiSemaphore = new Semaphore(directorLimit);
+        AppState.processing.chapterAssetsApiSemaphore = new Semaphore(chapterAssetsLimit);
         AppState.processing.mainApiConcurrency = mainLimit;
         AppState.processing.directorApiConcurrency = directorLimit;
+        AppState.processing.chapterAssetsApiConcurrency = chapterAssetsLimit;
     }
 
     function abortApiSemaphores() {
         if (AppState.processing.mainApiSemaphore) AppState.processing.mainApiSemaphore.abort();
         if (AppState.processing.directorApiSemaphore) AppState.processing.directorApiSemaphore.abort();
+        if (AppState.processing.chapterAssetsApiSemaphore) AppState.processing.chapterAssetsApiSemaphore.abort();
         AppState.processing.mainApiSemaphore = null;
         AppState.processing.directorApiSemaphore = null;
+        AppState.processing.chapterAssetsApiSemaphore = null;
         AppState.processing.mainApiConcurrency = 0;
         AppState.processing.directorApiConcurrency = 0;
+        AppState.processing.chapterAssetsApiConcurrency = 0;
     }
 
     async function runWithApiSemaphore(kind, runId, fn) {
-        const semaphore = kind === 'director'
-            ? AppState.processing.directorApiSemaphore
-            : AppState.processing.mainApiSemaphore;
+        const semaphore = kind === 'chapter-assets'
+            ? AppState.processing.chapterAssetsApiSemaphore
+            : (kind === 'director'
+                ? AppState.processing.directorApiSemaphore
+                : AppState.processing.mainApiSemaphore);
         if (!semaphore) {
             throwIfRunInactive(runId);
             return fn();
@@ -2396,7 +2419,23 @@ export function createProcessingService(deps = {}) {
             searchWindow: Number.isFinite(searchWindow) ? Math.max(0, Math.min(5000, searchWindow)) : 500,
             boundaryPreference: ['paragraph-first', 'sentence-first', 'balanced'].includes(boundaryPreference)
                 ? boundaryPreference
-                : 'paragraph-first',
+            : 'paragraph-first',
+        };
+    }
+
+    function getChapterAssetsApiCaller() {
+        const target = resolveChapterAssetsApiTarget();
+        if (target === 'main') {
+            return {
+                target,
+                label: '主API',
+                caller: callAPI,
+            };
+        }
+        return {
+            target,
+            label: '导演API',
+            caller: typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI,
         };
     }
 
@@ -2618,7 +2657,7 @@ export function createProcessingService(deps = {}) {
         const retryLimit = Number.isFinite(configuredRetries)
             ? Math.max(0, Math.min(3, Math.round(configuredRetries)))
             : 1;
-        const chapterAssetsCaller = typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI;
+        const apiRoute = getChapterAssetsApiCaller();
         let lastError = null;
 
         for (let attempt = 0; attempt <= retryLimit; attempt++) {
@@ -2626,9 +2665,9 @@ export function createProcessingService(deps = {}) {
                 throwIfRunInactive(runId);
                 const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
                 const prompt = buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
-                updateStreamContent(`🧩 [第${index + 1}章][AI补全] 发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}）\n`);
-                const response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
-                updateStreamContent(`✅ [第${index + 1}章][AI补全] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                updateStreamContent(`🧩 [第${index + 1}章][AI补全] 经${apiRoute.label}发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
+                const response = await runWithApiSemaphore('chapter-assets', runId, async () => apiRoute.caller(prompt, taskId));
+                updateStreamContent(`✅ [第${index + 1}章][AI补全] ${apiRoute.label}请求成功，响应 ${String(response || '').length} 字符\n`);
                 const assets = parseChapterAssetsPolishResponse(response, localAssets, memory, index);
                 updateStreamContent(`🔎 [第${index + 1}章][AI补全] 响应校验通过，beats=${assets.script.beats.length}\n`);
                 return assets;
@@ -2663,8 +2702,10 @@ export function createProcessingService(deps = {}) {
         } = options;
 
         throwIfRunInactive(runId);
-        await waitForPreviousChapterReady(index, runId);
-        throwIfRunInactive(runId);
+        if (shouldWaitForPreviousChapterAssets()) {
+            await waitForPreviousChapterReady(index, runId);
+            throwIfRunInactive(runId);
+        }
 
         if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
             return {
@@ -2721,9 +2762,11 @@ export function createProcessingService(deps = {}) {
 
         throwIfRunInactive(runId);
 
-        // 一致性优先：尽量等上一章状态落稳后再构造“上一章摘要”上下文。
-        await waitForPreviousChapterReady(index, runId);
-        throwIfRunInactive(runId);
+        // 一致性优先：默认等上一章状态落稳后再构造“上一章摘要”上下文；高并发模式可在设置中关闭等待。
+        if (shouldWaitForPreviousChapterAssets()) {
+            await waitForPreviousChapterReady(index, runId);
+            throwIfRunInactive(runId);
+        }
 
         if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
             return {
@@ -2738,7 +2781,7 @@ export function createProcessingService(deps = {}) {
         updateMemoryQueueUI();
 
         let lastError = null;
-        const chapterAssetsCaller = typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI;
+        const apiRoute = getChapterAssetsApiCaller();
         const commitAssets = (assets, source = 'director-unknown') => {
             memory.chapterOutline = assets.outline;
             memory.chapterScript = assets.script;
@@ -2765,14 +2808,14 @@ export function createProcessingService(deps = {}) {
                 throwIfRunInactive(runId);
                 const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
                 const prompt = buildChapterAssetsPrompt(memory, index, retryHint);
-                updateStreamContent(`🧭 [第${index + 1}章][导演API] 发起章节资产请求（尝试 ${attempt + 1}/${contractRetryLimit + 1}）\n`);
+                updateStreamContent(`🧭 [第${index + 1}章][章节资产] 经${apiRoute.label}发起切拍请求（尝试 ${attempt + 1}/${contractRetryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
                 let response = '';
                 try {
-                    response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
-                    updateStreamContent(`✅ [第${index + 1}章][导演API] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                    response = await runWithApiSemaphore('chapter-assets', runId, async () => apiRoute.caller(prompt, taskId));
+                    updateStreamContent(`✅ [第${index + 1}章][章节资产] ${apiRoute.label}请求成功，响应 ${String(response || '').length} 字符\n`);
                 } catch (apiError) {
                     if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
-                        updateStreamContent(`❌ [第${index + 1}章][导演API] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                        updateStreamContent(`❌ [第${index + 1}章][章节资产] ${apiRoute.label}请求失败: ${compactErrorMessage(apiError)}\n`);
                     }
                     throw apiError;
                 }
@@ -2915,9 +2958,10 @@ export function createProcessingService(deps = {}) {
 
         if (tasks.length === 0) return { failedIndices };
 
-        updateStreamContent(`\n🚀 导演并行处理 ${tasks.length} 个章节 (并发: ${AppState.config.parallel.concurrency})\n${'='.repeat(50)}\n`);
+        const chapterAssetsConcurrency = resolveChapterAssetsConcurrency();
+        updateStreamContent(`\n🚀 导演切拍并行处理 ${tasks.length} 个章节 (切拍并发: ${chapterAssetsConcurrency}, API路由: ${getChapterAssetsApiCaller().label}, 等待上一章: ${shouldWaitForPreviousChapterAssets() ? '开启' : '关闭'})\n${'='.repeat(50)}\n`);
         let completed = 0;
-        AppState.globalSemaphore = new Semaphore(AppState.config.parallel.concurrency);
+        AppState.globalSemaphore = new Semaphore(chapterAssetsConcurrency);
 
         const processOne = async (task) => {
             if (AppState.processing.isStopped) return null;

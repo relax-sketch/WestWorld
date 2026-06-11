@@ -51,6 +51,9 @@ test('loading saved chapter asset settings does not alter director mode semantic
         directorMode: 'off',
         directorEnabled: false,
         chapterAssetsMode: 'local-presplit-ai-polish',
+        chapterAssetsApiTarget: 'main',
+        chapterAssetsConcurrency: 32,
+        chapterAssetsWaitForPrevious: false,
         chapterAssetsLocalBeatCount: 7,
         chapterAssetsLocalSearchWindow: 1000,
         chapterAssetsLocalBoundaryPreference: 'sentence-first',
@@ -88,6 +91,9 @@ test('loading saved chapter asset settings does not alter director mode semantic
     assert.equal(AppState.settings.directorMode, 'off');
     assert.equal(AppState.settings.directorEnabled, false);
     assert.equal(AppState.settings.chapterAssetsMode, 'local-presplit-ai-polish');
+    assert.equal(AppState.settings.chapterAssetsApiTarget, 'main');
+    assert.equal(AppState.settings.chapterAssetsConcurrency, 32);
+    assert.equal(AppState.settings.chapterAssetsWaitForPrevious, false);
     assert.equal(AppState.settings.chapterAssetsLocalBeatCount, 7);
     assert.equal(AppState.settings.chapterAssetsLocalSearchWindow, 1000);
     assert.equal(AppState.settings.chapterAssetsLocalBoundaryPreference, 'sentence-first');

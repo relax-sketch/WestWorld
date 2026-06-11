@@ -140,6 +140,17 @@ function buildDirectorCutSettingsHtml() {
                 </select>
             </label>
             <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">章节资产 API</span>
+                <select id="ttw-chapter-assets-api-target" class="ttw-select">
+                    <option value="director">导演AI</option>
+                    <option value="main">主AI</option>
+                </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">章节资产并发</span>
+                <input type="number" id="ttw-chapter-assets-concurrency" class="ttw-input" min="1" max="64" value="2">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
                 <span style="font-size:12px;color:var(--ttw-text-secondary);">本地节拍数</span>
                 <input type="number" id="ttw-chapter-assets-local-beat-count" class="ttw-input" min="3" max="8" value="4">
             </label>
@@ -166,6 +177,10 @@ function buildDirectorCutSettingsHtml() {
             </label>
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <label class="ttw-checkbox-label" style="margin:0;">
+                <input type="checkbox" id="ttw-chapter-assets-wait-previous" checked>
+                <span>等待上一章摘要</span>
+            </label>
             <label class="ttw-checkbox-label" style="margin:0;">
                 <input type="checkbox" id="ttw-chapter-assets-show-retry-polish" checked>
                 <span>显示“重试 AI补全”</span>
@@ -1122,6 +1137,15 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const chapterAssetsModeEl = document.getElementById('ttw-chapter-assets-mode');
     if (chapterAssetsModeEl) chapterAssetsModeEl.value = AppState.settings.chapterAssetsMode || 'ai-anchor';
+
+    const chapterAssetsApiTargetEl = document.getElementById('ttw-chapter-assets-api-target');
+    if (chapterAssetsApiTargetEl) chapterAssetsApiTargetEl.value = AppState.settings.chapterAssetsApiTarget || 'director';
+
+    const chapterAssetsConcurrencyEl = document.getElementById('ttw-chapter-assets-concurrency');
+    if (chapterAssetsConcurrencyEl) chapterAssetsConcurrencyEl.value = AppState.settings.chapterAssetsConcurrency || 2;
+
+    const chapterAssetsWaitPreviousEl = document.getElementById('ttw-chapter-assets-wait-previous');
+    if (chapterAssetsWaitPreviousEl) chapterAssetsWaitPreviousEl.checked = AppState.settings.chapterAssetsWaitForPrevious !== false;
 
     const chapterAssetsBeatCountEl = document.getElementById('ttw-chapter-assets-local-beat-count');
     if (chapterAssetsBeatCountEl) chapterAssetsBeatCountEl.value = AppState.settings.chapterAssetsLocalBeatCount || 4;

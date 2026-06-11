@@ -799,6 +799,14 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-director-diagnostics-bind': { click: bindDirectorSession },
         '#ttw-director-diagnostics-clear': { click: clearDirectorLogs },
         '#ttw-chapter-assets-mode': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-api-target': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-concurrency': { change: (e) => {
+            const value = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 2));
+            e.target.value = value;
+            AppState.settings.chapterAssetsConcurrency = value;
+            saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        } },
+        '#ttw-chapter-assets-wait-previous': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
         '#ttw-chapter-assets-local-beat-count': { change: (e) => {
             const value = Math.max(3, Math.min(8, parseInt(e.target.value, 10) || 4));
             e.target.value = value;

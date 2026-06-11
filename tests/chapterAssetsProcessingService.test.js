@@ -49,7 +49,7 @@ function buildLegacyAnchorResponse(content) {
     });
 }
 
-function createHarness({ settings = {}, content, directorResponses = [] } = {}) {
+function createHarness({ settings = {}, content, directorResponses = [], mainResponses = [] } = {}) {
     const AppState = {
         settings: {
             ...defaultSettings,
@@ -80,7 +80,9 @@ function createHarness({ settings = {}, content, directorResponses = [] } = {}) 
         },
     };
     const prompts = [];
+    const mainPrompts = [];
     let directorCallIndex = 0;
+    let mainCallIndex = 0;
     const promptRegistryService = createPromptRegistryService({ AppState });
     const service = createProcessingService({
         AppState,
@@ -90,7 +92,15 @@ function createHarness({ settings = {}, content, directorResponses = [] } = {}) 
         updateProgress() {},
         updateStreamContent() {},
         debugLog() {},
-        callAPI: async () => JSON.stringify({ entry_events: [] }),
+        callAPI: async (prompt) => {
+            mainPrompts.push(prompt);
+            if (mainResponses.length > 0) {
+                const index = Math.min(mainCallIndex, mainResponses.length - 1);
+                mainCallIndex += 1;
+                return mainResponses[index];
+            }
+            return JSON.stringify({ entry_events: [] });
+        },
         callDirectorAPI: async (prompt) => {
             prompts.push(prompt);
             const index = Math.min(directorCallIndex, directorResponses.length - 1);
@@ -119,7 +129,7 @@ function createHarness({ settings = {}, content, directorResponses = [] } = {}) 
         setProcessingStatus(status) { AppState.processing.status = status; },
         getProcessingStatus() { return AppState.processing.status || 'idle'; },
     });
-    return { AppState, service, prompts };
+    return { AppState, service, prompts, mainPrompts };
 }
 
 test('local pre-split AI polish mode merges metadata and preserves original text', async () => {
@@ -142,6 +152,27 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     assert.equal(result.script.beats.map((beat) => beat.original_text).join(''), content);
     assert.equal(result.script.beats[0].entryEvent, '角色进入事件1');
     assert.equal(prompts[0].includes('本地预切节拍 JSON'), true);
+});
+
+test('chapter asset generation can route AI polish through the main API', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const { AppState, service, prompts, mainPrompts } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsApiTarget: 'main',
+            chapterAssetsLocalBeatCount: 3,
+        },
+        mainResponses: [buildPolishResponse()],
+        directorResponses: [buildPolishResponse()],
+    });
+
+    await service.retryChapterOutline(0);
+
+    assert.equal(AppState.memory.queue[0].chapterOutlineStatus, 'done');
+    assert.equal(mainPrompts.length, 1);
+    assert.equal(prompts.length, 0);
+    assert.equal(mainPrompts[0].includes('本地预切节拍 JSON'), true);
 });
 
 test('invalid AI polish response stores draft and does not commit local fallback assets', async () => {

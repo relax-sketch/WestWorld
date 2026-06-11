@@ -68,6 +68,16 @@ export function createSettingsPersistenceService(deps) {
         return mode === 'local-presplit-ai-polish' ? mode : 'ai-anchor';
     }
 
+    function normalizeChapterAssetsApiTarget(value) {
+        const target = String(value || '').trim();
+        return target === 'main' ? 'main' : 'director';
+    }
+
+    function normalizeChapterAssetsConcurrency(value) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? Math.max(1, Math.min(64, parsed)) : 2;
+    }
+
     function normalizeChapterAssetsBeatCount(value) {
         const parsed = parseInt(value, 10);
         return Number.isFinite(parsed) ? Math.max(3, Math.min(8, parsed)) : 4;
@@ -166,6 +176,17 @@ export function createSettingsPersistenceService(deps) {
             document.getElementById('ttw-chapter-assets-mode')?.value
             || AppState.settings.chapterAssetsMode
         );
+        AppState.settings.chapterAssetsApiTarget = normalizeChapterAssetsApiTarget(
+            document.getElementById('ttw-chapter-assets-api-target')?.value
+            || AppState.settings.chapterAssetsApiTarget
+        );
+        AppState.settings.chapterAssetsConcurrency = normalizeChapterAssetsConcurrency(
+            document.getElementById('ttw-chapter-assets-concurrency')?.value
+            ?? AppState.settings.chapterAssetsConcurrency
+        );
+        AppState.settings.chapterAssetsWaitForPrevious = document.getElementById('ttw-chapter-assets-wait-previous')?.checked
+            ?? AppState.settings.chapterAssetsWaitForPrevious
+            ?? true;
         AppState.settings.chapterAssetsLocalBeatCount = normalizeChapterAssetsBeatCount(
             document.getElementById('ttw-chapter-assets-local-beat-count')?.value
             ?? AppState.settings.chapterAssetsLocalBeatCount
@@ -262,6 +283,9 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorStateStartTag = parsed.directorStateStartTag || AppState.settings.directorStateStartTag || '<state>';
                 AppState.settings.directorStateEndTag = parsed.directorStateEndTag || AppState.settings.directorStateEndTag || '</state>';
                 AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(parsed.chapterAssetsMode || AppState.settings.chapterAssetsMode);
+                AppState.settings.chapterAssetsApiTarget = normalizeChapterAssetsApiTarget(parsed.chapterAssetsApiTarget || AppState.settings.chapterAssetsApiTarget);
+                AppState.settings.chapterAssetsConcurrency = normalizeChapterAssetsConcurrency(parsed.chapterAssetsConcurrency ?? AppState.settings.chapterAssetsConcurrency);
+                AppState.settings.chapterAssetsWaitForPrevious = parsed.chapterAssetsWaitForPrevious ?? AppState.settings.chapterAssetsWaitForPrevious ?? true;
                 AppState.settings.chapterAssetsLocalBeatCount = normalizeChapterAssetsBeatCount(parsed.chapterAssetsLocalBeatCount ?? AppState.settings.chapterAssetsLocalBeatCount);
                 AppState.settings.chapterAssetsLocalSearchWindow = normalizeChapterAssetsSearchWindow(parsed.chapterAssetsLocalSearchWindow ?? AppState.settings.chapterAssetsLocalSearchWindow);
                 AppState.settings.chapterAssetsLocalBoundaryPreference = normalizeChapterAssetsBoundaryPreference(parsed.chapterAssetsLocalBoundaryPreference || AppState.settings.chapterAssetsLocalBoundaryPreference);
