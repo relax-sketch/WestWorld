@@ -30,7 +30,7 @@ export function createProgressView(deps = {}) {
         }).length;
         const directorCompleted = AppState.memory.queue.filter((memory) => {
             const status = String(memory?.directorStatus || memory?.chapterOutlineStatus || '').trim().toLowerCase();
-            return status === 'done' || status === 'failed';
+            return status === 'done' || status === 'failed' || status === 'polish_failed';
         }).length;
         const total = AppState.memory.queue.length;
         const suffix = total > 0

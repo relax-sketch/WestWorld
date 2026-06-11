@@ -2,6 +2,7 @@
     DEFAULT_WORLDBOOK_CATEGORIES,
     defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
+    defaultChapterAssetsPolishPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -533,6 +534,7 @@ export function bindSettingEvents(deps = {}) {
         if (type === 'consolidate') return defaultConsolidatePrompt;
         if (type === 'alias-merge') return defaultAliasMergePrompt;
         if (type === 'chapter-assets') return defaultChapterAssetsPrompt;
+        if (type === 'chapter-assets-polish') return defaultChapterAssetsPolishPrompt;
         if (type === 'director-framework') return defaultDirectorFrameworkPrompt;
         if (type === 'director-injection') return defaultDirectorInjectionPrompt;
         return '';
@@ -711,6 +713,8 @@ export function bindSettingEvents(deps = {}) {
             AppState.settings.customAliasMergePrompt = textarea.value || '';
         } else if (type === 'chapter-assets') {
             AppState.settings.customChapterAssetsPrompt = textarea.value || '';
+        } else if (type === 'chapter-assets-polish') {
+            AppState.settings.customChapterAssetsPolishPrompt = textarea.value || '';
         } else if (type === 'director-framework') {
             AppState.settings.customDirectorFrameworkPrompt = textarea.value || '';
         } else if (type === 'director-injection') {
@@ -720,6 +724,19 @@ export function bindSettingEvents(deps = {}) {
         saveCurrentSettings({ syncPromptFieldsFromDom: false });
         if (ErrorHandler && typeof ErrorHandler.showUserSuccess === 'function') {
             ErrorHandler.showUserSuccess('提示词已保存');
+        }
+    };
+
+    const syncChapterAssetsSearchWindowControls = () => {
+        const presetEl = document.getElementById('ttw-chapter-assets-search-window-preset');
+        const customWrap = document.getElementById('ttw-chapter-assets-search-window-custom-wrap');
+        const customEl = document.getElementById('ttw-chapter-assets-local-search-window');
+        if (!presetEl) return;
+        if (customWrap) {
+            customWrap.style.display = presetEl.value === 'custom' ? 'flex' : 'none';
+        }
+        if (presetEl.value !== 'custom' && customEl) {
+            customEl.value = presetEl.value || '500';
         }
     };
 
@@ -781,6 +798,40 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-director-diagnostics-test': { click: testDirectorInjection },
         '#ttw-director-diagnostics-bind': { click: bindDirectorSession },
         '#ttw-director-diagnostics-clear': { click: clearDirectorLogs },
+        '#ttw-chapter-assets-mode': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-local-beat-count': { change: (e) => {
+            const value = Math.max(3, Math.min(8, parseInt(e.target.value, 10) || 4));
+            e.target.value = value;
+            AppState.settings.chapterAssetsLocalBeatCount = value;
+            saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        } },
+        '#ttw-chapter-assets-search-window-preset': { change: () => {
+            syncChapterAssetsSearchWindowControls();
+            saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        } },
+        '#ttw-chapter-assets-local-search-window': { change: (e) => {
+            const value = Math.max(0, Math.min(5000, parseInt(e.target.value, 10) || 500));
+            e.target.value = value;
+            AppState.settings.chapterAssetsLocalSearchWindow = value;
+            saveCurrentSettings({ syncPromptFieldsFromDom: false });
+        } },
+        '#ttw-chapter-assets-local-boundary-preference': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-show-retry-polish': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-show-local-fallback': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-save-chapter-assets-polish-prompt': { click: () => savePromptByType('chapter-assets-polish') },
+        '#ttw-reset-chapter-assets-polish-prompt': { click: () => {
+            const textarea = document.getElementById('ttw-chapter-assets-polish-prompt');
+            if (!textarea) return;
+            textarea.value = '';
+            AppState.settings.customChapterAssetsPolishPrompt = '';
+            saveCurrentSettings({ syncPromptFieldsFromDom: false });
+            ErrorHandler?.showUserSuccess?.('AI补全提示词已恢复为默认');
+        } },
+        '#ttw-copy-default-chapter-assets-polish-prompt': { click: () => {
+            writeClipboard(defaultChapterAssetsPolishPrompt)
+                .then(() => ErrorHandler?.showUserSuccess?.('默认 AI补全提示词已复制'))
+                .catch((error) => ErrorHandler?.showUserError?.(`复制失败：${error?.message || error}`));
+        } },
         '.ttw-chapter-preset': { click: (e, btn) => { const regex = btn.dataset.regex; document.getElementById('ttw-chapter-regex').value = regex; AppState.config.chapterRegex.pattern = regex; saveCurrentSettings(); } },
         '.ttw-reset-prompt': {
             click: (e, btn) => {
@@ -927,6 +978,7 @@ export function bindSettingEvents(deps = {}) {
         label: '导演注入演员前置提示词',
     });
 
+    syncChapterAssetsSearchWindowControls();
     renderDirectorDiagnostics();
 }
 

@@ -63,6 +63,28 @@ export function createSettingsPersistenceService(deps) {
         return base;
     }
 
+    function normalizeChapterAssetsMode(value) {
+        const mode = String(value || '').trim();
+        return mode === 'local-presplit-ai-polish' ? mode : 'ai-anchor';
+    }
+
+    function normalizeChapterAssetsBeatCount(value) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? Math.max(3, Math.min(8, parsed)) : 4;
+    }
+
+    function normalizeChapterAssetsSearchWindow(value) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? Math.max(0, Math.min(5000, parsed)) : 500;
+    }
+
+    function normalizeChapterAssetsBoundaryPreference(value) {
+        const preference = String(value || '').trim();
+        return ['paragraph-first', 'sentence-first', 'balanced'].includes(preference)
+            ? preference
+            : 'paragraph-first';
+    }
+
     function saveCurrentSettings(options = {}) {
         const {
             syncPromptFieldsFromDom = false,
@@ -140,6 +162,35 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
         AppState.settings.directorStateStartTag = document.getElementById('ttw-director-state-start-tag')?.value || AppState.settings.directorStateStartTag || '<state>';
         AppState.settings.directorStateEndTag = document.getElementById('ttw-director-state-end-tag')?.value || AppState.settings.directorStateEndTag || '</state>';
+        AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(
+            document.getElementById('ttw-chapter-assets-mode')?.value
+            || AppState.settings.chapterAssetsMode
+        );
+        AppState.settings.chapterAssetsLocalBeatCount = normalizeChapterAssetsBeatCount(
+            document.getElementById('ttw-chapter-assets-local-beat-count')?.value
+            ?? AppState.settings.chapterAssetsLocalBeatCount
+        );
+        const searchPreset = document.getElementById('ttw-chapter-assets-search-window-preset')?.value || '';
+        const searchWindowValue = searchPreset === 'custom'
+            ? document.getElementById('ttw-chapter-assets-local-search-window')?.value
+            : (searchPreset || document.getElementById('ttw-chapter-assets-local-search-window')?.value);
+        AppState.settings.chapterAssetsLocalSearchWindow = normalizeChapterAssetsSearchWindow(
+            searchWindowValue ?? AppState.settings.chapterAssetsLocalSearchWindow
+        );
+        AppState.settings.chapterAssetsLocalBoundaryPreference = normalizeChapterAssetsBoundaryPreference(
+            document.getElementById('ttw-chapter-assets-local-boundary-preference')?.value
+            || AppState.settings.chapterAssetsLocalBoundaryPreference
+        );
+        const polishPromptEl = document.getElementById('ttw-chapter-assets-polish-prompt');
+        if (polishPromptEl) {
+            AppState.settings.customChapterAssetsPolishPrompt = polishPromptEl.value || '';
+        }
+        AppState.settings.chapterAssetsShowRetryPolishButton = document.getElementById('ttw-chapter-assets-show-retry-polish')?.checked
+            ?? AppState.settings.chapterAssetsShowRetryPolishButton
+            ?? true;
+        AppState.settings.chapterAssetsShowUseLocalFallbackButton = document.getElementById('ttw-chapter-assets-show-local-fallback')?.checked
+            ?? AppState.settings.chapterAssetsShowUseLocalFallbackButton
+            ?? true;
 
         // Backward compatibility mirror fields
         AppState.settings.customApiProvider = AppState.settings.mainApi.provider;
@@ -210,6 +261,15 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
                 AppState.settings.directorStateStartTag = parsed.directorStateStartTag || AppState.settings.directorStateStartTag || '<state>';
                 AppState.settings.directorStateEndTag = parsed.directorStateEndTag || AppState.settings.directorStateEndTag || '</state>';
+                AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(parsed.chapterAssetsMode || AppState.settings.chapterAssetsMode);
+                AppState.settings.chapterAssetsLocalBeatCount = normalizeChapterAssetsBeatCount(parsed.chapterAssetsLocalBeatCount ?? AppState.settings.chapterAssetsLocalBeatCount);
+                AppState.settings.chapterAssetsLocalSearchWindow = normalizeChapterAssetsSearchWindow(parsed.chapterAssetsLocalSearchWindow ?? AppState.settings.chapterAssetsLocalSearchWindow);
+                AppState.settings.chapterAssetsLocalBoundaryPreference = normalizeChapterAssetsBoundaryPreference(parsed.chapterAssetsLocalBoundaryPreference || AppState.settings.chapterAssetsLocalBoundaryPreference);
+                AppState.settings.customChapterAssetsPolishPrompt = typeof parsed.customChapterAssetsPolishPrompt === 'string'
+                    ? parsed.customChapterAssetsPolishPrompt
+                    : (AppState.settings.customChapterAssetsPolishPrompt || '');
+                AppState.settings.chapterAssetsShowRetryPolishButton = parsed.chapterAssetsShowRetryPolishButton ?? AppState.settings.chapterAssetsShowRetryPolishButton ?? true;
+                AppState.settings.chapterAssetsShowUseLocalFallbackButton = parsed.chapterAssetsShowUseLocalFallbackButton ?? AppState.settings.chapterAssetsShowUseLocalFallbackButton ?? true;
 
                 // Backward compatibility mirror fields
                 AppState.settings.customApiProvider = migratedMainApi.provider;

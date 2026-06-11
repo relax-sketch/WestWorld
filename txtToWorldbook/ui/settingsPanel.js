@@ -2,6 +2,7 @@
     DEFAULT_WORLDBOOK_CATEGORIES,
     defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
+    defaultChapterAssetsPolishPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -123,6 +124,64 @@ function buildDirectorDiagnosticsHtml() {
         <pre id="ttw-director-diagnostics-json" style="margin:0 0 10px 0;max-height:180px;overflow:auto;white-space:pre-wrap;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:8px;font-size:11px;color:#ddd;"></pre>
         <div style="font-size:12px;color:#8bc5ff;margin-bottom:6px;">最近导演日志</div>
         <div id="ttw-director-diagnostics-logs" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;font-size:11px;"></div>
+    </div>`;
+}
+
+function buildDirectorCutSettingsHtml() {
+    return `
+    <div class="ttw-setting-card ttw-setting-card-blue" id="ttw-director-cut-settings-card">
+        <div style="font-weight:bold;color:#8bc5ff;margin-bottom:10px;">导演切拍设置</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:10px;">
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">章节资产生成方式</span>
+                <select id="ttw-chapter-assets-mode" class="ttw-select">
+                    <option value="ai-anchor">AI 锚点切拍</option>
+                    <option value="local-presplit-ai-polish">本地预切 + AI补全</option>
+                </select>
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">本地节拍数</span>
+                <input type="number" id="ttw-chapter-assets-local-beat-count" class="ttw-input" min="3" max="8" value="4">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">搜索窗口</span>
+                <select id="ttw-chapter-assets-search-window-preset" class="ttw-select">
+                    <option value="250">250 字</option>
+                    <option value="500">500 字</option>
+                    <option value="1000">1000 字</option>
+                    <option value="custom">自定义</option>
+                </select>
+            </label>
+            <label id="ttw-chapter-assets-search-window-custom-wrap" style="display:none;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">自定义窗口</span>
+                <input type="number" id="ttw-chapter-assets-local-search-window" class="ttw-input" min="0" max="5000" value="500">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">边界偏好</span>
+                <select id="ttw-chapter-assets-local-boundary-preference" class="ttw-select">
+                    <option value="paragraph-first">段落优先</option>
+                    <option value="sentence-first">句子优先</option>
+                    <option value="balanced">均衡最近边界</option>
+                </select>
+            </label>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+            <label class="ttw-checkbox-label" style="margin:0;">
+                <input type="checkbox" id="ttw-chapter-assets-show-retry-polish" checked>
+                <span>显示“重试 AI补全”</span>
+            </label>
+            <label class="ttw-checkbox-label" style="margin:0;">
+                <input type="checkbox" id="ttw-chapter-assets-show-local-fallback" checked>
+                <span>显示“使用本地兜底”</span>
+            </label>
+        </div>
+        <div style="font-size:12px;color:var(--ttw-text-secondary);margin-bottom:6px;">AI补全提示词</div>
+        <textarea id="ttw-chapter-assets-polish-prompt" rows="8" class="ttw-textarea-small" placeholder="留空则使用内置默认提示词"></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="ttw-btn ttw-btn-small" id="ttw-save-chapter-assets-polish-prompt">保存</button>
+            <button type="button" class="ttw-btn ttw-btn-small" id="ttw-reset-chapter-assets-polish-prompt">恢复默认</button>
+            <button type="button" class="ttw-btn ttw-btn-small" id="ttw-copy-default-chapter-assets-polish-prompt">复制默认</button>
+        </div>
     </div>`;
 }
 
@@ -292,6 +351,7 @@ export function buildSettingsHtml() {
             </div>
             ${buildCustomApiSectionHtml()}
             ${buildDirectorDiagnosticsHtml()}
+            ${buildDirectorCutSettingsHtml()}
             ${buildParallelConfigHtml()}
             ${buildBasicSettingsHtml()}
             ${buildCheckboxOptionsHtml()}
@@ -1059,6 +1119,36 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const directorStateEndTagEl = document.getElementById('ttw-director-state-end-tag');
     if (directorStateEndTagEl) directorStateEndTagEl.value = AppState.settings.directorStateEndTag || '</state>';
+
+    const chapterAssetsModeEl = document.getElementById('ttw-chapter-assets-mode');
+    if (chapterAssetsModeEl) chapterAssetsModeEl.value = AppState.settings.chapterAssetsMode || 'ai-anchor';
+
+    const chapterAssetsBeatCountEl = document.getElementById('ttw-chapter-assets-local-beat-count');
+    if (chapterAssetsBeatCountEl) chapterAssetsBeatCountEl.value = AppState.settings.chapterAssetsLocalBeatCount || 4;
+
+    const searchWindow = String(AppState.settings.chapterAssetsLocalSearchWindow ?? 500);
+    const searchWindowPresetEl = document.getElementById('ttw-chapter-assets-search-window-preset');
+    const searchWindowCustomWrap = document.getElementById('ttw-chapter-assets-search-window-custom-wrap');
+    const searchWindowCustomEl = document.getElementById('ttw-chapter-assets-local-search-window');
+    if (searchWindowPresetEl) {
+        searchWindowPresetEl.value = ['250', '500', '1000'].includes(searchWindow) ? searchWindow : 'custom';
+    }
+    if (searchWindowCustomEl) searchWindowCustomEl.value = searchWindow;
+    if (searchWindowCustomWrap && searchWindowPresetEl) {
+        searchWindowCustomWrap.style.display = searchWindowPresetEl.value === 'custom' ? 'flex' : 'none';
+    }
+
+    const boundaryPreferenceEl = document.getElementById('ttw-chapter-assets-local-boundary-preference');
+    if (boundaryPreferenceEl) boundaryPreferenceEl.value = AppState.settings.chapterAssetsLocalBoundaryPreference || 'paragraph-first';
+
+    const polishPromptEl = document.getElementById('ttw-chapter-assets-polish-prompt');
+    if (polishPromptEl) polishPromptEl.value = AppState.settings.customChapterAssetsPolishPrompt || '';
+
+    const showRetryPolishEl = document.getElementById('ttw-chapter-assets-show-retry-polish');
+    if (showRetryPolishEl) showRetryPolishEl.checked = AppState.settings.chapterAssetsShowRetryPolishButton !== false;
+
+    const showLocalFallbackEl = document.getElementById('ttw-chapter-assets-show-local-fallback');
+    if (showLocalFallbackEl) showLocalFallbackEl.checked = AppState.settings.chapterAssetsShowUseLocalFallbackButton !== false;
 
     const forceChapterMarkerEl = document.getElementById('ttw-force-chapter-marker');
     if (forceChapterMarkerEl) forceChapterMarkerEl.checked = AppState.settings.forceChapterMarker;

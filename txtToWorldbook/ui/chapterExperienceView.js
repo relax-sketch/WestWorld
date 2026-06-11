@@ -14,6 +14,8 @@ export function createChapterExperienceView(deps = {}) {
         ModalFactory,
         MemoryHistoryDB,
         retryChapterOutline,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
         showResultSection,
     } = deps;
 
@@ -382,6 +384,8 @@ export function createChapterExperienceView(deps = {}) {
         memory.chapterOutline = '';
         memory.chapterOutlineStatus = 'pending';
         memory.chapterOutlineError = '';
+        memory.chapterAssetsDraft = null;
+        memory.chapterAssetsSource = '';
         memory.chapterScript = { keyNodes: [], beats: [] };
         memory.chapterCurrentBeatIndex = 0;
         memory.directorDecision = null;
@@ -925,8 +929,24 @@ export function createChapterExperienceView(deps = {}) {
     function statusTag(status) {
         if (status === 'done') return '<span class="ttw-outline-status ttw-outline-status-done">已生成</span>';
         if (status === 'generating') return '<span class="ttw-outline-status ttw-outline-status-generating">生成中</span>';
+        if (status === 'polish_failed') return '<span class="ttw-outline-status ttw-outline-status-failed">待补全处理</span>';
         if (status === 'failed') return '<span class="ttw-outline-status ttw-outline-status-failed">生成失败</span>';
         return '<span class="ttw-outline-status ttw-outline-status-pending">待生成</span>';
+    }
+
+    function buildPolishFailureActions(memory, index, isGenerating) {
+        const hasDraft = !!memory?.chapterAssetsDraft?.localScript && Array.isArray(memory.chapterAssetsDraft.localScript.beats);
+        if (isGenerating || memory?.chapterOutlineStatus !== 'polish_failed' || !hasDraft) return '';
+        const buttons = [];
+        if (AppState.settings?.chapterAssetsShowRetryPolishButton !== false) {
+            buttons.push(`<button class="ttw-btn ttw-btn-small" data-action="retry-chapter-assets-polish" data-index="${index}">重试 AI补全</button>`);
+        }
+        if (AppState.settings?.chapterAssetsShowUseLocalFallbackButton !== false) {
+            buttons.push(`<button class="ttw-btn ttw-btn-small ttw-btn-warning" data-action="use-local-presplit-fallback" data-index="${index}">使用本地兜底</button>`);
+        }
+        return buttons.length > 0
+            ? `<div class="ttw-outline-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${buttons.join('')}</div>`
+            : '';
     }
 
     function escapeHtml(text) {
@@ -964,12 +984,17 @@ export function createChapterExperienceView(deps = {}) {
             ensureMemoryRuntime(memory, index);
             const title = memory.chapterTitle || `第${index + 1}章`;
             const outline = memory.chapterOutline || '';
-            const outlineText = outline || (memory.chapterOutlineStatus === 'failed' ? '该章大纲生成失败，请点击重试。' : '该章尚未生成大纲。');
+            const outlineText = outline || (
+                memory.chapterOutlineStatus === 'polish_failed'
+                    ? `本地预切已完成，AI补全失败：${memory.chapterOutlineError || '等待用户选择重试或本地兜底。'}`
+                    : (memory.chapterOutlineStatus === 'failed' ? '该章大纲生成失败，请点击重试。' : '该章尚未生成大纲。')
+            );
             const isGenerating = memory.chapterOutlineStatus === 'generating';
             const rerollLabel = isGenerating ? '⏳ 本章生成中...' : '🔄 重roll本章';
             const rerollDisabledAttr = isGenerating ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : '';
             const resetLabel = isGenerating ? '⏳ 本章生成中...' : '🧹 重置本章导演切拍';
             const resetDisabledAttr = isGenerating ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : '';
+            const polishFailureActions = buildPolishFailureActions(memory, index, isGenerating);
 
             return `
 <div class="ttw-outline-item" data-index="${index}">
@@ -979,6 +1004,7 @@ export function createChapterExperienceView(deps = {}) {
     </button>
     <div class="ttw-outline-body" id="ttw-outline-body-${index}" style="display:none;">
         <div class="ttw-outline-summary">${escapeHtml(outlineText)}</div>
+        ${polishFailureActions}
         <button class="ttw-btn ttw-btn-small" data-action="reroll-chapter-assets" data-index="${index}" ${rerollDisabledAttr}>${rerollLabel}</button>
         <button class="ttw-btn ttw-btn-small ttw-btn-warning" data-action="reset-director-assets" data-index="${index}" ${resetDisabledAttr}>${resetLabel}</button>
         <button class="ttw-btn ttw-btn-small" data-action="view-chapter" data-index="${index}">📖 查看当前章节概览</button>
@@ -1059,7 +1085,12 @@ export function createChapterExperienceView(deps = {}) {
         ensureMemoryRuntime(memory, idx);
 
         const title = memory.chapterTitle || `第${idx + 1}章`;
-        const outline = memory.chapterOutline || deriveOutlineFromContent(memory);
+        const isPolishFailed = memory.chapterOutlineStatus === 'polish_failed';
+        const outline = memory.chapterOutline || (
+            isPolishFailed
+                ? `本地预切已完成，AI补全失败：${memory.chapterOutlineError || '等待用户选择重试或本地兜底。'}`
+                : deriveOutlineFromContent(memory)
+        );
         const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
         const beatCount = beats.length;
         const maxBeatIndex = Math.max(0, beatCount - 1);
@@ -1069,7 +1100,7 @@ export function createChapterExperienceView(deps = {}) {
                 : 0)
             : 0;
         memory.chapterCurrentBeatIndex = currentBeatIndex;
-        if (!memory.chapterOutline) {
+        if (!memory.chapterOutline && !isPolishFailed) {
             memory.chapterOutline = outline;
         }
 
@@ -1578,6 +1609,38 @@ export function createChapterExperienceView(deps = {}) {
 
         if (action === 'reset-director-assets') {
             await resetDirectorAssetsForChapter(index);
+            return;
+        }
+
+        if (action === 'retry-chapter-assets-polish') {
+            if (typeof retryChapterAssetsPolish !== 'function') {
+                ErrorHandler.showUserError('当前版本未提供 AI补全重试服务');
+                return;
+            }
+            try {
+                await retryChapterAssetsPolish(index);
+                ErrorHandler.showUserSuccess(`第${index + 1}章 AI补全重试成功`);
+            } catch (error) {
+                ErrorHandler.showUserError(`第${index + 1}章 AI补全重试失败：${error.message}`);
+            }
+            renderOutlineList();
+            renderCurrentPanel();
+            return;
+        }
+
+        if (action === 'use-local-presplit-fallback') {
+            if (typeof useLocalPresplitFallback !== 'function') {
+                ErrorHandler.showUserError('当前版本未提供本地兜底服务');
+                return;
+            }
+            try {
+                await useLocalPresplitFallback(index);
+                ErrorHandler.showUserSuccess(`第${index + 1}章已使用本地兜底资产`);
+            } catch (error) {
+                ErrorHandler.showUserError(`第${index + 1}章使用本地兜底失败：${error.message}`);
+            }
+            renderOutlineList();
+            renderCurrentPanel();
             return;
         }
 

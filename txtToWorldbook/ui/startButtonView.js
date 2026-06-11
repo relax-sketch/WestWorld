@@ -47,7 +47,7 @@ export function createStartButtonView(deps = {}) {
         });
         const firstDirectorPending = AppState.memory.queue.findIndex((memory) => {
             const status = directorStatus(memory);
-            return status !== 'done' && status !== 'failed';
+            return status !== 'done' && status !== 'failed' && status !== 'polish_failed';
         });
 
         const hasWorldbookDone = AppState.memory.queue.some((memory) => worldbookDone(memory));
@@ -72,7 +72,7 @@ export function createStartButtonView(deps = {}) {
                 AppState.memory.queue.length > 0
                 && AppState.memory.queue.every((memory) => {
                     const status = directorStatus(memory);
-                    return status === 'done' || status === 'failed';
+                    return status === 'done' || status === 'failed' || status === 'polish_failed';
                 })
             ) {
                 directorStartBtn.textContent = '🎬 重跑导演切拍';

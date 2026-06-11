@@ -14,6 +14,8 @@ export function createPublicApi(deps = {}) {
         importSettings,
         handleRerollMemory,
         handleRerollSingleEntry,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
         findEntrySourceMemories,
         showRerollEntryModal,
         showBatchRerollModal,
@@ -52,6 +54,8 @@ export function createPublicApi(deps = {}) {
         getParallelConfig: () => AppState.config.parallel,
         handleRerollMemory,
         handleRerollSingleEntry,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
         findEntrySourceMemories,
         showRerollEntryModal,
         showBatchRerollModal,
@@ -83,5 +87,7 @@ export function createPublicApi(deps = {}) {
         importTaskState: loadTaskState,
         rerollMemory: handleRerollMemory,
         rerollSingleEntry: handleRerollSingleEntry,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
     };
 }

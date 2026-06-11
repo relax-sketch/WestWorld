@@ -37,7 +37,7 @@ export function createRuntimeActionsFacade(deps = {}) {
     function resolveDirectorStartIndex() {
         const firstPending = AppState.memory.queue.findIndex((memory) => {
             const status = directorStatus(memory);
-            return status !== 'done' && status !== 'failed';
+            return status !== 'done' && status !== 'failed' && status !== 'polish_failed';
         });
         return firstPending === -1 ? 0 : clampStartIndex(firstPending);
     }

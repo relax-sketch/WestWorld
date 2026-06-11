@@ -24,6 +24,9 @@ export function createMemoryQueueActionsService(deps = {}) {
             if (!Array.isArray(memory.chapterScript.beats)) {
                 memory.chapterScript.beats = [];
             }
+            if (!Object.prototype.hasOwnProperty.call(memory, 'chapterAssetsDraft')) {
+                memory.chapterAssetsDraft = null;
+            }
         });
     }
 
@@ -100,6 +103,8 @@ export function createMemoryQueueActionsService(deps = {}) {
             chapterOutline: '',
             chapterOutlineStatus: 'pending',
             chapterOutlineError: '',
+            chapterAssetsDraft: null,
+            chapterAssetsSource: '',
             chapterScript: { keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,
@@ -115,6 +120,8 @@ export function createMemoryQueueActionsService(deps = {}) {
             chapterOutline: '',
             chapterOutlineStatus: 'pending',
             chapterOutlineError: '',
+            chapterAssetsDraft: null,
+            chapterAssetsSource: '',
             chapterScript: { keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,

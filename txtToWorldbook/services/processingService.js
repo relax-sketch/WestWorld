@@ -1,4 +1,6 @@
-﻿export function createProcessingService(deps = {}) {
+﻿import { buildLocalPresplitAssets } from './chapterAssetsLocalSplitService.js';
+
+export function createProcessingService(deps = {}) {
     const {
         AppState,
         promptRegistryService,
@@ -218,7 +220,8 @@
 
             const chapterReady = previousMemory.processed || previousMemory.failed
                 || previousMemory.chapterOutlineStatus === 'done'
-                || previousMemory.chapterOutlineStatus === 'failed';
+                || previousMemory.chapterOutlineStatus === 'failed'
+                || previousMemory.chapterOutlineStatus === 'polish_failed';
             if (chapterReady) return;
 
             if (Date.now() - startedAt > timeoutMs) {
@@ -365,19 +368,24 @@
         return status || 'pending';
     }
 
+    function isDirectorFailedStatus(status) {
+        return status === 'failed' || status === 'polish_failed';
+    }
+
     function isWorldbookDone(memory) {
         return memory?.processed === true && memory?.failed !== true;
     }
 
     function isDirectorSettled(memory) {
         const status = getDirectorStatus(memory);
-        return status === 'done' || status === 'failed';
+        return status === 'done' || isDirectorFailedStatus(status);
     }
 
     function shouldSkipMemoryForMode(memory, mode) {
         if (!memory) return true;
         if (mode === 'director-only') {
-            return getDirectorStatus(memory) === 'done';
+            const status = getDirectorStatus(memory);
+            return status === 'done' || status === 'polish_failed';
         }
         if (mode === 'worldbook-only') {
             return isWorldbookDone(memory);
@@ -394,7 +402,7 @@
 
     function getFailedCountForMode(mode) {
         if (mode === 'director-only') {
-            return AppState.memory.queue.filter((memory) => getDirectorStatus(memory) === 'failed').length;
+            return AppState.memory.queue.filter((memory) => isDirectorFailedStatus(getDirectorStatus(memory))).length;
         }
         return AppState.memory.queue.filter((memory) => memory?.failed).length;
     }
@@ -473,8 +481,17 @@
         if (!memory.chapterOutlineStatus) {
             memory.chapterOutlineStatus = 'pending';
         }
+        if (!['pending', 'generating', 'done', 'failed', 'polish_failed'].includes(String(memory.chapterOutlineStatus || '').trim().toLowerCase())) {
+            memory.chapterOutlineStatus = 'pending';
+        }
         if (typeof memory.chapterOutlineError !== 'string') {
             memory.chapterOutlineError = '';
+        }
+        if (!Object.prototype.hasOwnProperty.call(memory, 'chapterAssetsDraft')) {
+            memory.chapterAssetsDraft = null;
+        }
+        if (typeof memory.chapterAssetsSource !== 'string') {
+            memory.chapterAssetsSource = '';
         }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
             memory.chapterScript = { keyNodes: [], beats: [] };
@@ -2369,7 +2386,324 @@
 
     }
 
-    async function generateChapterAssets(index, options = {}) {
+    function getChapterAssetsLocalOptions() {
+        const settings = AppState.settings || {};
+        const beatCount = parseInt(settings.chapterAssetsLocalBeatCount, 10);
+        const searchWindow = parseInt(settings.chapterAssetsLocalSearchWindow, 10);
+        const boundaryPreference = String(settings.chapterAssetsLocalBoundaryPreference || 'paragraph-first').trim();
+        return {
+            beatCount: Number.isFinite(beatCount) ? Math.max(3, Math.min(8, beatCount)) : 4,
+            searchWindow: Number.isFinite(searchWindow) ? Math.max(0, Math.min(5000, searchWindow)) : 500,
+            boundaryPreference: ['paragraph-first', 'sentence-first', 'balanced'].includes(boundaryPreference)
+                ? boundaryPreference
+                : 'paragraph-first',
+        };
+    }
+
+    function getLocalPolishPromptTemplate() {
+        const custom = String(AppState.settings?.customChapterAssetsPolishPrompt || '').trim();
+        if (custom) return custom;
+        return '';
+    }
+
+    function buildPolishBeatInput(localAssets) {
+        const beats = Array.isArray(localAssets?.script?.beats) ? localAssets.script.beats : [];
+        return beats.map((beat) => ({
+            id: beat.id,
+            summary: beat.summary || beat.event_summary || '',
+            tags: Array.isArray(beat.tags) ? beat.tags : [],
+            original_text: typeof beat.original_text === 'string' ? beat.original_text : '',
+            split_rule: beat.split_rule || null,
+        }));
+    }
+
+    function buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint = '') {
+        const chapterIndex = index + 1;
+        const chapterTitle = memory.chapterTitle || `第${chapterIndex}章`;
+        const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
+        const previousOutline = previousMemory?.chapterOutline
+            ? String(previousMemory.chapterOutline)
+            : '';
+        const localBeatsJson = JSON.stringify(buildPolishBeatInput(localAssets), null, 2);
+        const retryText = String(retryHint || '').replace(/\s+/g, ' ').trim();
+        const variables = {
+            CHAPTER_INDEX: String(chapterIndex),
+            CHAPTER_TITLE: chapterTitle,
+            PREVIOUS_OUTLINE: previousOutline || '无',
+            BEAT_COUNT: String(Array.isArray(localAssets?.script?.beats) ? localAssets.script.beats.length : 0),
+            LOCAL_BEATS_JSON: localBeatsJson,
+            RETRY_TEXT: retryText,
+        };
+
+        const customTemplate = getLocalPolishPromptTemplate();
+        if (customTemplate) {
+            return promptRegistryService.composeFragments([
+                renderPromptTemplate(customTemplate, variables),
+            ]);
+        }
+
+        return promptRegistryService.composeRequest(['director.chapter-assets-polish'], {
+            'director.chapter-assets-polish': variables,
+        });
+    }
+
+    function createChapterAssetsDraft(localAssets, polishError = null) {
+        const localScript = localAssets?.script && typeof localAssets.script === 'object'
+            ? JSON.parse(JSON.stringify(localAssets.script))
+            : { keyNodes: [], beats: [] };
+        return {
+            source: 'local-presplit-ai-polish',
+            createdAt: Date.now(),
+            beatCount: Array.isArray(localScript.beats) ? localScript.beats.length : 0,
+            localOutline: String(localAssets?.outline || ''),
+            localScript,
+            localMeta: localAssets?.meta || {},
+            polishError: polishError ? compactErrorMessage(polishError) : '',
+        };
+    }
+
+    function storePolishFailureDraft(memory, index, localAssets, error) {
+        memory.chapterAssetsDraft = createChapterAssetsDraft(localAssets, error);
+        memory.chapterOutlineStatus = 'polish_failed';
+        memory.chapterOutlineError = compactErrorMessage(error || new Error('AI补全失败'));
+        updateStreamContent(`🛑 [第${index + 1}章][AI补全] 补全失败，已保留本地预切草稿等待用户选择: ${memory.chapterOutlineError}\n`);
+        updateMemoryQueueUI();
+    }
+
+    function assertNoAiCutControlFields(source, index, path = 'response') {
+        if (!source || typeof source !== 'object') return;
+        const forbidden = [
+            'split_points',
+            'splitPoints',
+            'anchor',
+            'anchors',
+            'anchor_text',
+            'anchorText',
+            'original_text',
+            'originalText',
+        ];
+        for (const key of forbidden) {
+            if (Object.prototype.hasOwnProperty.call(source, key)) {
+                throw createChapterAssetsContractError(index, `AI补全响应包含禁止字段 ${path}.${key}`);
+            }
+        }
+    }
+
+    function normalizeAiPolishBeat(rawBeat, localBeat, index, beatIndex) {
+        const source = rawBeat && typeof rawBeat === 'object' ? rawBeat : {};
+        assertNoAiCutControlFields(source, index, `beats[${beatIndex}]`);
+        const localId = String(localBeat?.id || `b${beatIndex + 1}`);
+        const id = String(source.id || '').trim();
+        if (id !== localId) {
+            throw createChapterAssetsContractError(index, `AI补全节拍ID不匹配：期望 ${localId}，实际 ${id || '空'}`);
+        }
+
+        const rawSplitRule = source.split_rule || source.splitRule || {};
+        let splitRule = localBeat?.split_rule || { primary: 'goal_shift', rationale: '本地预切默认规则。' };
+        if (rawSplitRule && typeof rawSplitRule === 'object' && Object.keys(rawSplitRule).length > 0) {
+            const primary = String(rawSplitRule.primary || '').trim();
+            if (!SPLIT_TYPES.has(primary)) {
+                throw createChapterAssetsContractError(index, `AI补全 split_rule.primary 不合法：${primary || '空'}`);
+            }
+            splitRule = {
+                primary,
+                rationale: String(rawSplitRule.rationale || rawSplitRule.reason || splitRule.rationale || '').trim()
+                    || `AI补全选择 ${primary} 作为节拍类型。`,
+            };
+        }
+
+        const merged = normalizeBeatItem({
+            ...localBeat,
+            summary: source.summary || source.event_summary || source.eventSummary || localBeat?.summary,
+            event_summary: source.event_summary || source.eventSummary || source.summary || localBeat?.event_summary,
+            entry_event: source.entry_event || source.entryEvent || localBeat?.entryEvent,
+            exit_condition: source.exit_condition || source.exitCondition || localBeat?.exitCondition,
+            split_reason: source.split_reason || source.splitReason || localBeat?.split_reason,
+            tags: Array.isArray(source.tags) ? source.tags : localBeat?.tags,
+            split_rule: splitRule,
+            self_review: localBeat?.self_review || 'local-presplit',
+            self_check: source.self_review || source.self_check || source.selfCheck || localBeat?.self_check || 'local-presplit',
+            original_text: localBeat?.original_text || '',
+            id: localId,
+        }, beatIndex);
+        merged.original_text = typeof localBeat?.original_text === 'string' ? localBeat.original_text : '';
+        merged.self_review = localBeat?.self_review || 'local-presplit';
+        return merged;
+    }
+
+    function parseChapterAssetsPolishResponse(response, localAssets, memory, index) {
+        const rawLength = String(response || '').length;
+        const rawPreview = String(response || '').replace(/\s+/g, ' ').slice(0, 180);
+        const repairMeta = {};
+        const parsed = extractJsonObject(response, repairMeta);
+        if (!parsed) {
+            throw createChapterAssetsContractError(index, `AI补全响应不是有效JSON（响应长度=${rawLength}）`, {
+                rawLength,
+                rawPreview,
+                repairTried: repairMeta.repairTried,
+                repairApplied: repairMeta.repairApplied,
+                repairCount: repairMeta.repairCount,
+            });
+        }
+        assertNoAiCutControlFields(parsed, index, 'response');
+
+        const outline = toShortOutline(parsed.outline || parsed.chapterOutline || parsed.summary || '', 240);
+        if (!outline) {
+            throw createChapterAssetsContractError(index, 'AI补全响应缺少 outline');
+        }
+
+        const localBeats = Array.isArray(localAssets?.script?.beats) ? localAssets.script.beats : [];
+        const aiBeats = Array.isArray(parsed.beats)
+            ? parsed.beats
+            : (Array.isArray(parsed?.script?.beats) ? parsed.script.beats : (Array.isArray(parsed?.chapterScript?.beats) ? parsed.chapterScript.beats : []));
+        if (aiBeats.length !== localBeats.length) {
+            throw createChapterAssetsContractError(index, `AI补全节拍数量不匹配：期望 ${localBeats.length}，实际 ${aiBeats.length}`);
+        }
+
+        const seen = new Set();
+        const beats = aiBeats.map((beat, beatIndex) => {
+            const id = String(beat?.id || '').trim();
+            if (seen.has(id)) {
+                throw createChapterAssetsContractError(index, `AI补全节拍ID重复：${id}`);
+            }
+            seen.add(id);
+            return normalizeAiPolishBeat(beat, localBeats[beatIndex], index, beatIndex);
+        });
+
+        const script = normalizeScript({
+            keyNodes: Array.isArray(localAssets?.script?.keyNodes) ? localAssets.script.keyNodes : [],
+            beats,
+        }, outline);
+
+        const assets = {
+            outline,
+            script,
+            meta: {
+                source: 'local-presplit-ai-polish',
+                rawLength,
+                rawPreview,
+                localMeta: localAssets?.meta || {},
+                repair: repairMeta?.repairApplied
+                    ? { repaired: true, escapedQuotes: repairMeta.repairCount }
+                    : null,
+            },
+        };
+        validateChapterAssetsOrThrow(assets, memory, index);
+        return assets;
+    }
+
+    function commitPolishedAssets(memory, index, assets, source = 'local-presplit-ai-polish') {
+        memory.chapterOutline = assets.outline;
+        memory.chapterScript = assets.script;
+        memory.chapterAssetsSource = source;
+        memory.chapterAssetsDraft = null;
+        const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
+        memory.chapterCurrentBeatIndex = beatCount > 0
+            ? Math.max(0, Math.min(Number.isInteger(memory.chapterCurrentBeatIndex) ? memory.chapterCurrentBeatIndex : 0, beatCount - 1))
+            : 0;
+        memory.chapterOutlineStatus = 'done';
+        memory.chapterOutlineError = '';
+        updateStreamContent(`✅ [第${index + 1}章][AI补全] 章节资产写入完成，source=${source}, beats=${beatCount}\n`);
+        updateMemoryQueueUI();
+        return assets;
+    }
+
+    async function polishLocalPresplitAssets(memory, index, localAssets, options = {}) {
+        const {
+            taskId = index + 1,
+            maxRetries = AppState.settings.chapterOutlineMaxRetries ?? 1,
+            runId = null,
+        } = options;
+        const configuredRetries = Number(maxRetries);
+        const retryLimit = Number.isFinite(configuredRetries)
+            ? Math.max(0, Math.min(3, Math.round(configuredRetries)))
+            : 1;
+        const chapterAssetsCaller = typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI;
+        let lastError = null;
+
+        for (let attempt = 0; attempt <= retryLimit; attempt++) {
+            try {
+                throwIfRunInactive(runId);
+                const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
+                const prompt = buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
+                updateStreamContent(`🧩 [第${index + 1}章][AI补全] 发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}）\n`);
+                const response = await runWithApiSemaphore('director', runId, async () => chapterAssetsCaller(prompt, taskId));
+                updateStreamContent(`✅ [第${index + 1}章][AI补全] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                const assets = parseChapterAssetsPolishResponse(response, localAssets, memory, index);
+                updateStreamContent(`🔎 [第${index + 1}章][AI补全] 响应校验通过，beats=${assets.script.beats.length}\n`);
+                return assets;
+            } catch (error) {
+                lastError = error;
+                if (error?.message === 'ABORTED') throw error;
+                const canRetry = shouldRetryError(error);
+                const brief = formatProcessingError(error, { chapterIndex: index + 1, task: 'AI补全' });
+                if (attempt < retryLimit && isRunActive(runId) && canRetry) {
+                    const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+                    updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    continue;
+                }
+                updateStreamContent(`❌ ${brief}\n`);
+                break;
+            }
+        }
+
+        throw lastError || new Error('AI补全失败');
+    }
+
+    async function generateChapterAssetsLocalPresplitAiPolish(index, options = {}) {
+        const memory = AppState.memory.queue[index];
+        if (!memory) throw new Error('章节不存在');
+        ensureChapterRuntime(memory, index);
+
+        const {
+            force = false,
+            taskId = index + 1,
+            runId = null,
+        } = options;
+
+        throwIfRunInactive(runId);
+        await waitForPreviousChapterReady(index, runId);
+        throwIfRunInactive(runId);
+
+        if (!force && memory.chapterOutlineStatus === 'done' && memory.chapterOutline) {
+            return {
+                outline: memory.chapterOutline,
+                script: memory.chapterScript,
+            };
+        }
+
+        memory.chapterOutlineStatus = 'generating';
+        memory.chapterOutlineError = '';
+        updateMemoryQueueUI();
+
+        let localAssets = null;
+        try {
+            const localOptions = getChapterAssetsLocalOptions();
+            updateStreamContent(`✂️ [第${index + 1}章][本地预切] 开始，beats=${localOptions.beatCount}, contentLength=${String(memory.content || '').length}, window=${localOptions.searchWindow}, preference=${localOptions.boundaryPreference}\n`);
+            localAssets = buildLocalPresplitAssets(memory.content || '', index + 1, localOptions);
+            const segmentLengths = Array.isArray(localAssets?.meta?.segmentLengths) ? localAssets.meta.segmentLengths : [];
+            updateStreamContent(`✅ [第${index + 1}章][本地预切] 完成，segments=${segmentLengths.join(',')}\n`);
+            const assets = await polishLocalPresplitAssets(memory, index, localAssets, {
+                ...options,
+                taskId,
+                runId,
+            });
+            return commitPolishedAssets(memory, index, assets, 'local-presplit-ai-polish');
+        } catch (error) {
+            if (error?.message === 'ABORTED') throw error;
+            if (localAssets) {
+                storePolishFailureDraft(memory, index, localAssets, error);
+            } else {
+                memory.chapterOutlineStatus = 'failed';
+                memory.chapterOutlineError = compactErrorMessage(error);
+                updateMemoryQueueUI();
+            }
+            throw error;
+        }
+    }
+
+    async function generateChapterAssetsAiAnchor(index, options = {}) {
         const memory = AppState.memory.queue[index];
         if (!memory) throw new Error('章节不存在');
         ensureChapterRuntime(memory, index);
@@ -2408,6 +2742,8 @@
         const commitAssets = (assets, source = 'director-unknown') => {
             memory.chapterOutline = assets.outline;
             memory.chapterScript = assets.script;
+            memory.chapterAssetsSource = source;
+            memory.chapterAssetsDraft = null;
             const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
             if (!Number.isInteger(memory.chapterCurrentBeatIndex)) {
                 memory.chapterCurrentBeatIndex = 0;
@@ -2524,6 +2860,14 @@
         updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: '导演API' })}\n`);
         updateMemoryQueueUI();
         throw lastError || new Error(memory.chapterOutlineError);
+    }
+
+    async function generateChapterAssets(index, options = {}) {
+        const mode = String(AppState.settings?.chapterAssetsMode || 'ai-anchor').trim();
+        if (mode === 'local-presplit-ai-polish') {
+            return generateChapterAssetsLocalPresplitAiPolish(index, options);
+        }
+        return generateChapterAssetsAiAnchor(index, options);
     }
 
     async function processDirectorChunk(index, options = {}) {
@@ -3365,6 +3709,86 @@ ${'='.repeat(50)}
         return result;
     }
 
+    function getRequiredChapterAssetsDraft(memory, index) {
+        const draft = memory?.chapterAssetsDraft;
+        const beats = Array.isArray(draft?.localScript?.beats) ? draft.localScript.beats : [];
+        if (!draft || beats.length === 0) {
+            throw new Error(`第${index + 1}章没有可用的本地预切草稿`);
+        }
+        return draft;
+    }
+
+    async function retryChapterAssetsPolish(index) {
+        if (index < 0 || index >= AppState.memory.queue.length) {
+            throw new Error('章节索引无效');
+        }
+        const memory = AppState.memory.queue[index];
+        ensureChapterRuntime(memory, index);
+        const draft = getRequiredChapterAssetsDraft(memory, index);
+        const localAssets = {
+            outline: draft.localOutline || `第${index + 1}章本地预切草稿`,
+            script: draft.localScript,
+            meta: draft.localMeta || {
+                source: 'local-presplit',
+                beatCount: draft.beatCount,
+            },
+        };
+
+        updateStreamContent(`🔁 [第${index + 1}章][AI补全] 用户触发重试，复用草稿 beats=${draft.beatCount || draft.localScript.beats.length}\n`);
+        memory.chapterOutlineStatus = 'generating';
+        memory.chapterOutlineError = '';
+        updateMemoryQueueUI();
+
+        try {
+            const assets = await polishLocalPresplitAssets(memory, index, localAssets, {
+                taskId: index + 1,
+                maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
+            });
+            const result = commitPolishedAssets(memory, index, assets, 'local-presplit-ai-polish');
+            const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
+            await flushStateSave(processedCount);
+            return result;
+        } catch (error) {
+            if (error?.message === 'ABORTED') throw error;
+            storePolishFailureDraft(memory, index, localAssets, error);
+            const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
+            await flushStateSave(processedCount);
+            throw error;
+        }
+    }
+
+    async function useLocalPresplitFallback(index) {
+        if (index < 0 || index >= AppState.memory.queue.length) {
+            throw new Error('章节索引无效');
+        }
+        const memory = AppState.memory.queue[index];
+        ensureChapterRuntime(memory, index);
+        const draft = getRequiredChapterAssetsDraft(memory, index);
+        const localScript = JSON.parse(JSON.stringify(draft.localScript || { keyNodes: [], beats: [] }));
+        const localOutline = String(draft.localOutline || '').trim()
+            || `第${index + 1}章本地预切兜底资产`;
+
+        memory.chapterOutline = localOutline;
+        memory.chapterScript = {
+            ...localScript,
+            source: 'local-presplit-only',
+        };
+        memory.chapterAssetsSource = 'local-presplit-only';
+        memory.chapterAssetsDraft = null;
+        memory.chapterCurrentBeatIndex = 0;
+        memory.chapterOutlineStatus = 'done';
+        memory.chapterOutlineError = '';
+        updateStreamContent(`🧷 [第${index + 1}章][本地兜底] 用户提交本地预切草稿，beats=${Array.isArray(localScript.beats) ? localScript.beats.length : 0}\n`);
+        updateMemoryQueueUI();
+        const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
+        await flushStateSave(processedCount);
+        return {
+            outline: memory.chapterOutline,
+            script: memory.chapterScript,
+            source: memory.chapterAssetsSource,
+        };
+    }
+
     return {
         processMemoryChunkIndependent,
         processMemoryChunksParallel,
@@ -3374,5 +3798,7 @@ ${'='.repeat(50)}
         handleStartDirectorProcessing,
         handleRepairFailedMemories,
         retryChapterOutline,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
     };
 }

@@ -908,6 +908,14 @@ async function retryChapterOutline(index) {
     return getProcessingService().retryChapterOutline(index);
 }
 
+async function retryChapterAssetsPolish(index) {
+    return getProcessingService().retryChapterAssetsPolish(index);
+}
+
+async function useLocalPresplitFallback(index) {
+    return getProcessingService().useLocalPresplitFallback(index);
+}
+
 function handleStopProcessing() {
     return getProcessingService().handleStopProcessing();
 }
@@ -1025,6 +1033,8 @@ const chapterExperienceView = createChapterExperienceView({
     ModalFactory,
     MemoryHistoryDB,
     retryChapterOutline,
+    retryChapterAssetsPolish,
+    useLocalPresplitFallback,
     showResultSection,
 });
 const {
@@ -1380,6 +1390,8 @@ open = shellRuntimeBindings.open;
         importSettings,
         handleRerollMemory,
         handleRerollSingleEntry,
+        retryChapterAssetsPolish,
+        useLocalPresplitFallback,
         findEntrySourceMemories,
         showRerollEntryModal,
         showBatchRerollModal,

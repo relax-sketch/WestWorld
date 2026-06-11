@@ -6,6 +6,7 @@ import {
     createPromptRegistryService,
 } from '../txtToWorldbook/services/promptRegistryService.js';
 import {
+    defaultChapterAssetsPolishPrompt,
     defaultDirectorInjectionPrompt,
     defaultWorldbookPrompt,
 } from '../txtToWorldbook/core/constants.js';
@@ -31,6 +32,23 @@ test('registry exposes immutable project defaults for existing prompts', () => {
     assert.equal(
         registry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_INJECTION).body,
         defaultDirectorInjectionPrompt,
+    );
+});
+
+test('chapter assets polish prompt is internal and hidden from general prompt editor modules', () => {
+    const registry = createPromptRegistryService({ AppState: createState() });
+
+    assert.equal(
+        registry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH).body,
+        defaultChapterAssetsPolishPrompt,
+    );
+    assert.equal(
+        registry.listModules().some((module) => module.id === PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH),
+        false,
+    );
+    assert.equal(
+        registry.listModules({ includeInternal: true }).some((module) => module.id === PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH),
+        true,
     );
 });
 

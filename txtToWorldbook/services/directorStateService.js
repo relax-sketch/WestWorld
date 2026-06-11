@@ -103,8 +103,17 @@ export function ensureMemoryDirectorRuntime(memory, index = 0) {
     if (!memory.chapterOutlineStatus) {
         memory.chapterOutlineStatus = 'pending';
     }
+    if (!['pending', 'generating', 'done', 'failed', 'polish_failed'].includes(String(memory.chapterOutlineStatus || '').trim().toLowerCase())) {
+        memory.chapterOutlineStatus = 'pending';
+    }
     if (typeof memory.chapterOutlineError !== 'string') {
         memory.chapterOutlineError = '';
+    }
+    if (!Object.prototype.hasOwnProperty.call(memory, 'chapterAssetsDraft')) {
+        memory.chapterAssetsDraft = null;
+    }
+    if (typeof memory.chapterAssetsSource !== 'string') {
+        memory.chapterAssetsSource = '';
     }
     if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
         memory.chapterScript = { keyNodes: [], beats: [] };

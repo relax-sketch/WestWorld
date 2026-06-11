@@ -1,6 +1,7 @@
 import {
     defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
+    defaultChapterAssetsPolishPrompt,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -40,6 +41,7 @@ export const PROMPT_MODULE_IDS = Object.freeze({
     MERGE_ALIAS: 'merge.alias',
     MERGE_ALIAS_PAIR: 'merge.alias.pair',
     DIRECTOR_CHAPTER_ASSETS: 'director.chapter-assets',
+    DIRECTOR_CHAPTER_ASSETS_POLISH: 'director.chapter-assets-polish',
     DIRECTOR_CHAPTER_ASSETS_PREVIOUS: 'director.chapter-assets.previous-outline',
     DIRECTOR_CHAPTER_ASSETS_RETRY: 'director.chapter-assets.retry',
     DIRECTOR_ENTRY_EVENTS: 'director.entry-events',
@@ -92,6 +94,7 @@ function moduleDefinition(id, body = '', options = {}) {
         id,
         title: options.title || id,
         requiredPlaceholders: Object.freeze([...(options.requiredPlaceholders || [])]),
+        internal: options.internal === true,
         defaultLayers: Object.freeze({
             prefix: '',
             body,
@@ -312,6 +315,14 @@ export const DEFAULT_PROMPT_MODULE_DEFINITIONS = Object.freeze({
     [PROMPT_MODULE_IDS.MERGE_ALIAS]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_ALIAS, defaultAliasMergePrompt),
     [PROMPT_MODULE_IDS.MERGE_ALIAS_PAIR]: moduleDefinition(PROMPT_MODULE_IDS.MERGE_ALIAS_PAIR, defaultAliasPairPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS, defaultChapterAssetsPrompt),
+    [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH]: moduleDefinition(
+        PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH,
+        defaultChapterAssetsPolishPrompt,
+        {
+            requiredPlaceholders: ['{CHAPTER_TITLE}', '{LOCAL_BEATS_JSON}', '{BEAT_COUNT}'],
+            internal: true,
+        },
+    ),
     [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_PREVIOUS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_PREVIOUS, '上一章摘要：{PREVIOUS_OUTLINE}'),
     [PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_RETRY]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_RETRY, defaultChapterAssetsRetryPrompt),
     [PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS]: moduleDefinition(PROMPT_MODULE_IDS.DIRECTOR_ENTRY_EVENTS, defaultEntryEventsPrompt),
@@ -418,8 +429,11 @@ export function createPromptRegistryService(deps = {}) {
         };
     }
 
-    function listModules() {
-        return Object.keys(definitions).map((id) => getResolvedModule(id));
+    function listModules(options = {}) {
+        const includeInternal = options.includeInternal === true;
+        return Object.keys(definitions)
+            .filter((id) => includeInternal || definitions[id]?.internal !== true)
+            .map((id) => getResolvedModule(id));
     }
 
     function setOverride(id, layers = {}) {

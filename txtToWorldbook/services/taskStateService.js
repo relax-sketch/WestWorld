@@ -157,7 +157,14 @@ export function createTaskStateService(deps = {}) {
         normalized.processing = false;
         normalized.chapterOutline = typeof normalized.chapterOutline === 'string' ? normalized.chapterOutline : '';
         normalized.chapterOutlineStatus = normalized.chapterOutlineStatus || 'pending';
+        if (!['pending', 'generating', 'done', 'failed', 'polish_failed'].includes(String(normalized.chapterOutlineStatus || '').trim().toLowerCase())) {
+            normalized.chapterOutlineStatus = 'pending';
+        }
         normalized.chapterOutlineError = typeof normalized.chapterOutlineError === 'string' ? normalized.chapterOutlineError : '';
+        normalized.chapterAssetsDraft = normalized.chapterAssetsDraft && typeof normalized.chapterAssetsDraft === 'object'
+            ? normalized.chapterAssetsDraft
+            : null;
+        normalized.chapterAssetsSource = typeof normalized.chapterAssetsSource === 'string' ? normalized.chapterAssetsSource : '';
         normalized.chapterScript = normalizeChapterScript(normalized.chapterScript);
         normalized.chapterOpeningPreview = typeof normalized.chapterOpeningPreview === 'string' ? normalized.chapterOpeningPreview : '';
         normalized.chapterOpeningSent = normalized.chapterOpeningSent === true;

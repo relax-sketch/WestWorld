@@ -45,3 +45,53 @@ test('loading saved settings migrates prompt fields while retaining local API co
     );
     assert.equal(AppState.settings.promptGlobal.prefix, 'OLD PREFIX');
 });
+
+test('loading saved chapter asset settings does not alter director mode semantics', () => {
+    const saved = {
+        directorMode: 'off',
+        directorEnabled: false,
+        chapterAssetsMode: 'local-presplit-ai-polish',
+        chapterAssetsLocalBeatCount: 7,
+        chapterAssetsLocalSearchWindow: 1000,
+        chapterAssetsLocalBoundaryPreference: 'sentence-first',
+        customChapterAssetsPolishPrompt: 'CUSTOM POLISH',
+        chapterAssetsShowRetryPolishButton: false,
+        chapterAssetsShowUseLocalFallbackButton: true,
+    };
+    globalThis.localStorage = {
+        getItem: () => JSON.stringify(saved),
+        setItem() {},
+    };
+    const AppState = {
+        settings: {},
+        processing: {},
+        config: {
+            parallel: {},
+            chapterRegex: {},
+            categoryDefault: {},
+            entryPosition: {},
+        },
+        persistent: {},
+    };
+    const registry = createPromptRegistryService({ AppState });
+    const service = createSettingsPersistenceService({
+        AppState,
+        defaultSettings,
+        migrateLegacyPromptSettings: registry.migrateLegacySettings,
+        updateSettingsUI() {},
+        updateChapterRegexUI() {},
+        handleProviderChange() {},
+    });
+
+    service.loadSavedSettings();
+
+    assert.equal(AppState.settings.directorMode, 'off');
+    assert.equal(AppState.settings.directorEnabled, false);
+    assert.equal(AppState.settings.chapterAssetsMode, 'local-presplit-ai-polish');
+    assert.equal(AppState.settings.chapterAssetsLocalBeatCount, 7);
+    assert.equal(AppState.settings.chapterAssetsLocalSearchWindow, 1000);
+    assert.equal(AppState.settings.chapterAssetsLocalBoundaryPreference, 'sentence-first');
+    assert.equal(AppState.settings.customChapterAssetsPolishPrompt, 'CUSTOM POLISH');
+    assert.equal(AppState.settings.chapterAssetsShowRetryPolishButton, false);
+    assert.equal(AppState.settings.chapterAssetsShowUseLocalFallbackButton, true);
+});
