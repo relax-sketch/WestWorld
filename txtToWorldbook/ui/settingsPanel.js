@@ -913,7 +913,7 @@ function buildResultSectionHtml() {
                         <button id="ttw-next-chapter-btn" class="ttw-btn ttw-btn-small">⏭ 下一章</button>
                     </div>
                 </div>
-                <div id="ttw-current-chapter-hint" class="ttw-current-hint">进入章节后将自动发送开场白。</div>
+                <div id="ttw-current-chapter-hint" class="ttw-current-hint">章节切换不会自动生成或发送开场白。</div>
 
                 <div class="ttw-current-block">
                     <div class="ttw-current-block-title">故事摘要</div>

@@ -684,7 +684,7 @@ export function createChapterExperienceView(deps = {}) {
     function buildEditorBodyHtml(draft) {
         return `
 <div class="ttw-chapter-editor-modal">
-    <div class="ttw-chapter-editor-tip">本次仅编辑摘要与小剧场节拍字段；开场白仍由章节切换逻辑自动生成。</div>
+    <div class="ttw-chapter-editor-tip">本次仅编辑摘要与小剧场节拍字段；已有开场白仍会保留展示。</div>
     <div class="ttw-chapter-editor-grid">
         <label class="ttw-editor-field">
             <span class="ttw-editor-field-label">故事摘要</span>
@@ -1195,9 +1195,7 @@ export function createChapterExperienceView(deps = {}) {
             if (openingEl) openingEl.textContent = `开场白生成失败：${memory.chapterOpeningError}`;
         } else {
             if (openingEl) {
-                openingEl.textContent = idx === 0
-                    ? '点击“开始阅读第一章”后将自动生成并发送开场白。'
-                    : '该章开场白会在你从上一章点击“下一章”进入时生成并发送。';
+                openingEl.textContent = '暂无开场白，章节切换不会自动生成或发送。';
             }
         }
 
@@ -1224,9 +1222,9 @@ export function createChapterExperienceView(deps = {}) {
             if (isLast) {
                 hintEl.textContent = `当前已到最后一章。${beatHint}`;
             } else if (idx === 0) {
-                hintEl.textContent = `首章由“开始阅读第一章”触发开场白；后续章节由“下一章”触发。${beatHint}`;
+                hintEl.textContent = `当前为第一章，章节切换不会自动生成或发送开场白。${beatHint}`;
             } else {
-                hintEl.textContent = `点击“下一章”将进入下一章并自动发送其开场白。${beatHint}`;
+                hintEl.textContent = `点击“下一章”仅切换章节，不会自动生成或发送开场白。${beatHint}`;
             }
         }
     }
@@ -1502,15 +1500,11 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
-    async function enterChapter(index, options = {}) {
-        const { triggerOpening = true } = options;
+    async function enterChapter(index) {
         if (index < 0 || index >= AppState.memory.queue.length) return;
         ensureState();
         AppState.experience.currentChapterIndex = index;
         renderCurrentPanel();
-        if (triggerOpening) {
-            await ensureOpeningForChapter(index);
-        }
     }
 
     function getReadingProgressStatus() {
@@ -1724,7 +1718,7 @@ export function createChapterExperienceView(deps = {}) {
         }
 
         if (action === 'view-chapter') {
-            await enterChapter(index, { triggerOpening: false });
+            await enterChapter(index);
             await showCurrentChapterPanelInternal();
             return;
         }
@@ -1826,7 +1820,7 @@ export function createChapterExperienceView(deps = {}) {
                     ErrorHandler.showUserError('已经是第一章');
                     return;
                 }
-                await enterChapter(prevIndex, { triggerOpening: false });
+                await enterChapter(prevIndex);
             });
         }
 
