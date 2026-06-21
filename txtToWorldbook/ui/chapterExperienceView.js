@@ -29,6 +29,7 @@ export function createChapterExperienceView(deps = {}) {
         currentOpening: 'ttw-current-opening',
         chapterHint: 'ttw-current-chapter-hint',
         editButton: 'ttw-edit-current-chapter-btn',
+        copyPreviousContextButton: 'ttw-copy-previous-context-btn',
         prevButton: 'ttw-prev-chapter-btn',
         prevBeatButton: 'ttw-prev-beat-btn',
         nextBeatButton: 'ttw-next-beat-btn',
@@ -262,6 +263,84 @@ export function createChapterExperienceView(deps = {}) {
         const plain = String(text || '').replace(/\s+/g, ' ').trim();
         if (!plain) return '';
         return plain.length > maxLen ? `${plain.slice(0, maxLen)}...` : plain;
+    }
+
+    function getChapterOutlineText(memory, index) {
+        if (!memory) return '';
+        const title = memory.chapterTitle || `第${index + 1}章`;
+        const isPolishFailed = memory.chapterOutlineStatus === 'polish_failed';
+        const outline = memory.chapterOutline || (
+            isPolishFailed
+                ? `本地预切已完成，AI补全失败：${memory.chapterOutlineError || '等待用户选择重试或本地兜底。'}`
+                : deriveOutlineFromContent(memory)
+        );
+        return [
+            `【${title}】`,
+            String(outline || '').trim() || '暂无故事摘要',
+        ].join('\n');
+    }
+
+    function buildPreviousContextText(index) {
+        const currentMemory = getMemory(index);
+        if (!currentMemory) return '';
+
+        const sections = [];
+        if (index > 0) {
+            const previousSections = AppState.memory.queue
+                .slice(0, index)
+                .map((memory, previousIndex) => getChapterOutlineText(memory, previousIndex))
+                .filter(Boolean);
+            if (previousSections.length > 0) {
+                sections.push('【前置章节】');
+                sections.push(previousSections.join('\n\n'));
+            }
+        }
+        sections.push('【本章故事摘要】');
+        sections.push(getChapterOutlineText(currentMemory, index));
+        return sections.join('\n\n').trim();
+    }
+
+    async function writeClipboardText(text) {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        textarea.remove();
+        if (!ok) throw new Error('浏览器拒绝写入剪贴板');
+        return true;
+    }
+
+    async function copyPreviousContext() {
+        ensureState();
+        const idx = Math.max(0, Math.min(AppState.experience.currentChapterIndex || 0, Math.max(0, AppState.memory.queue.length - 1)));
+        const text = buildPreviousContextText(idx);
+        if (!text) {
+            ErrorHandler.showUserError('暂无可复制的章节摘要');
+            return;
+        }
+
+        const btn = document.getElementById(selectors.copyPreviousContextButton);
+        const originalText = btn?.textContent || '📋 复制前置剧情';
+        try {
+            await writeClipboardText(text);
+            if (btn) {
+                btn.textContent = '✅ 已复制';
+                setTimeout(() => { btn.textContent = originalText; }, 1500);
+            }
+            ErrorHandler.showUserSuccess('前置剧情已复制到剪贴板');
+        } catch (error) {
+            ErrorHandler.showUserError(`复制失败：${error?.message || error}`);
+        }
     }
 
     function normalizeSplitType(type) {
@@ -1770,6 +1849,14 @@ export function createChapterExperienceView(deps = {}) {
             editBtn.dataset.bound = '1';
             editBtn.addEventListener('click', () => {
                 openCurrentChapterEditor();
+            });
+        }
+
+        const copyPreviousContextBtn = document.getElementById(selectors.copyPreviousContextButton);
+        if (copyPreviousContextBtn && !copyPreviousContextBtn.dataset.bound) {
+            copyPreviousContextBtn.dataset.bound = '1';
+            copyPreviousContextBtn.addEventListener('click', () => {
+                copyPreviousContext();
             });
         }
     }
