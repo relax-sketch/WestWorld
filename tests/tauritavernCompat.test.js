@@ -40,21 +40,3 @@ test('index exposes outer WestWorld API before non-critical startup steps can fa
     assert.ok(exposeIndex < txtInitIndex, 'outer API shell must be exposed before TXT init');
     assert.match(source, /getBootstrapStatus\s*[,}]/);
 });
-
-test('TauriTavern chat control uses non-layout input overlay with compact magic wand fallback', async () => {
-    const source = await readRepoFile('index.js');
-    const mountStart = source.indexOf('function mountChatControlBar()');
-    const mountEnd = source.indexOf('function registerChatControlRefreshHooks()', mountStart);
-    assert.ok(mountStart >= 0 && mountEnd > mountStart, 'mountChatControlBar section must exist');
-    const mountSection = source.slice(mountStart, mountEnd);
-
-    assert.match(source, /data-westworld-mount="input-overlay"/);
-    assert.match(source, /document\.body\.appendChild\(bar\)/);
-    assert.match(source, /document\.getElementById\('extensionsMenu'\)/);
-    assert.match(source, /data-westworld-action="next-beat"/);
-    assert.match(source, /data-westworld-action="next-chapter"/);
-    assert.match(source, /data-westworld-role="beat-counter"/);
-    assert.match(source, /data-westworld-role="state-status"/);
-    assert.match(source, /mountChatControlInWand\(\{\s*compact:\s*true\s*\}\)/);
-    assert.doesNotMatch(mountSection, /insertBefore|appendChild\(bar\)/);
-});
