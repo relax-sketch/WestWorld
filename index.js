@@ -960,22 +960,19 @@ function ensureChatControlStyle() {
 #${CHAT_CONTROL_BAR_ID} {
     display: flex;
     align-items: center;
+    gap: 10px;
+}
+#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-icon {
+    height: 20px;
+    width: 20px;
+    min-width: 20px;
+    font-size: calc(var(--mainFontSize) * 1.1);
+    display: flex;
+    align-items: center;
     justify-content: center;
-    box-sizing: border-box;
-    padding: 2px;
-    font-size: 12px;
-    line-height: 1.2;
+    pointer-events: none;
 }
-#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-button {
-    min-height: 24px;
-    padding: 3px 8px;
-    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.25));
-    border-radius: 6px;
-    background: var(--black30a, rgba(0,0,0,0.3));
-    color: var(--SmartThemeBodyColor, inherit);
-    cursor: pointer;
-}
-#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-button:disabled {
+#${CHAT_CONTROL_BAR_ID}.westworld-chat-control-disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
@@ -984,9 +981,10 @@ function ensureChatControlStyle() {
     align-items: center;
     justify-content: center;
     min-width: 32px;
-    height: 20px;
+    height: 22px;
     box-sizing: border-box;
-    margin-left: 3px;
+    margin-left: 4px;
+    align-self: center;
     padding: 0 6px;
     border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.2));
     border-radius: 999px;
@@ -999,6 +997,7 @@ function ensureChatControlStyle() {
     white-space: nowrap;
     pointer-events: none;
     opacity: 0.88;
+    order: 5;
 }
 `;
     document.head.appendChild(style);
@@ -1024,7 +1023,7 @@ function updateChatControlBar() {
 
     const status = getChatControlStatus();
     const hasBeat = status?.ok === true && Number(status.totalBeats || 0) > 0;
-    const nextBeatButton = bar?.querySelector('[data-westworld-action="next-beat"]');
+    const nextBeatItem = bar?.querySelector('[data-westworld-action="next-beat"]') || bar;
     const busy = bar?.dataset.busy === '1';
 
     if (badge) {
@@ -1033,9 +1032,11 @@ function updateChatControlBar() {
             ? `WestWorld ${status.currentChapter || 0}/${status.totalChapters || 0}`
             : 'WestWorld 未就绪';
     }
-    if (nextBeatButton) {
-        nextBeatButton.disabled = busy || !hasBeat || (status.canNextBeat !== true && status.canNextChapter !== true);
-        nextBeatButton.title = status?.ok
+    if (nextBeatItem) {
+        const disabled = busy || !hasBeat || (status.canNextBeat !== true && status.canNextChapter !== true);
+        nextBeatItem.classList.toggle('westworld-chat-control-disabled', disabled);
+        nextBeatItem.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        nextBeatItem.title = status?.ok
             ? `WestWorld 下一拍 ${status?.display || '0/0'}`
             : 'WestWorld 未就绪';
     }
@@ -1124,12 +1125,23 @@ function createChatControlBarElement() {
 
     const bar = document.createElement('div');
     bar.id = CHAT_CONTROL_BAR_ID;
+    bar.setAttribute('role', 'menuitem');
+    bar.tabIndex = 0;
+    bar.dataset.westworldAction = 'next-beat';
     bar.dataset.busy = '0';
     bar.innerHTML = `
-        <button type="button" class="westworld-chat-control-button" data-westworld-action="next-beat">下一拍</button>
+        <div class="fa-solid fa-forward-step westworld-chat-control-icon"></div>
+        <span>下一拍</span>
     `;
 
-    bar.querySelector('[data-westworld-action="next-beat"]')?.addEventListener('click', () => {
+    bar.addEventListener('click', () => {
+        if (bar.getAttribute('aria-disabled') === 'true') return;
+        void handleChatControlAction();
+    });
+    bar.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        if (bar.getAttribute('aria-disabled') === 'true') return;
         void handleChatControlAction();
     });
 
@@ -1143,19 +1155,7 @@ function ensureChatControlWandStyle() {
     style.textContent = `
 #${CHAT_CONTROL_WAND_CONTAINER_ID} {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 96px;
-    padding: 4px;
-}
-#${CHAT_CONTROL_WAND_CONTAINER_ID} #${CHAT_CONTROL_BAR_ID} {
-    justify-content: center;
-    padding: 2px;
-}
-#${CHAT_CONTROL_WAND_CONTAINER_ID} .westworld-chat-control-title {
-    font-size: 11px;
-    opacity: 0.8;
-    text-align: center;
+    align-items: baseline;
 }
 `;
     document.head.appendChild(style);
@@ -1176,7 +1176,7 @@ function mountChatControlInWand() {
         menu.appendChild(container);
     }
 
-    container.innerHTML = '<div class="westworld-chat-control-title">WestWorld</div>';
+    container.innerHTML = '';
     container.appendChild(createChatControlBarElement());
     updateChatControlBar();
     bootstrapStatus.wandControlMounted = true;

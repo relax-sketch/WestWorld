@@ -52,8 +52,11 @@ test('TauriTavern chat controls stay in magic wand with a separate progress badg
     assert.match(source, /document\.getElementById\('extensionsMenu'\)/);
     assert.match(source, /document\.getElementById\('extensionsMenuButton'\)/);
     assert.match(source, /insertAdjacentElement\('afterend', badge\)/);
-    assert.match(source, /data-westworld-action="next-beat"/);
+    assert.match(source, /dataset\.westworldAction\s*=\s*'next-beat'/);
+    assert.match(source, /fa-forward-step westworld-chat-control-icon/);
+    assert.match(source, /<span>下一拍<\/span>/);
     assert.doesNotMatch(source, /data-westworld-action="next-chapter"/);
     assert.doesNotMatch(source, /data-westworld-role="beat-counter"|data-westworld-role="state-status"/);
+    assert.doesNotMatch(source, /westworld-chat-control-title|>WestWorld<\/div>|<button[^>]*westworld-chat-control/);
     assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
 });
