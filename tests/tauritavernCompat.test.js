@@ -41,6 +41,25 @@ test('index exposes outer WestWorld API before non-critical startup steps can fa
     assert.match(source, /getBootstrapStatus\s*[,}]/);
 });
 
+test('TauriTavern top icon reuses the backgrounds drawer slot before extension settings fallback', async () => {
+    const source = await readRepoFile('index.js');
+    const mountStart = source.indexOf('function mountDrawerHtml(html)');
+    const mountEnd = source.indexOf('async function mountDrawerWithRetry', mountStart);
+    assert.ok(mountStart >= 0 && mountEnd > mountStart, 'mountDrawerHtml section must exist');
+    const mountSection = source.slice(mountStart, mountEnd);
+
+    const backgroundsIndex = mountSection.indexOf("$('#backgrounds-button')");
+    const extensionsIndex = mountSection.indexOf("$('#extensions-settings-button')");
+
+    assert.ok(backgroundsIndex >= 0, 'must look for backgrounds top icon');
+    assert.ok(extensionsIndex >= 0, 'must keep extension settings fallback');
+    assert.ok(backgroundsIndex < extensionsIndex, 'background slot must be preferred before extension settings fallback');
+    assert.match(mountSection, /westworld-background-replaced/);
+    assert.match(mountSection, /display:\s*none !important/);
+    assert.match(mountSection, /\$\('#Backgrounds'\)/);
+    assert.match(mountSection, /removeClass\('openDrawer open'\)\.addClass\('closedDrawer'\)/);
+});
+
 test('TauriTavern chat controls stay in magic wand with a separate progress badge', async () => {
     const source = await readRepoFile('index.js');
     const mountStart = source.indexOf('function mountChatControlBar()');

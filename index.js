@@ -301,6 +301,23 @@ async function updateSelfFromRepo(repoUrl = WESTWORLD_REPO_URL) {
 function mountDrawerHtml(html) {
     const existingWrapper = document.getElementById('westworld-wrapper');
 
+    const backgroundButton = $('#backgrounds-button');
+    if (backgroundButton.length > 0) {
+        const backgroundPanel = $('#Backgrounds');
+        backgroundButton.addClass('westworld-background-replaced');
+        backgroundButton.attr('style', (_, current = '') => {
+            const base = String(current || '').replace(/display\s*:\s*[^;]+;?/gi, '').trim();
+            return `${base}${base && !base.endsWith(';') ? '; ' : ''}display: none !important;`;
+        });
+        backgroundPanel.removeClass('openDrawer open').addClass('closedDrawer');
+        if (existingWrapper) {
+            backgroundButton.after(existingWrapper);
+        } else {
+            backgroundButton.after(html);
+        }
+        return true;
+    }
+
     const topbarAnchor = $('#extensions-settings-button');
     if (topbarAnchor.length > 0) {
         if (existingWrapper) {
