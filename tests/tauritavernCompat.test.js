@@ -72,10 +72,25 @@ test('TauriTavern chat controls stay in magic wand with a separate progress badg
     assert.match(source, /document\.getElementById\('extensionsMenuButton'\)/);
     assert.match(source, /insertAdjacentElement\('afterend', badge\)/);
     assert.match(source, /dataset\.westworldAction\s*=\s*'next-beat'/);
+    assert.match(source, /dataset\.westworldAction\s*=\s*'toggle-pause'/);
     assert.match(source, /fa-forward-step westworld-chat-control-icon/);
+    assert.match(source, /fa-pause westworld-chat-control-icon/);
     assert.match(source, /<span>下一拍<\/span>/);
+    assert.match(source, /data-westworld-role="pause-label">停止<\/span>/);
     assert.doesNotMatch(source, /data-westworld-action="next-chapter"/);
     assert.doesNotMatch(source, /data-westworld-role="beat-counter"|data-westworld-role="state-status"/);
     assert.doesNotMatch(source, /westworld-chat-control-title|>WestWorld<\/div>|<button[^>]*westworld-chat-control/);
     assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
+});
+
+test('director pause toggle disables PromptManager injection and LittleWhite prompt exposure', async () => {
+    const source = await readRepoFile('index.js');
+
+    assert.match(source, /paused:\s*false/);
+    assert.match(source, /function setDirectorPaused\(paused/);
+    assert.match(source, /function toggleDirectorPaused\(reason/);
+    assert.match(source, /clearDirectorPromptManager\('director-paused'\)/);
+    assert.match(source, /getDirectorPromptForLittleWhiteBox:[\s\S]*reason:\s*'director-paused'/);
+    assert.match(source, /async function prepareDirectorPromptForInput[\s\S]*reason:\s*'director-paused'/);
+    assert.match(source, /async function prepareDirectorPromptManagerForGeneration[\s\S]*reason:\s*'director-paused'/);
 });

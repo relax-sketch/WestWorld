@@ -22,6 +22,7 @@ const LEGACY_REPO_URL = 'https://github.com/lokenpee/StoryWeaver';
 const WESTWORLD_DIRECTOR_DEBUG_KEY = 'westworld-director-debug';
 const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 const CHAT_CONTROL_BAR_ID = 'westworld-chat-control-bar';
+const CHAT_CONTROL_PAUSE_ID = 'westworld-chat-pause-toggle';
 const CHAT_CONTROL_PROGRESS_BADGE_ID = 'westworld-chat-progress-badge';
 const CHAT_CONTROL_STYLE_ID = 'westworld-chat-control-style';
 const CHAT_CONTROL_WAND_CONTAINER_ID = 'westworld-wand-control-container';
@@ -61,6 +62,8 @@ const bootstrapStatus = {
     errors: [],
 };
 const directorPromptGate = {
+    paused: false,
+    pausedAt: 0,
     pendingUserSend: false,
     lastUserSendAt: 0,
     lastGeneration: null,
@@ -375,6 +378,8 @@ function getTxtToWorldbookApiSafe() {
 
 function getDirectorGateStatus() {
     return {
+        paused: directorPromptGate.paused,
+        pausedAt: directorPromptGate.pausedAt,
         pendingUserSend: directorPromptGate.pendingUserSend,
         lastUserSendAt: directorPromptGate.lastUserSendAt,
         lastGeneration: directorPromptGate.lastGeneration,
@@ -513,9 +518,15 @@ function createWestWorldApiShell() {
         getDirectorRuntimeStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
         getDirectorLogs: (limit) => getTxtToWorldbookApiSafe()?.getDirectorLogs?.(limit) || [],
         clearDirectorLogs: () => getTxtToWorldbookApiSafe()?.clearDirectorLogs?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        isDirectorPaused: () => directorPromptGate.paused === true,
+        getDirectorPaused: () => ({ paused: directorPromptGate.paused, pausedAt: directorPromptGate.pausedAt }),
+        setDirectorPaused: (paused, reason) => setDirectorPaused(paused, reason || 'api'),
+        toggleDirectorPaused: (reason) => toggleDirectorPaused(reason || 'api'),
         getDirectorContext: (options) => getTxtToWorldbookApiSafe()?.getDirectorContext?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
         getDirectorInjectionPrompt: (options) => getTxtToWorldbookApiSafe()?.getDirectorInjectionPrompt?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-        getDirectorPromptForLittleWhiteBox: (options) => getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        getDirectorPromptForLittleWhiteBox: (options) => directorPromptGate.paused
+            ? { ok: false, reason: 'director-paused', paused: true }
+            : (getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' }),
         prepareDirectorPromptForInput,
         inspectDirectorInjection: (chat) => getTxtToWorldbookApiSafe()?.inspectDirectorInjection?.(chat) || { injected: false, reason: 'txtToWorldbook-api-not-ready' },
         testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
@@ -543,6 +554,31 @@ function clearDirectorPromptManager(reason = '') {
     const result = clearDirectorPromptManagerContent(promptManager, reason, getDirectorPromptManagerOptions());
     directorTrace(`PromptManager director prompt cleared: ${reason || 'no-reason'}`);
     return result;
+}
+
+function setDirectorPaused(paused, reason = 'manual-toggle') {
+    const nextPaused = paused === true;
+    directorPromptGate.paused = nextPaused;
+    directorPromptGate.pausedAt = nextPaused ? Date.now() : 0;
+    clearExternalPreparedDirectorPrompt(nextPaused ? 'director-paused' : 'director-resumed');
+    directorPromptGate.pendingUserSend = false;
+    if (nextPaused) {
+        clearDirectorPromptManager('director-paused');
+        markDirectorGateSkipped('director-paused', { reason });
+    } else {
+        markDirectorEvent('DIRECTOR_RESUMED', { reason });
+    }
+    updateChatControlBar();
+    return {
+        ok: true,
+        paused: directorPromptGate.paused,
+        pausedAt: directorPromptGate.pausedAt,
+        reason,
+    };
+}
+
+function toggleDirectorPaused(reason = 'manual-toggle') {
+    return setDirectorPaused(!directorPromptGate.paused, reason);
 }
 
 function setDirectorPromptManagerDirectorContent(content) {
@@ -576,6 +612,12 @@ function getReusableExternalPreparedDirectorPrompt() {
 }
 
 async function prepareDirectorPromptForInput(options = {}) {
+    if (directorPromptGate.paused) {
+        clearDirectorPromptManager('director-paused');
+        markDirectorGateSkipped('director-paused', { source: 'external-prepare' });
+        return { ok: false, reason: 'director-paused', paused: true };
+    }
+
     const normalizedOptions = typeof options === 'string' ? { userInput: options } : (options || {});
     const userInput = String(
         normalizedOptions.userInput
@@ -636,6 +678,12 @@ async function prepareDirectorPromptForInput(options = {}) {
 }
 
 async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
+    if (directorPromptGate.paused) {
+        clearDirectorPromptManager('director-paused');
+        markDirectorGateSkipped('director-paused', { type: eventContext?.type || '' });
+        return { ok: false, reason: 'director-paused', paused: true };
+    }
+
     if (scriptApi.main_api !== 'openai') {
         markDirectorGateSkipped('prompt-manager-openai-only', { mainApi: scriptApi.main_api || '' });
         return { ok: false, reason: 'prompt-manager-openai-only' };
@@ -974,12 +1022,14 @@ function ensureChatControlStyle() {
     const style = document.createElement('style');
     style.id = CHAT_CONTROL_STYLE_ID;
     style.textContent = `
-#${CHAT_CONTROL_BAR_ID} {
+#${CHAT_CONTROL_BAR_ID},
+#${CHAT_CONTROL_PAUSE_ID} {
     display: flex;
     align-items: center;
     gap: 10px;
 }
-#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-icon {
+#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-icon,
+#${CHAT_CONTROL_PAUSE_ID} .westworld-chat-control-icon {
     height: 20px;
     width: 20px;
     min-width: 20px;
@@ -1041,6 +1091,7 @@ function updateChatControlBar() {
     const status = getChatControlStatus();
     const hasBeat = status?.ok === true && Number(status.totalBeats || 0) > 0;
     const nextBeatItem = bar?.querySelector('[data-westworld-action="next-beat"]') || bar;
+    const pauseItem = document.getElementById(CHAT_CONTROL_PAUSE_ID);
     const busy = bar?.dataset.busy === '1';
 
     if (badge) {
@@ -1056,6 +1107,19 @@ function updateChatControlBar() {
         nextBeatItem.title = status?.ok
             ? `WestWorld 下一拍 ${status?.display || '0/0'}`
             : 'WestWorld 未就绪';
+    }
+    if (pauseItem) {
+        pauseItem.dataset.westworldPaused = directorPromptGate.paused ? '1' : '0';
+        pauseItem.title = directorPromptGate.paused
+            ? '恢复 WestWorld 导演 prompt'
+            : '暂停 WestWorld 导演 prompt';
+        const text = pauseItem.querySelector('[data-westworld-role="pause-label"]');
+        if (text) text.textContent = directorPromptGate.paused ? '恢复' : '停止';
+        const icon = pauseItem.querySelector('.westworld-chat-control-icon');
+        if (icon) {
+            icon.classList.toggle('fa-pause', !directorPromptGate.paused);
+            icon.classList.toggle('fa-play', directorPromptGate.paused);
+        }
     }
 }
 
@@ -1139,30 +1203,56 @@ function createChatControlBarElement() {
     if (existing) {
         existing.remove();
     }
+    const existingPause = document.getElementById(CHAT_CONTROL_PAUSE_ID);
+    if (existingPause) {
+        existingPause.remove();
+    }
 
-    const bar = document.createElement('div');
-    bar.id = CHAT_CONTROL_BAR_ID;
-    bar.setAttribute('role', 'menuitem');
-    bar.tabIndex = 0;
-    bar.dataset.westworldAction = 'next-beat';
-    bar.dataset.busy = '0';
-    bar.innerHTML = `
+    const fragment = document.createDocumentFragment();
+
+    const nextBeatItem = document.createElement('div');
+    nextBeatItem.id = CHAT_CONTROL_BAR_ID;
+    nextBeatItem.setAttribute('role', 'menuitem');
+    nextBeatItem.tabIndex = 0;
+    nextBeatItem.dataset.westworldAction = 'next-beat';
+    nextBeatItem.dataset.busy = '0';
+    nextBeatItem.innerHTML = `
         <div class="fa-solid fa-forward-step westworld-chat-control-icon"></div>
         <span>下一拍</span>
     `;
 
-    bar.addEventListener('click', () => {
-        if (bar.getAttribute('aria-disabled') === 'true') return;
+    nextBeatItem.addEventListener('click', () => {
+        if (nextBeatItem.getAttribute('aria-disabled') === 'true') return;
         void handleChatControlAction();
     });
-    bar.addEventListener('keydown', (event) => {
+    nextBeatItem.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        if (bar.getAttribute('aria-disabled') === 'true') return;
+        if (nextBeatItem.getAttribute('aria-disabled') === 'true') return;
         void handleChatControlAction();
     });
 
-    return bar;
+    const pauseItem = document.createElement('div');
+    pauseItem.id = CHAT_CONTROL_PAUSE_ID;
+    pauseItem.setAttribute('role', 'menuitem');
+    pauseItem.tabIndex = 0;
+    pauseItem.dataset.westworldAction = 'toggle-pause';
+    pauseItem.innerHTML = `
+        <div class="fa-solid fa-pause westworld-chat-control-icon"></div>
+        <span data-westworld-role="pause-label">停止</span>
+    `;
+    pauseItem.addEventListener('click', () => {
+        toggleDirectorPaused('magic-wand');
+    });
+    pauseItem.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleDirectorPaused('magic-wand');
+    });
+
+    fragment.appendChild(nextBeatItem);
+    fragment.appendChild(pauseItem);
+    return fragment;
 }
 
 function ensureChatControlWandStyle() {
