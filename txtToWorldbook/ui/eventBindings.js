@@ -8,6 +8,11 @@
     defaultDirectorInjectionPrompt,
     defaultWorldbookPrompt,
 } from '../core/constants.js';
+import {
+    callDirectorApiMethod,
+    missingDirectorApiMethodResult,
+    resolveDirectorDiagnosticsApi,
+} from './directorDiagnosticsApi.js';
 
 export function bindActionEvents(deps = {}) {
     const {
@@ -540,10 +545,8 @@ export function bindSettingEvents(deps = {}) {
         return '';
     };
 
-    const getDirectorApi = () => {
-        if (typeof window === 'undefined') return null;
-        return window.WestWorld || window.WestWorldTxtToWorldbook || window.StoryWeaver || null;
-    };
+    const getDirectorApiResolution = () => resolveDirectorDiagnosticsApi(typeof window !== 'undefined' ? window : null);
+    const getDirectorApi = () => getDirectorApiResolution().api;
 
     const formatTime = (value) => {
         const at = Number(value || 0);
@@ -572,17 +575,28 @@ export function bindSettingEvents(deps = {}) {
     };
 
     const buildDirectorDiagnosticsSnapshot = () => {
-        const api = getDirectorApi();
+        const apiResolution = getDirectorApiResolution();
+        const api = apiResolution.api;
         if (!api) {
             return {
                 available: false,
                 reason: 'westworld-api-missing',
+                apiSource: '',
+                outerApiReady: apiResolution.outerApiReady,
+                txtApiReady: apiResolution.txtApiReady,
+                storyWeaverApiReady: apiResolution.storyWeaverApiReady,
+                bootstrap: null,
+                bootstrapErrors: [],
                 status: null,
                 gate: null,
+                promptManager: null,
                 context: null,
                 logs: [],
             };
         }
+        const bootstrap = typeof api.getBootstrapStatus === 'function'
+            ? api.getBootstrapStatus()
+            : missingDirectorApiMethodResult('getBootstrapStatus');
         const status = api.getDirectorRuntimeStatus?.() || api.getDirectorStatus?.() || null;
         const gate = api.getDirectorGateStatus?.() || null;
         const promptManager = api.getDirectorPromptManagerStatus?.() || gate?.promptManager || null;
@@ -590,6 +604,12 @@ export function bindSettingEvents(deps = {}) {
         const logs = api.getDirectorLogs?.(20) || [];
         return {
             available: true,
+            apiSource: apiResolution.apiSource,
+            outerApiReady: apiResolution.outerApiReady,
+            txtApiReady: apiResolution.txtApiReady,
+            storyWeaverApiReady: apiResolution.storyWeaverApiReady,
+            bootstrap,
+            bootstrapErrors: Array.isArray(bootstrap?.errors) ? bootstrap.errors : [],
             status,
             gate,
             promptManager,
@@ -614,8 +634,10 @@ export function bindSettingEvents(deps = {}) {
         const beat = context.beat || {};
 
         const cells = [
-            ['API', snapshot.available ? '已连接' : '缺失'],
+            ['API', snapshot.available ? `已连接:${snapshot.apiSource || 'unknown'}` : '缺失'],
             ['Hook', status.hookRegistered ? '已注册' : '未注册'],
+            ['外层API', snapshot.outerApiReady ? '已注册' : '缺失'],
+            ['TXT API', snapshot.txtApiReady ? '已就绪' : '未就绪'],
             ['ST预设条目', promptManager.exists ? (promptManager.activeEnabled ? '已启用' : '已关闭') : '缺失'],
             ['深度/顺序', promptManager.exists ? `${promptManager.injectionDepth ?? '-'} / ${promptManager.injectionOrder ?? '-'}` : '无'],
             ['阶段', status.phase || 'unknown'],
@@ -660,9 +682,9 @@ export function bindSettingEvents(deps = {}) {
         ErrorHandler?.showUserSuccess?.('导演诊断 JSON 已复制');
     };
 
-    const testDirectorInjection = () => {
+    const testDirectorInjection = async () => {
         const api = getDirectorApi();
-        const result = api?.testDirectorInjection?.() || { ok: false, reason: 'westworld-api-missing' };
+        const result = await Promise.resolve(callDirectorApiMethod(api, 'testDirectorInjection'));
         renderDirectorDiagnostics();
         if (result.ok) {
             ErrorHandler?.showUserSuccess?.('模拟注入测试通过');
@@ -673,14 +695,14 @@ export function bindSettingEvents(deps = {}) {
 
     const clearDirectorLogs = () => {
         const api = getDirectorApi();
-        api?.clearDirectorLogs?.();
+        callDirectorApiMethod(api, 'clearDirectorLogs');
         renderDirectorDiagnostics();
         ErrorHandler?.showUserSuccess?.('导演日志已清空');
     };
 
-    const repairDirectorPromptManagerEntry = () => {
+    const repairDirectorPromptManagerEntry = async () => {
         const api = getDirectorApi();
-        const result = api?.repairDirectorPromptManagerEntry?.() || { ok: false, reason: 'westworld-api-missing' };
+        const result = await Promise.resolve(callDirectorApiMethod(api, 'repairDirectorPromptManagerEntry'));
         renderDirectorDiagnostics();
         if (result.ok) {
             ErrorHandler?.showUserSuccess?.('已修复/创建 SillyTavern 预设条目：WestWorld Director');
@@ -689,9 +711,9 @@ export function bindSettingEvents(deps = {}) {
         }
     };
 
-    const bindDirectorSession = () => {
+    const bindDirectorSession = async () => {
         const api = getDirectorApi();
-        const result = api?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'westworld-api-missing' };
+        const result = await Promise.resolve(callDirectorApiMethod(api, 'bindDirectorSessionToCurrentChapter'));
         renderDirectorDiagnostics();
         if (result.ok) {
             const chapterNo = Number.isInteger(result.binding?.chapterIndex) ? result.binding.chapterIndex + 1 : 0;

@@ -24,7 +24,11 @@ const WESTWORLD_DIRECTOR_DEBUG_KEY = 'westworld-director-debug';
 const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 const CHAT_CONTROL_BAR_ID = 'westworld-chat-control-bar';
 const CHAT_CONTROL_STYLE_ID = 'westworld-chat-control-style';
+const CHAT_CONTROL_WAND_CONTAINER_ID = 'westworld-wand-control-container';
+const CHAT_CONTROL_WAND_STYLE_ID = 'westworld-wand-control-style';
 const EXTERNAL_DIRECTOR_PREPARE_TTL_MS = 60000;
+const PROMPT_MANAGER_READY_TIMEOUT_MS = 5000;
+const PROMPT_MANAGER_READY_POLL_MS = 150;
 
 const defaultSettings = {
     panelCollapsed: true,
@@ -34,12 +38,28 @@ const defaultSettings = {
 let settings = {};
 let txtToWorldbookModule = null;
 let txtToWorldbookInitPromise = null;
+let bootstrapPromise = null;
 let directorPromptReadyHandler = null;
 let directorMessageSentHandler = null;
 let directorGenerationStartedHandler = null;
 const directorLifecycleHandlers = new Map();
 const chatControlRefreshHandlers = new Map();
 let chatControlRefreshTimer = null;
+const bootstrapStatus = {
+    phase: 'idle',
+    initialized: false,
+    initStartedAt: 0,
+    initFinishedAt: 0,
+    outerApiReady: false,
+    txtApiReady: false,
+    promptManagerReady: false,
+    uiMounted: false,
+    hookRegistered: false,
+    chatControlMounted: false,
+    chatControlMountTarget: '',
+    wandControlMounted: false,
+    errors: [],
+};
 const directorPromptGate = {
     pendingUserSend: false,
     lastUserSendAt: 0,
@@ -66,6 +86,70 @@ function isDirectorTraceEnabled() {
 function directorTrace(message) {
     if (!isDirectorTraceEnabled()) return;
     console.debug(`[${BRAND_NAME}][DirectorGate] ${message}`);
+}
+
+function safeToastr(method, message) {
+    try {
+        if (typeof toastr !== 'undefined' && typeof toastr?.[method] === 'function') {
+            toastr[method](message);
+        }
+    } catch (_) { }
+}
+
+function serializeError(error) {
+    return {
+        message: error?.message || String(error || 'unknown'),
+        stack: error?.stack || '',
+    };
+}
+
+function recordBootstrapError(step, error) {
+    const item = {
+        step: String(step || 'unknown'),
+        at: Date.now(),
+        ...serializeError(error),
+    };
+    bootstrapStatus.errors.push(item);
+    if (bootstrapStatus.errors.length > 20) {
+        bootstrapStatus.errors.splice(0, bootstrapStatus.errors.length - 20);
+    }
+    console.warn(`[${BRAND_NAME}] bootstrap step failed: ${item.step}`, error);
+    return item;
+}
+
+async function runBootstrapStep(step, action) {
+    bootstrapStatus.phase = step;
+    try {
+        return await action();
+    } catch (error) {
+        recordBootstrapError(step, error);
+        return null;
+    }
+}
+
+function getBootstrapStatus() {
+    return {
+        ...bootstrapStatus,
+        errors: bootstrapStatus.errors.map((item) => ({ ...item })),
+        txtApiReady: !!getTxtToWorldbookApiSafe(),
+        promptManagerReady: isPromptManagerReady(),
+        hookRegistered: directorPromptGate.hookRegistered,
+    };
+}
+
+function removeEventListenerCompat(source, eventType, handler) {
+    if (!source || !eventType || !handler) return;
+    if (typeof source.off === 'function') {
+        source.off(eventType, handler);
+        return;
+    }
+    if (typeof source.removeListener === 'function') {
+        source.removeListener(eventType, handler);
+    }
+}
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getExtensionFolderName() {
@@ -214,10 +298,6 @@ async function updateSelfFromRepo(repoUrl = WESTWORLD_REPO_URL) {
     throw new Error(`安装失败：${installDetail}`);
 }
 
-function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function mountDrawerHtml(html) {
     const existingWrapper = document.getElementById('westworld-wrapper');
 
@@ -351,7 +431,27 @@ function savePromptManagerStructure(result) {
     } catch (_) { }
 }
 
+function isPromptManagerReady() {
+    return !!(promptManager?.serviceSettings && typeof promptManager.serviceSettings === 'object');
+}
+
+async function waitForPromptManagerReady(timeoutMs = PROMPT_MANAGER_READY_TIMEOUT_MS) {
+    const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    while (!isPromptManagerReady() && Date.now() < deadline) {
+        await delay(PROMPT_MANAGER_READY_POLL_MS);
+    }
+    bootstrapStatus.promptManagerReady = isPromptManagerReady();
+    return bootstrapStatus.promptManagerReady;
+}
+
 function repairDirectorPromptManagerEntry(options = {}) {
+    if (!isPromptManagerReady()) {
+        return {
+            ok: false,
+            reason: 'prompt-manager-settings-missing',
+            status: getDirectorPromptManagerStatus(promptManager),
+        };
+    }
     const result = ensureDirectorPromptManagerEntry(promptManager, {
         ...getDirectorPromptManagerOptions(),
         ...(options.clearContent ? { content: '' } : {}),
@@ -365,8 +465,61 @@ function repairDirectorPromptManagerEntry(options = {}) {
     };
 }
 
+async function repairDirectorPromptManagerEntryWhenReady(options = {}) {
+    const ready = await waitForPromptManagerReady(options.timeoutMs ?? PROMPT_MANAGER_READY_TIMEOUT_MS);
+    if (!ready) {
+        return {
+            ok: false,
+            reason: 'prompt-manager-settings-missing',
+            status: getDirectorPromptManagerStatus(promptManager),
+        };
+    }
+    return repairDirectorPromptManagerEntry(options);
+}
+
 function getDirectorPromptManagerStatusSafe() {
     return getDirectorPromptManagerStatus(promptManager);
+}
+
+function createWestWorldApiShell() {
+    return {
+        init,
+        openTxtConverter: openTxtToWorldbookPanel,
+        getBootstrapStatus,
+        getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
+        updateSelfFromRepo,
+        getDirectorGateStatus,
+        getDirectorPromptManagerStatus: getDirectorPromptManagerStatusSafe,
+        repairDirectorPromptManagerEntry: (options = {}) => repairDirectorPromptManagerEntryWhenReady({ save: true, ...options }),
+        clearDirectorPromptManagerContent: (reason) => clearDirectorPromptManager(reason || 'manual-clear'),
+        getDirectorStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
+        getDirectorRuntimeStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
+        getDirectorLogs: (limit) => getTxtToWorldbookApiSafe()?.getDirectorLogs?.(limit) || [],
+        clearDirectorLogs: () => getTxtToWorldbookApiSafe()?.clearDirectorLogs?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        getDirectorContext: (options) => getTxtToWorldbookApiSafe()?.getDirectorContext?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        getDirectorInjectionPrompt: (options) => getTxtToWorldbookApiSafe()?.getDirectorInjectionPrompt?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        getDirectorPromptForLittleWhiteBox: (options) => getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        prepareDirectorPromptForInput,
+        inspectDirectorInjection: (chat) => getTxtToWorldbookApiSafe()?.inspectDirectorInjection?.(chat) || { injected: false, reason: 'txtToWorldbook-api-not-ready' },
+        testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        bindDirectorSessionToCurrentChapter: () => getTxtToWorldbookApiSafe()?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
+        nextBeat: () => getTxtToWorldbookApiSafe()?.nextBeat?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
+        nextChapter: () => getTxtToWorldbookApiSafe()?.nextChapter?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
+        getReadingProgressStatus: () => getTxtToWorldbookApiSafe()?.getReadingProgressStatus?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready', display: '0/0' },
+    };
+}
+
+function exposeWestWorldApiShell() {
+    if (typeof window === 'undefined') return null;
+    const existing = window.WestWorld && typeof window.WestWorld === 'object' ? window.WestWorld : {};
+    const api = {
+        ...existing,
+        ...createWestWorldApiShell(),
+    };
+    window.WestWorld = api;
+    window.StoryWeaver = api;
+    bootstrapStatus.outerApiReady = true;
+    return api;
 }
 
 function clearDirectorPromptManager(reason = '') {
@@ -689,20 +842,21 @@ function registerDirectorPromptHook() {
     }
 
     if (event_types?.MESSAGE_SENT && directorMessageSentHandler) {
-        eventSource.off?.(event_types.MESSAGE_SENT, directorMessageSentHandler);
+        removeEventListenerCompat(eventSource, event_types.MESSAGE_SENT, directorMessageSentHandler);
         eventSource.on(event_types.MESSAGE_SENT, directorMessageSentHandler);
     }
 
     if (event_types?.GENERATION_STARTED && directorGenerationStartedHandler) {
-        eventSource.off?.(event_types.GENERATION_STARTED, directorGenerationStartedHandler);
+        removeEventListenerCompat(eventSource, event_types.GENERATION_STARTED, directorGenerationStartedHandler);
         eventSource.on(event_types.GENERATION_STARTED, directorGenerationStartedHandler);
     }
 
-    eventSource.off?.(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
+    removeEventListenerCompat(eventSource, event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, directorPromptReadyHandler);
     registerDirectorLifecycleHooks();
     directorPromptGate.hookRegistered = true;
     directorPromptGate.hookRegisteredAt = Date.now();
+    bootstrapStatus.hookRegistered = true;
     getTxtToWorldbookApiSafe()?.markDirectorHookRegistered?.({
         gate: getDirectorGateStatus(),
     });
@@ -730,7 +884,7 @@ function registerDirectorLifecycleHooks() {
             });
         }
         const handler = directorLifecycleHandlers.get(eventName);
-        eventSource.off?.(eventType, handler);
+        removeEventListenerCompat(eventSource, eventType, handler);
         eventSource.on(eventType, handler);
     }
 }
@@ -997,13 +1151,7 @@ async function handleChatControlAction(action) {
     }
 }
 
-function mountChatControlBar() {
-    const formShield = document.getElementById('form_sheld');
-    const sendForm = document.getElementById('send_form');
-    if (!formShield || !sendForm) return false;
-
-    ensureChatControlStyle();
-
+function createChatControlBarElement() {
     const existing = document.getElementById(CHAT_CONTROL_BAR_ID);
     if (existing) {
         existing.remove();
@@ -1026,9 +1174,92 @@ function mountChatControlBar() {
         void handleChatControlAction('next-chapter');
     });
 
-    formShield.insertBefore(bar, sendForm);
+    return bar;
+}
+
+function ensureChatControlWandStyle() {
+    if (document.getElementById(CHAT_CONTROL_WAND_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = CHAT_CONTROL_WAND_STYLE_ID;
+    style.textContent = `
+#${CHAT_CONTROL_WAND_CONTAINER_ID} {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 170px;
+    padding: 4px;
+}
+#${CHAT_CONTROL_WAND_CONTAINER_ID} #${CHAT_CONTROL_BAR_ID} {
+    justify-content: center;
+    flex-wrap: wrap;
+    padding: 2px;
+}
+#${CHAT_CONTROL_WAND_CONTAINER_ID} .westworld-chat-control-title {
+    font-size: 11px;
+    opacity: 0.8;
+    text-align: center;
+}
+`;
+    document.head.appendChild(style);
+}
+
+function mountChatControlInWand() {
+    const menu = document.getElementById('extensionsMenu');
+    if (!menu) return false;
+
+    ensureChatControlStyle();
+    ensureChatControlWandStyle();
+
+    let container = document.getElementById(CHAT_CONTROL_WAND_CONTAINER_ID);
+    if (!container) {
+        container = document.createElement('div');
+        container.id = CHAT_CONTROL_WAND_CONTAINER_ID;
+        container.className = 'extension_container';
+        menu.appendChild(container);
+    }
+
+    container.innerHTML = '<div class="westworld-chat-control-title">WestWorld</div>';
+    container.appendChild(createChatControlBarElement());
     updateChatControlBar();
+    bootstrapStatus.wandControlMounted = true;
+    bootstrapStatus.chatControlMountTarget = 'extensionsMenu';
     return true;
+}
+
+function mountChatControlBar() {
+    ensureChatControlStyle();
+
+    const bar = createChatControlBarElement();
+    const formShield = document.getElementById('form_sheld');
+    const sendForm = document.getElementById('send_form');
+    if (formShield && sendForm && sendForm.parentElement === formShield) {
+        formShield.insertBefore(bar, sendForm);
+        updateChatControlBar();
+        bootstrapStatus.chatControlMounted = true;
+        bootstrapStatus.chatControlMountTarget = 'form_sheld-before-send_form';
+        return true;
+    }
+
+    const chatInputShell = document.querySelector('.tt-chat-input-shell');
+    if (chatInputShell?.parentElement) {
+        chatInputShell.parentElement.insertBefore(bar, chatInputShell);
+        updateChatControlBar();
+        bootstrapStatus.chatControlMounted = true;
+        bootstrapStatus.chatControlMountTarget = 'before-tt-chat-input-shell';
+        return true;
+    }
+
+    if (sendForm?.parentElement) {
+        sendForm.parentElement.insertBefore(bar, sendForm);
+        updateChatControlBar();
+        bootstrapStatus.chatControlMounted = true;
+        bootstrapStatus.chatControlMountTarget = 'before-send_form';
+        return true;
+    }
+
+    const mountedInWand = mountChatControlInWand();
+    bootstrapStatus.chatControlMounted = mountedInWand;
+    return mountedInWand;
 }
 
 function registerChatControlRefreshHooks() {
@@ -1051,7 +1282,7 @@ function registerChatControlRefreshHooks() {
             chatControlRefreshHandlers.set(eventName, () => scheduleChatControlRefresh());
         }
         const handler = chatControlRefreshHandlers.get(eventName);
-        eventSource.off?.(eventType, handler);
+        removeEventListenerCompat(eventSource, eventType, handler);
         eventSource.on(eventType, handler);
     }
 
@@ -1105,52 +1336,83 @@ async function setupUI() {
 }
 
 async function bootstrap() {
+    bootstrapStatus.initStartedAt = Date.now();
+    bootstrapStatus.initFinishedAt = 0;
+    bootstrapStatus.initialized = false;
+    bootstrapStatus.phase = 'starting';
+    bootstrapStatus.errors = [];
     ensureSettings();
-    try {
+    exposeWestWorldApiShell();
+
+    const uiMounted = await runBootstrapStep('setup-ui', async () => {
         await setupUI();
-    } catch (error) {
-        console.error('[WestWorld] UI mount failed:', error);
-        toastr.error('WestWorld UI mount failed. Please reload extensions.');
+        return true;
+    });
+    bootstrapStatus.uiMounted = uiMounted === true;
+    if (!bootstrapStatus.uiMounted) {
+        safeToastr('error', 'WestWorld UI mount failed. Please reload extensions.');
     }
 
-    try {
+    const txtReady = await runBootstrapStep('txt-to-worldbook-init', async () => {
         await ensureTxtToWorldbookReady();
-        registerDirectorPromptHook();
-        mountChatControlBar();
-        registerChatControlRefreshHooks();
-        repairDirectorPromptManagerEntry({ save: true, clearContent: true });
-        window.WestWorld = {
-            openTxtConverter: openTxtToWorldbookPanel,
-            getTxtToWorldbookApi: getTxtToWorldbookApiSafe,
-            updateSelfFromRepo,
-            getDirectorGateStatus,
-            getDirectorPromptManagerStatus: getDirectorPromptManagerStatusSafe,
-            repairDirectorPromptManagerEntry: () => repairDirectorPromptManagerEntry({ save: true }),
-            clearDirectorPromptManagerContent: (reason) => clearDirectorPromptManager(reason || 'manual-clear'),
-            getDirectorStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
-            getDirectorRuntimeStatus: () => getTxtToWorldbookApiSafe()?.getDirectorRuntimeStatus?.() || null,
-            getDirectorLogs: (limit) => getTxtToWorldbookApiSafe()?.getDirectorLogs?.(limit) || [],
-            clearDirectorLogs: () => getTxtToWorldbookApiSafe()?.clearDirectorLogs?.(),
-            getDirectorContext: (options) => getTxtToWorldbookApiSafe()?.getDirectorContext?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-            getDirectorInjectionPrompt: (options) => getTxtToWorldbookApiSafe()?.getDirectorInjectionPrompt?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-            getDirectorPromptForLittleWhiteBox: (options) => getTxtToWorldbookApiSafe()?.getDirectorPromptForLittleWhiteBox?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-            prepareDirectorPromptForInput,
-            inspectDirectorInjection: (chat) => getTxtToWorldbookApiSafe()?.inspectDirectorInjection?.(chat) || { injected: false, reason: 'txtToWorldbook-api-not-ready' },
-            testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-            bindDirectorSessionToCurrentChapter: () => getTxtToWorldbookApiSafe()?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
-            nextBeat: () => getTxtToWorldbookApiSafe()?.nextBeat?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
-            nextChapter: () => getTxtToWorldbookApiSafe()?.nextChapter?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
-            getReadingProgressStatus: () => getTxtToWorldbookApiSafe()?.getReadingProgressStatus?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready', display: '0/0' },
-        };
-        scheduleChatControlRefresh(0);
-        window.StoryWeaver = window.WestWorld;
-        console.log('[WestWorld] Plugin initialized successfully');
-    } catch (error) {
-        console.error('[WestWorld] txtToWorldbook init failed:', error);
-        toastr.error('WestWorld failed to initialize TXT converter.');
+        return !!getTxtToWorldbookApiSafe();
+    });
+    bootstrapStatus.txtApiReady = txtReady === true;
+    if (!bootstrapStatus.txtApiReady) {
+        safeToastr('error', 'WestWorld failed to initialize TXT converter.');
     }
+
+    if (bootstrapStatus.txtApiReady) {
+        await runBootstrapStep('register-director-hook', async () => {
+            registerDirectorPromptHook();
+            return true;
+        });
+        await runBootstrapStep('mount-chat-control', async () => {
+            mountChatControlBar();
+            return true;
+        });
+        await runBootstrapStep('register-chat-control-hooks', async () => {
+            registerChatControlRefreshHooks();
+            return true;
+        });
+        void repairDirectorPromptManagerEntryWhenReady({
+            save: true,
+            clearContent: true,
+            timeoutMs: PROMPT_MANAGER_READY_TIMEOUT_MS,
+        }).then((result) => {
+            if (!result?.ok) {
+                recordBootstrapError('repair-prompt-manager-entry', new Error(result?.reason || 'prompt-manager-repair-failed'));
+            }
+        }).catch((error) => {
+            recordBootstrapError('repair-prompt-manager-entry', error);
+        });
+        scheduleChatControlRefresh(0);
+    }
+
+    exposeWestWorldApiShell();
+    bootstrapStatus.phase = 'ready';
+    bootstrapStatus.initialized = true;
+    bootstrapStatus.initFinishedAt = Date.now();
+    console.log('[WestWorld] Plugin initialized', getBootstrapStatus());
+    return getBootstrapStatus();
 }
 
-jQuery(() => {
-    bootstrap();
-});
+export async function init(options = {}) {
+    if (bootstrapPromise) return bootstrapPromise;
+    const force = options?.force === true;
+    if (!force && bootstrapStatus.initialized && bootstrapStatus.txtApiReady) {
+        return getBootstrapStatus();
+    }
+    bootstrapPromise = bootstrap().finally(() => {
+        bootstrapPromise = null;
+    });
+    return bootstrapPromise;
+}
+
+if (typeof jQuery === 'function') {
+    jQuery(() => {
+        void init();
+    });
+} else {
+    void init();
+}
