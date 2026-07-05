@@ -40,3 +40,20 @@ test('index exposes outer WestWorld API before non-critical startup steps can fa
     assert.ok(exposeIndex < txtInitIndex, 'outer API shell must be exposed before TXT init');
     assert.match(source, /getBootstrapStatus\s*[,}]/);
 });
+
+test('TauriTavern chat controls stay in magic wand with a separate progress badge', async () => {
+    const source = await readRepoFile('index.js');
+    const mountStart = source.indexOf('function mountChatControlBar()');
+    const mountEnd = source.indexOf('function registerChatControlRefreshHooks()', mountStart);
+    assert.ok(mountStart >= 0 && mountEnd > mountStart, 'mountChatControlBar section must exist');
+    const mountSection = source.slice(mountStart, mountEnd);
+
+    assert.match(source, /CHAT_CONTROL_PROGRESS_BADGE_ID/);
+    assert.match(source, /document\.getElementById\('extensionsMenu'\)/);
+    assert.match(source, /document\.getElementById\('extensionsMenuButton'\)/);
+    assert.match(source, /insertAdjacentElement\('afterend', badge\)/);
+    assert.match(source, /data-westworld-action="next-beat"/);
+    assert.doesNotMatch(source, /data-westworld-action="next-chapter"/);
+    assert.doesNotMatch(source, /data-westworld-role="beat-counter"|data-westworld-role="state-status"/);
+    assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
+});

@@ -9,7 +9,6 @@ import {
     getDirectorPromptManagerStatus,
     setDirectorPromptManagerContent,
 } from './txtToWorldbook/services/directorPromptManagerService.js';
-import { extractDirectorStateTag } from './txtToWorldbook/services/directorStateTagService.js';
 
 const { saveSettingsDebounced, eventSource, event_types } = scriptApi;
 
@@ -23,6 +22,7 @@ const LEGACY_REPO_URL = 'https://github.com/lokenpee/StoryWeaver';
 const WESTWORLD_DIRECTOR_DEBUG_KEY = 'westworld-director-debug';
 const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 const CHAT_CONTROL_BAR_ID = 'westworld-chat-control-bar';
+const CHAT_CONTROL_PROGRESS_BADGE_ID = 'westworld-chat-progress-badge';
 const CHAT_CONTROL_STYLE_ID = 'westworld-chat-control-style';
 const CHAT_CONTROL_WAND_CONTAINER_ID = 'westworld-wand-control-container';
 const CHAT_CONTROL_WAND_STYLE_ID = 'westworld-wand-control-style';
@@ -960,11 +960,9 @@ function ensureChatControlStyle() {
 #${CHAT_CONTROL_BAR_ID} {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
+    justify-content: center;
     box-sizing: border-box;
-    width: 100%;
-    padding: 4px 8px 2px;
+    padding: 2px;
     font-size: 12px;
     line-height: 1.2;
 }
@@ -981,31 +979,26 @@ function ensureChatControlStyle() {
     opacity: 0.45;
     cursor: not-allowed;
 }
-#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-counter {
-    min-width: 36px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    color: var(--SmartThemeBodyColor, inherit);
-    opacity: 0.9;
-}
-#${CHAT_CONTROL_BAR_ID} .westworld-chat-control-state {
-    min-width: 44px;
-    max-width: 70px;
-    padding: 3px 7px;
+#${CHAT_CONTROL_PROGRESS_BADGE_ID} {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 20px;
+    box-sizing: border-box;
+    margin-left: 3px;
+    padding: 0 6px;
     border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.2));
-    border-radius: 6px;
+    border-radius: 999px;
     background: var(--black30a, rgba(0,0,0,0.28));
     color: var(--SmartThemeBodyColor, inherit);
+    font-size: 11px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-    overflow: hidden;
     white-space: nowrap;
-    text-overflow: clip;
-}
-@media (max-width: 600px) {
-    #${CHAT_CONTROL_BAR_ID} {
-        justify-content: center;
-        flex-wrap: wrap;
-    }
+    pointer-events: none;
+    opacity: 0.88;
 }
 `;
     document.head.appendChild(style);
@@ -1024,80 +1017,27 @@ function getChatControlStatus() {
     }
 }
 
-function getChatHistorySafe() {
-    try {
-        if (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function') {
-            const chat = SillyTavern.getContext()?.chat;
-            return Array.isArray(chat) ? chat : [];
-        }
-    } catch (_) { }
-    try {
-        if (typeof window !== 'undefined' && window.SillyTavern?.getContext) {
-            const chat = window.SillyTavern.getContext()?.chat;
-            return Array.isArray(chat) ? chat : [];
-        }
-    } catch (_) { }
-    return [];
-}
-
-function isAssistantChatItem(item) {
-    if (!item || typeof item !== 'object') return false;
-    if (item.is_user === true || item.is_system === true) return false;
-    if (item.is_westworld_director === true || item.is_storyweaver_director === true) return false;
-    const role = String(item.role || '').toLowerCase();
-    return !role || role === 'assistant';
-}
-
-function getLatestAssistantMessageText() {
-    const chat = getChatHistorySafe();
-    for (let i = chat.length - 1; i >= 0; i--) {
-        const item = chat[i] || {};
-        if (!isAssistantChatItem(item)) continue;
-        const content = String(item.mes || item.content || '').trim();
-        if (content) return content;
-    }
-    return '';
-}
-
-function getChatControlStateStatus() {
-    const api = getTxtToWorldbookApiSafe();
-    const appSettings = typeof api?.getSettings === 'function' ? api.getSettings() : {};
-    return extractDirectorStateTag(getLatestAssistantMessageText(), {
-        startTag: appSettings?.directorStateStartTag,
-        endTag: appSettings?.directorStateEndTag,
-    });
-}
-
 function updateChatControlBar() {
     const bar = document.getElementById(CHAT_CONTROL_BAR_ID);
-    if (!bar) return;
+    const badge = document.getElementById(CHAT_CONTROL_PROGRESS_BADGE_ID);
+    if (!bar && !badge) return;
 
     const status = getChatControlStatus();
     const hasBeat = status?.ok === true && Number(status.totalBeats || 0) > 0;
-    const counter = bar.querySelector('[data-westworld-role="beat-counter"]');
-    const stateLabel = bar.querySelector('[data-westworld-role="state-status"]');
-    const nextBeatButton = bar.querySelector('[data-westworld-action="next-beat"]');
-    const nextChapterButton = bar.querySelector('[data-westworld-action="next-chapter"]');
-    const busy = bar.dataset.busy === '1';
+    const nextBeatButton = bar?.querySelector('[data-westworld-action="next-beat"]');
+    const busy = bar?.dataset.busy === '1';
 
-    if (counter) {
-        counter.textContent = String(status?.display || '0/0');
-        counter.title = status?.ok
+    if (badge) {
+        badge.textContent = String(status?.display || '0/0');
+        badge.title = status?.ok
             ? `WestWorld ${status.currentChapter || 0}/${status.totalChapters || 0}`
             : 'WestWorld 未就绪';
     }
-    if (stateLabel) {
-        const state = getChatControlStateStatus();
-        stateLabel.textContent = state.display;
-        stateLabel.title = state.found
-            ? `WestWorld state: ${state.value}`
-            : `WestWorld state: 未知（标签 ${state.startTag}...${state.endTag} 未匹配）`;
-    }
     if (nextBeatButton) {
-        nextBeatButton.disabled = busy || !hasBeat || status.canNextBeat !== true;
-    }
-    if (nextChapterButton) {
-        nextChapterButton.disabled = busy || !hasBeat || status.canNextChapter !== true;
+        nextBeatButton.disabled = busy || !hasBeat || (status.canNextBeat !== true && status.canNextChapter !== true);
+        nextBeatButton.title = status?.ok
+            ? `WestWorld 下一拍 ${status?.display || '0/0'}`
+            : 'WestWorld 未就绪';
     }
 }
 
@@ -1107,6 +1047,12 @@ function scheduleChatControlRefresh(delayMs = 60) {
     }
     chatControlRefreshTimer = setTimeout(() => {
         chatControlRefreshTimer = null;
+        const bar = document.getElementById(CHAT_CONTROL_BAR_ID);
+        const badge = document.getElementById(CHAT_CONTROL_PROGRESS_BADGE_ID);
+        if (!bar || !badge) {
+            mountChatControlBar();
+            return;
+        }
         updateChatControlBar();
     }, Math.max(0, delayMs));
 }
@@ -1118,7 +1064,7 @@ function setChatControlBusy(busy) {
     updateChatControlBar();
 }
 
-async function handleChatControlAction(action) {
+async function handleChatControlAction() {
     const api = getTxtToWorldbookApiSafe();
     if (!api) {
         toastr.warning('WestWorld 未就绪');
@@ -1126,8 +1072,7 @@ async function handleChatControlAction(action) {
         return;
     }
 
-    const method = action === 'next-chapter' ? 'nextChapter' : 'nextBeat';
-    if (typeof api[method] !== 'function') {
+    if (typeof api.nextBeat !== 'function') {
         toastr.warning('WestWorld 控制接口不可用');
         updateChatControlBar();
         return;
@@ -1135,12 +1080,32 @@ async function handleChatControlAction(action) {
 
     setChatControlBusy(true);
     try {
-        const result = await api[method]();
+        const before = getChatControlStatus();
+        let result = null;
+        let advancedChapter = false;
+
+        if (before?.canNextBeat === true) {
+            result = await api.nextBeat();
+        } else if (before?.canNextChapter === true && typeof api.nextChapter === 'function') {
+            result = await api.nextChapter();
+            advancedChapter = true;
+        } else {
+            result = await api.nextBeat();
+        }
+
+        if (!result?.ok && result?.reason === 'last-beat' && typeof api.nextChapter === 'function') {
+            const fallbackStatus = result?.status || getChatControlStatus();
+            if (fallbackStatus?.canNextChapter === true) {
+                result = await api.nextChapter();
+                advancedChapter = true;
+            }
+        }
+
         const status = result?.status || getChatControlStatus();
         if (result?.ok) {
-            toastr.success(action === 'next-chapter' ? '已进入下一章' : `已切换到 ${status?.display || '0/0'}`);
+            toastr.success(advancedChapter ? '已进入下一章' : `已切换到 ${status?.display || '0/0'}`);
         } else {
-            toastr.warning(action === 'next-chapter' ? '无法进入下一章' : '无法切换下一拍');
+            toastr.warning('无法切换下一拍');
         }
     } catch (error) {
         console.warn('[WestWorld] chat control action failed:', error?.message || error);
@@ -1162,16 +1127,10 @@ function createChatControlBarElement() {
     bar.dataset.busy = '0';
     bar.innerHTML = `
         <button type="button" class="westworld-chat-control-button" data-westworld-action="next-beat">下一拍</button>
-        <span class="westworld-chat-control-counter" data-westworld-role="beat-counter">0/0</span>
-        <span class="westworld-chat-control-state" data-westworld-role="state-status">未知</span>
-        <button type="button" class="westworld-chat-control-button" data-westworld-action="next-chapter">下一章</button>
     `;
 
     bar.querySelector('[data-westworld-action="next-beat"]')?.addEventListener('click', () => {
-        void handleChatControlAction('next-beat');
-    });
-    bar.querySelector('[data-westworld-action="next-chapter"]')?.addEventListener('click', () => {
-        void handleChatControlAction('next-chapter');
+        void handleChatControlAction();
     });
 
     return bar;
@@ -1186,12 +1145,11 @@ function ensureChatControlWandStyle() {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 170px;
+    min-width: 96px;
     padding: 4px;
 }
 #${CHAT_CONTROL_WAND_CONTAINER_ID} #${CHAT_CONTROL_BAR_ID} {
     justify-content: center;
-    flex-wrap: wrap;
     padding: 2px;
 }
 #${CHAT_CONTROL_WAND_CONTAINER_ID} .westworld-chat-control-title {
@@ -1226,40 +1184,36 @@ function mountChatControlInWand() {
     return true;
 }
 
-function mountChatControlBar() {
+function mountChatControlProgressBadge() {
+    const wandButton = document.getElementById('extensionsMenuButton');
+    if (!wandButton) return false;
+
     ensureChatControlStyle();
 
-    const bar = createChatControlBarElement();
-    const formShield = document.getElementById('form_sheld');
-    const sendForm = document.getElementById('send_form');
-    if (formShield && sendForm && sendForm.parentElement === formShield) {
-        formShield.insertBefore(bar, sendForm);
-        updateChatControlBar();
-        bootstrapStatus.chatControlMounted = true;
-        bootstrapStatus.chatControlMountTarget = 'form_sheld-before-send_form';
-        return true;
+    let badge = document.getElementById(CHAT_CONTROL_PROGRESS_BADGE_ID);
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.id = CHAT_CONTROL_PROGRESS_BADGE_ID;
+        badge.setAttribute('aria-label', 'WestWorld reading progress');
     }
 
-    const chatInputShell = document.querySelector('.tt-chat-input-shell');
-    if (chatInputShell?.parentElement) {
-        chatInputShell.parentElement.insertBefore(bar, chatInputShell);
-        updateChatControlBar();
-        bootstrapStatus.chatControlMounted = true;
-        bootstrapStatus.chatControlMountTarget = 'before-tt-chat-input-shell';
-        return true;
+    if (badge.previousElementSibling !== wandButton) {
+        wandButton.insertAdjacentElement('afterend', badge);
     }
 
-    if (sendForm?.parentElement) {
-        sendForm.parentElement.insertBefore(bar, sendForm);
-        updateChatControlBar();
-        bootstrapStatus.chatControlMounted = true;
-        bootstrapStatus.chatControlMountTarget = 'before-send_form';
-        return true;
-    }
+    updateChatControlBar();
+    return true;
+}
 
+function mountChatControlBar() {
     const mountedInWand = mountChatControlInWand();
-    bootstrapStatus.chatControlMounted = mountedInWand;
-    return mountedInWand;
+    const mountedBadge = mountChatControlProgressBadge();
+    bootstrapStatus.chatControlMounted = mountedInWand || mountedBadge;
+    bootstrapStatus.chatControlMountTarget = [
+        mountedInWand ? 'extensionsMenu' : '',
+        mountedBadge ? 'extensionsMenuButton-after' : '',
+    ].filter(Boolean).join('+');
+    return bootstrapStatus.chatControlMounted;
 }
 
 function registerChatControlRefreshHooks() {
