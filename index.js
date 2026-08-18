@@ -628,10 +628,6 @@ async function prepareDirectorPromptForInput(options = {}) {
     ).trim();
     const source = String(normalizedOptions.source || 'external').trim() || 'external';
 
-    if (!userInput) {
-        return { ok: false, reason: 'user-input-empty' };
-    }
-
     clearExternalPreparedDirectorPrompt('new-external-prepare');
     directorPromptGate.pendingUserSend = true;
     directorPromptGate.lastUserSendAt = Date.now();

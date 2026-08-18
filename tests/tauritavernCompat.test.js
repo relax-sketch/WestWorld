@@ -114,3 +114,15 @@ test('normal generation and regenerate rebuild Director content without delayed 
     assert.ok(repairStart >= 0 && repairEnd > repairStart, 'bootstrap prompt repair must exist');
     assert.doesNotMatch(bootstrapSection.slice(repairStart, repairEnd), /clearContent:\s*true/);
 });
+
+test('empty input still prepares Director content for continue generation', async () => {
+    const source = await readRepoFile('index.js');
+    const prepareStart = source.indexOf('async function prepareDirectorPromptForInput');
+    const prepareEnd = source.indexOf('async function prepareDirectorPromptManagerForGeneration', prepareStart);
+    assert.ok(prepareStart >= 0 && prepareEnd > prepareStart, 'external director prepare section must exist');
+    const prepareSection = source.slice(prepareStart, prepareEnd);
+
+    assert.doesNotMatch(prepareSection, /user-input-empty/);
+    assert.match(prepareSection, /prepareDirectorPromptManagerForGeneration\(\{/);
+    assert.match(prepareSection, /inputLength:\s*userInput\.length/);
+});
