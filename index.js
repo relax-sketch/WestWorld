@@ -691,10 +691,6 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
 
     const generationType = String(eventContext?.type || '');
     const generationParams = eventContext?.params || {};
-    const isRegenerateOrSwipe = generationType === 'regenerate'
-        || generationType === 'swipe'
-        || generationParams.regenerate === true
-        || generationParams.swipe === true;
 
     const promptEntry = repairDirectorPromptManagerEntry({ save: true });
     if (!promptEntry.ok) {
@@ -727,19 +723,6 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
             };
         }
 
-        if (isRegenerateOrSwipe) {
-            const status = getDirectorPromptManagerStatusSafe();
-            if (!status?.contentLength) {
-                markDirectorGateSkipped('prompt-manager-reuse-empty', status || promptEntry);
-                return { ok: false, reason: 'prompt-manager-reuse-empty' };
-            }
-            markDirectorEvent('PROMPT_MANAGER_REUSED', {
-                type: generationType,
-                params: generationParams,
-                status,
-            });
-            return { ok: true, reused: true, reason: 'regenerate-or-swipe' };
-        }
     }
 
     clearDirectorPromptManager('generation-started');
@@ -1438,7 +1421,6 @@ async function bootstrap() {
         });
         void repairDirectorPromptManagerEntryWhenReady({
             save: true,
-            clearContent: true,
             timeoutMs: PROMPT_MANAGER_READY_TIMEOUT_MS,
         }).then((result) => {
             if (!result?.ok) {

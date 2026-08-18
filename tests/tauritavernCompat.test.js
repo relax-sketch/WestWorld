@@ -94,3 +94,23 @@ test('director pause toggle disables PromptManager injection and LittleWhite pro
     assert.match(source, /async function prepareDirectorPromptForInput[\s\S]*reason:\s*'director-paused'/);
     assert.match(source, /async function prepareDirectorPromptManagerForGeneration[\s\S]*reason:\s*'director-paused'/);
 });
+
+test('normal generation and regenerate rebuild Director content without delayed bootstrap clearing', async () => {
+    const source = await readRepoFile('index.js');
+    const prepareStart = source.indexOf('async function prepareDirectorPromptManagerForGeneration');
+    const prepareEnd = source.indexOf('function registerDirectorPromptHook()', prepareStart);
+    assert.ok(prepareStart >= 0 && prepareEnd > prepareStart, 'director prepare section must exist');
+    const prepareSection = source.slice(prepareStart, prepareEnd);
+
+    assert.match(prepareSection, /prepareDirectorInjectionForGeneration\(eventContext\)/);
+    assert.doesNotMatch(prepareSection, /reason:\s*'regenerate-or-swipe'/);
+    assert.doesNotMatch(prepareSection, /prompt-manager-reuse-empty/);
+
+    const bootstrapStart = source.indexOf('async function bootstrap()');
+    assert.ok(bootstrapStart >= 0, 'bootstrap must exist');
+    const bootstrapSection = source.slice(bootstrapStart);
+    const repairStart = bootstrapSection.indexOf('repairDirectorPromptManagerEntryWhenReady({');
+    const repairEnd = bootstrapSection.indexOf('}).then(', repairStart);
+    assert.ok(repairStart >= 0 && repairEnd > repairStart, 'bootstrap prompt repair must exist');
+    assert.doesNotMatch(bootstrapSection.slice(repairStart, repairEnd), /clearContent:\s*true/);
+});
