@@ -73,6 +73,27 @@ test('setDirectorPromptManagerContent preserves user depth and order', () => {
     assert.equal(prompt.injection_order, 250);
 });
 
+test('setDirectorPromptManagerContent preserves the role of an existing prompt', () => {
+    for (const role of ['assistant', 'user', 'system']) {
+        const promptManager = makePromptManager();
+        const prompt = {
+            identifier: DIRECTOR_PROMPT_MANAGER_IDENTIFIER,
+            name: 'WestWorld Director',
+            role,
+            content: '',
+            system_prompt: false,
+            injection_position: 0,
+            extension: true,
+        };
+        promptManager.serviceSettings.prompts.push(prompt);
+
+        const result = setDirectorPromptManagerContent(promptManager, 'director sheet');
+
+        assert.equal(result.ok, true);
+        assert.equal(prompt.role, role);
+    }
+});
+
 test('ensureDirectorPromptManagerEntry preserves disabled order entry', () => {
     const promptManager = makePromptManager();
     ensureDirectorPromptManagerEntry(promptManager);

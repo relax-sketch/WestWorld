@@ -136,7 +136,6 @@ export function ensureDirectorPromptManagerEntry(promptManager, options = {}) {
         const previousOrder = prompt.injection_order;
         const updates = {
             name: DIRECTOR_PROMPT_MANAGER_NAME,
-            role: 'system',
             system_prompt: false,
             extension: true,
         };
