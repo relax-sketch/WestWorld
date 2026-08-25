@@ -1,3 +1,17 @@
+const SUPPORTED_MESSAGE_ROLES = new Set(['system', 'user', 'assistant']);
+
+function normalizeMessageChain(messages) {
+    return messages.map((message, index) => {
+        if (!SUPPORTED_MESSAGE_ROLES.has(message?.role)) {
+            throw new TypeError(`消息链第${index + 1}条 role 不受支持：${String(message?.role ?? '空')}`);
+        }
+        return {
+            role: message.role,
+            content: String(message?.content ?? ''),
+        };
+    });
+}
+
 export function createApiService(deps = {}) {
     const {
         AppState,
@@ -53,14 +67,16 @@ export function createApiService(deps = {}) {
         return `[${apiTag}]`;
     }
 
-    async function callSillyTavernAPI(messages, taskId = null) {
+    async function callSillyTavernAPI(messages, taskId = null, preserveRoles = false) {
         const timeout = AppState.settings.apiTimeout || 120000;
         const logPrefix = buildApiLogPrefix('main', taskId);
-        const combinedPrompt = messagesToString(messages);
+        const promptLength = messages.reduce((total, message) => (
+            total + String(message?.content ?? '').length
+        ), 0);
         const taskText = String(taskId || '').trim();
         const isConsolidateTask = taskText.startsWith('整理:');
         updateStreamContent(`\n📤 ${logPrefix} 发送请求到酒馆API (${messages.length}条消息)...\n`);
-        debugLog(`${logPrefix} 酒馆API开始调用, 消息数=${messages.length}, 总长度=${combinedPrompt.length}, 超时=${timeout / 1000}秒`);
+        debugLog(`${logPrefix} 酒馆API开始调用, 消息数=${messages.length}, 总长度=${promptLength}, 超时=${timeout / 1000}秒`);
 
         try {
             if (typeof SillyTavern === 'undefined' || !SillyTavern.getContext) {
@@ -88,10 +104,13 @@ export function createApiService(deps = {}) {
                         rawError.message?.includes('API') || rawError.message?.includes('limit')) {
                         throw rawError;
                     }
+                    if (preserveRoles) {
+                        throw new Error('酒馆API不支持消息数组格式，无法保持结构化消息角色');
+                    }
                     debugLog(`${logPrefix} 消息数组格式不支持(${rawError.message})，回退字符串模式`);
                     updateStreamContent(`⚠️ ${logPrefix} 酒馆不支持消息数组格式，已回退为字符串模式\n`);
                     result = await Promise.race([
-                        context.generateRaw(combinedPrompt, '', false),
+                        context.generateRaw(messagesToString(messages), '', false),
                         timeoutPromise,
                     ]);
                 }
@@ -434,11 +453,13 @@ export function createApiService(deps = {}) {
         const maxRetries = 3;
         const timeout = AppState.settings.apiTimeout || 120000;
         const requestConfig = buildCustomApiRequest(messages, target);
-        const combinedPrompt = messagesToString(messages);
+        const promptLength = messages.reduce((total, message) => (
+            total + String(message?.content ?? '').length
+        ), 0);
 
         const logPrefix = buildApiLogPrefix(target, taskId);
         updateStreamContent(`\n📤 ${logPrefix} 发送请求 (${requestConfig.provider}, ${messages.length}条消息)...\n`);
-        debugLog(`${logPrefix} 开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${combinedPrompt.length}`);
+        debugLog(`${logPrefix} 开始调用, provider=${requestConfig.provider}, model=${requestConfig.model}, 消息数=${messages.length}, 总长度=${promptLength}`);
 
         const isUnsupportedDirectorJsonModeError = (error) => {
             if (target !== 'director' || requestConfig.provider !== 'openai-compatible') return false;
@@ -694,13 +715,16 @@ export function createApiService(deps = {}) {
     }
 
     async function callTargetPrompt(prompt, taskId = null, target = 'main') {
-        const messages = target === 'main'
-            ? applyMessageChain(prompt)
-            : [{ role: 'user', content: String(prompt || '') }];
+        const preserveRoles = Array.isArray(prompt);
+        const messages = preserveRoles
+            ? normalizeMessageChain(prompt)
+            : target === 'main'
+                ? applyMessageChain(prompt)
+                : [{ role: 'user', content: String(prompt || '') }];
         const logPrefix = buildApiLogPrefix(target, taskId);
         debugLog(`${logPrefix} 消息链转换完成, ${messages.length}条消息, roles=[${messages.map((m) => m.role).join(',')}]`);
         if (target === 'main' && AppState.settings.useTavernApi) {
-            return callSillyTavernAPI(messages, taskId);
+            return callSillyTavernAPI(messages, taskId, preserveRoles);
         }
         return callCustomAPI(messages, target, taskId);
     }

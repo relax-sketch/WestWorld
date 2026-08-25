@@ -496,6 +496,37 @@ export function createPromptRegistryService(deps = {}) {
         return rendered.join('\n\n');
     }
 
+    function composeMessageChain(messages = [], options = {}) {
+        const includeGlobal = options.includeGlobal !== false;
+        const rendered = messages.map((message, index) => {
+            if (!['system', 'user', 'assistant'].includes(message?.role)) {
+                throw new TypeError(`消息链第${index + 1}条 role 不受支持：${String(message?.role ?? '空')}`);
+            }
+            return {
+                role: message.role,
+                content: String(message?.content ?? ''),
+            };
+        });
+        if (rendered.length === 0 || !includeGlobal) return rendered;
+
+        const settings = getSettings();
+        const prefix = [];
+        if (settings.language === 'zh') {
+            prefix.push(renderModule(PROMPT_MODULE_IDS.LANGUAGE_ZH));
+        }
+        if (typeof settings.promptGlobal.prefix === 'string' && settings.promptGlobal.prefix !== '') {
+            prefix.push(settings.promptGlobal.prefix);
+        }
+        if (prefix.length > 0) {
+            rendered[0].content = `${prefix.join('\n\n')}\n\n${rendered[0].content}`;
+        }
+        if (typeof settings.promptGlobal.suffix === 'string' && settings.promptGlobal.suffix !== '') {
+            const last = rendered.length - 1;
+            rendered[last].content = `${rendered[last].content}\n\n${settings.promptGlobal.suffix}`;
+        }
+        return rendered;
+    }
+
     function composeRequest(moduleIds, variablesById = {}, options = {}) {
         return composeFragments(
             moduleIds.map((id) => renderModule(id, variablesById[id] || {})),
@@ -585,6 +616,7 @@ export function createPromptRegistryService(deps = {}) {
         resetOverride,
         renderModule,
         composeFragments,
+        composeMessageChain,
         composeRequest,
         getWarnings,
         migrateLegacySettings,

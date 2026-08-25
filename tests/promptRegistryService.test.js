@@ -7,6 +7,7 @@ import {
 } from '../txtToWorldbook/services/promptRegistryService.js';
 import {
     defaultChapterAssetsPolishPrompt,
+    defaultChapterAssetsPolishMessages,
     defaultChapterAssetsPolishPromptLegacy,
     defaultDirectorInjectionPrompt,
     defaultWorldbookPrompt,
@@ -85,7 +86,7 @@ test('chapter assets polish uses the legacy prompt until the specialized preset 
     ]);
 });
 
-test('chapter assets polish default is the offline-compiled single-message director template', () => {
+test('chapter assets polish default is the offline-compiled specialized representation', () => {
     const task = '你是章节导演资产元信息补全助手';
     const taskMarker = `<interactive_input>\n${task}`;
     const removedModules = [
@@ -107,6 +108,8 @@ test('chapter assets polish default is the offline-compiled single-message direc
     assert.equal(defaultChapterAssetsPolishPrompt.includes('赋予角色自主性：鼓励角色通过自己的性格情感做出选择，推动剧情'), false);
     assert.equal(defaultChapterAssetsPolishPrompt.includes('<think_format>'), true);
     assert.equal(defaultChapterAssetsPolishPrompt.includes('Avant de produire le résultat'), true);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('<format>'), true);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('SPECIAL INSTRUCTION: silently thinking token budget'), true);
     assert.equal(defaultChapterAssetsPolishPrompt.includes('<think><|no-trans|>'), true);
     assert.deepEqual(
         ['{CHAPTER_TITLE}', '{PREVIOUS_OUTLINE}', '{BEAT_COUNT}', '{LOCAL_BEATS_JSON}']
@@ -115,6 +118,19 @@ test('chapter assets polish default is the offline-compiled single-message direc
     );
     for (const moduleName of removedModules) {
         assert.equal(defaultChapterAssetsPolishPrompt.includes(moduleName), false, moduleName);
+    }
+});
+
+test('specialized chapter assets message fixture preserves the strict three-message roles', () => {
+    assert.deepEqual(defaultChapterAssetsPolishMessages.map((message) => message.role), ['user', 'assistant', 'user']);
+    assert.equal(defaultChapterAssetsPolishMessages[0].content.includes('{CHAPTER_TITLE}'), true);
+    assert.equal(defaultChapterAssetsPolishMessages[0].content.includes('{PREVIOUS_OUTLINE}'), true);
+    assert.equal(defaultChapterAssetsPolishMessages[0].content.includes('{BEAT_COUNT}'), true);
+    assert.equal(defaultChapterAssetsPolishMessages[0].content.includes('{LOCAL_BEATS_JSON}'), true);
+    assert.equal(defaultChapterAssetsPolishMessages[1].content.includes('已读取章节资料和本地预切节拍'), true);
+    assert.equal(defaultChapterAssetsPolishMessages[2].content.includes('你是章节导演资产元信息补全助手'), true);
+    for (const placeholder of ['{CHAPTER_TITLE}', '{PREVIOUS_OUTLINE}', '{BEAT_COUNT}', '{LOCAL_BEATS_JSON}']) {
+        assert.equal(defaultChapterAssetsPolishMessages[2].content.includes(placeholder), false, placeholder);
     }
 });
 
@@ -170,6 +186,32 @@ test('complete requests can wrap pre-rendered runtime fragments with global laye
     assert.equal(result.match(/GLOBAL AFTER/g)?.length, 1);
     assert.equal(result.includes('RUNTIME CONTEXT'), true);
     assert.equal(result.includes('RUNTIME CONTENT'), true);
+});
+
+test('structured message composition keeps roles and applies globals to the outer messages once', () => {
+    const registry = createPromptRegistryService({
+        AppState: createState({
+            language: 'zh',
+            promptGlobal: { prefix: 'GLOBAL BEFORE', suffix: 'GLOBAL AFTER' },
+        }),
+    });
+    const messages = registry.composeMessageChain([
+        { role: 'user', content: 'FIRST' },
+        { role: 'assistant', content: 'ACK' },
+        { role: 'user', content: 'FINAL' },
+    ]);
+
+    assert.deepEqual(messages.map((message) => message.role), ['user', 'assistant', 'user']);
+    assert.equal(messages[0].content.includes('请用中文回复。'), true);
+    assert.equal(messages[0].content.includes('GLOBAL BEFORE'), true);
+    assert.equal(messages[0].content.match(/GLOBAL BEFORE/g)?.length, 1);
+    assert.equal(messages[1].content.includes('GLOBAL BEFORE'), false);
+    assert.equal(messages[2].content.includes('GLOBAL AFTER'), true);
+    assert.equal(messages[2].content.match(/GLOBAL AFTER/g)?.length, 1);
+    assert.throws(
+        () => registry.composeMessageChain([{ role: 'developer', content: 'NO' }]),
+        /role 不受支持/,
+    );
 });
 
 test('injection rendering can bypass global and language layers', () => {

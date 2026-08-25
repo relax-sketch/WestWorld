@@ -1,5 +1,7 @@
 ﻿import { buildLocalPresplitAssets } from './chapterAssetsLocalSplitService.js';
 
+import { defaultChapterAssetsPolishMessages } from '../core/constants.js';
+
 export function createProcessingService(deps = {}) {
     const {
         AppState,
@@ -2479,6 +2481,16 @@ export function createProcessingService(deps = {}) {
             return promptRegistryService.composeFragments([
                 renderPromptTemplate(customTemplate, variables),
             ]);
+        }
+
+        if (AppState.settings?.chapterAssetsUseSpecializedPreset === true) {
+            const messages = defaultChapterAssetsPolishMessages.map((message) => ({
+                role: message.role,
+                content: renderPromptTemplate(message.content, variables),
+            }));
+            return typeof promptRegistryService.composeMessageChain === 'function'
+                ? promptRegistryService.composeMessageChain(messages)
+                : messages;
         }
 
         return promptRegistryService.composeRequest(['director.chapter-assets-polish'], {

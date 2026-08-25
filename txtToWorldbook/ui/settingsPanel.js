@@ -133,7 +133,7 @@ function buildDirectorCutSettingsHtml() {
         <div style="font-weight:bold;color:#8bc5ff;margin-bottom:10px;">导演切拍设置</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:10px;">
             <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
-                <span style="font-size:12px;color:var(--ttw-text-secondary);">章节资产生成方式</span>
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">章节资产生成方式（特化预设请选择“本地预切 + AI补全”）</span>
                 <select id="ttw-chapter-assets-mode" class="ttw-select">
                     <option value="ai-anchor">AI 锚点切拍</option>
                     <option value="local-presplit-ai-polish">本地预切 + AI补全</option>
@@ -179,7 +179,7 @@ function buildDirectorCutSettingsHtml() {
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
             <label class="ttw-checkbox-label" style="margin:0;">
                 <input type="checkbox" id="ttw-chapter-assets-use-specialized-preset">
-                <span>使用特化预设</span>
+                <span>使用特化预设（仅本地预切 + AI补全生效）</span>
             </label>
             <label class="ttw-checkbox-label" style="margin:0;">
                 <input type="checkbox" id="ttw-chapter-assets-wait-previous" checked>
@@ -194,8 +194,8 @@ function buildDirectorCutSettingsHtml() {
                 <span>显示“使用本地兜底”</span>
             </label>
         </div>
-        <div style="font-size:12px;color:var(--ttw-text-secondary);margin-bottom:6px;">自定义 AI补全提示词（非空时覆盖默认/特化预设）</div>
-        <textarea id="ttw-chapter-assets-polish-prompt" rows="8" class="ttw-textarea-small" placeholder="留空表示按上面的默认选择"></textarea>
+        <div style="font-size:12px;color:var(--ttw-text-secondary);margin-bottom:6px;">自定义 AI补全提示词（非空时以单条用户消息覆盖；留空且勾选特化预设才使用 user→assistant→user 三消息链）</div>
+        <textarea id="ttw-chapter-assets-polish-prompt" rows="8" class="ttw-textarea-small" placeholder="留空表示按上面的默认选择；特化预设请保持留空"></textarea>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="ttw-btn ttw-btn-small" id="ttw-save-chapter-assets-polish-prompt">保存</button>
             <button type="button" class="ttw-btn ttw-btn-small" id="ttw-reset-chapter-assets-polish-prompt">恢复默认</button>

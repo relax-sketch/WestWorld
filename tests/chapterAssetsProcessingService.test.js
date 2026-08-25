@@ -152,17 +152,23 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     assert.equal(AppState.memory.queue[0].chapterAssetsDraft, null);
     assert.equal(result.script.beats.map((beat) => beat.original_text).join(''), content);
     assert.equal(result.script.beats[0].entryEvent, '角色进入事件1');
-    assert.equal(prompts[0].includes('本地预切节拍 JSON'), true);
-    assert.equal(prompts[0].includes('{CHAPTER_TITLE}'), false);
-    assert.equal(prompts[0].includes('{PREVIOUS_OUTLINE}'), false);
-    assert.equal(prompts[0].includes('{BEAT_COUNT}'), false);
-    assert.equal(prompts[0].includes('{LOCAL_BEATS_JSON}'), false);
-    assert.equal((prompts[0].match(/你是章节导演资产元信息补全助手/g) || []).length, 1);
-    assert.equal(
-        (prompts[0].match(/<interactive_input>\n你是章节导演资产元信息补全助手/g) || []).length,
-        1,
-    );
-    assert.equal((prompts[0].match(/<\/interactive_input>/g) || []).length, 1);
+    assert.equal(Array.isArray(prompts[0]), true);
+    assert.deepEqual(prompts[0].map((message) => message.role), ['user', 'assistant', 'user']);
+    const firstMessage = prompts[0][0].content;
+    const assistantMessage = prompts[0][1].content;
+    const finalMessage = prompts[0][2].content;
+    assert.equal(firstMessage.includes('- 章节标题：第1章'), true);
+    assert.equal(firstMessage.includes('- 上一章摘要：无'), true);
+    assert.equal(firstMessage.includes('- 固定节拍数量：3'), true);
+    assert.equal(firstMessage.includes('"id": "b1"'), true);
+    assert.equal(assistantMessage.includes('已读取章节资料和本地预切节拍'), true);
+    for (const placeholder of ['{CHAPTER_TITLE}', '{PREVIOUS_OUTLINE}', '{BEAT_COUNT}', '{LOCAL_BEATS_JSON}']) {
+        assert.equal(firstMessage.includes(placeholder), false, placeholder);
+        assert.equal(assistantMessage.includes(placeholder), false, placeholder);
+        assert.equal(finalMessage.includes(placeholder), false, placeholder);
+    }
+    assert.equal((finalMessage.match(/你是章节导演资产元信息补全助手/g) || []).length, 1);
+    assert.equal((finalMessage.match(/<interactive_input>/g) || []).length >= 1, true);
 });
 
 test('chapter asset generation can route AI polish through the main API', async () => {
@@ -183,7 +189,26 @@ test('chapter asset generation can route AI polish through the main API', async 
     assert.equal(AppState.memory.queue[0].chapterOutlineStatus, 'done');
     assert.equal(mainPrompts.length, 1);
     assert.equal(prompts.length, 0);
-    assert.equal(mainPrompts[0].includes('本地预切节拍 JSON'), true);
+    assert.deepEqual(mainPrompts[0].map((message) => message.role), ['user', 'assistant', 'user']);
+    assert.equal(mainPrompts[0][0].content.includes('- 固定节拍数量：3'), true);
+});
+
+test('custom chapter polish prompt keeps precedence over the specialized message chain', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const { service, prompts } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsLocalBeatCount: 3,
+            customChapterAssetsPolishPrompt: 'CUSTOM {CHAPTER_TITLE}',
+        },
+        directorResponses: [buildPolishResponse()],
+    });
+
+    await service.retryChapterOutline(0);
+
+    assert.equal(Array.isArray(prompts[0]), false);
+    assert.equal(prompts[0].includes('CUSTOM 第1章'), true);
 });
 
 test('invalid AI polish response stores draft and does not commit local fallback assets', async () => {

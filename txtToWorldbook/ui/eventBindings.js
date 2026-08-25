@@ -864,6 +864,10 @@ export function bindSettingEvents(deps = {}) {
             ErrorHandler?.showUserSuccess?.('AI补全提示词已恢复为默认');
         } },
         '#ttw-copy-default-chapter-assets-polish-prompt': { click: () => {
+            if (AppState.settings.chapterAssetsUseSpecializedPreset === true) {
+                ErrorHandler?.showUserError?.('特化预设是三消息链，不能复制成单条自定义提示词；请保持自定义提示词留空');
+                return;
+            }
             writeClipboard(getPromptDefaultValue('chapter-assets-polish'))
                 .then(() => ErrorHandler?.showUserSuccess?.('默认 AI补全提示词已复制'))
                 .catch((error) => ErrorHandler?.showUserError?.(`复制失败：${error?.message || error}`));
