@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { defaultSettings } from '../txtToWorldbook/core/constants.js';
+import {
+    defaultDragonNovelPromptSource,
+    refreshSpecializedChapterAssetsPrompt,
+} from '../txtToWorldbook/core/chapterAssetsPromptSource.js';
 import { createPromptRegistryService } from '../txtToWorldbook/services/promptRegistryService.js';
 import { createProcessingService } from '../txtToWorldbook/services/processingService.js';
 
@@ -162,6 +166,8 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     const firstMessage = prompts[0][0].content;
     const assistantMessage = prompts[0][1].content;
     const finalMessage = prompts[0][2].content;
+    assert.match(firstMessage, /^<\|no-trans\|>meaningless test: [^\r\n]+/);
+    assert.equal(firstMessage.includes(defaultDragonNovelPromptSource), true);
     assert.equal(firstMessage.includes('- 章节标题：第1章'), true);
     assert.equal(firstMessage.includes('- 上一章摘要：无'), true);
     assert.equal(firstMessage.includes('- 固定节拍数量：3'), true);
@@ -174,6 +180,18 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     }
     assert.equal((finalMessage.match(/你是章节导演资产元信息补全助手/g) || []).length, 1);
     assert.equal((finalMessage.match(/<interactive_input>/g) || []).length >= 1, true);
+});
+
+test('specialized chapter prompt refreshes the anti-marker and Dragon source on every build', () => {
+    const template = '<|no-trans|>meaningless test: old-marker\n旧示例\n[对话已重置]\n保留的提示词引导';
+    const first = refreshSpecializedChapterAssetsPrompt(template);
+    const second = refreshSpecializedChapterAssetsPrompt(template);
+    const markerPattern = /^<\|no-trans\|>meaningless test: ([^\n]+)/;
+
+    assert.notEqual(first.match(markerPattern)?.[1], second.match(markerPattern)?.[1]);
+    assert.equal(first.includes(defaultDragonNovelPromptSource), true);
+    assert.equal(first.endsWith('\n[对话已重置]\n保留的提示词引导'), true);
+    assert.equal(first.includes('旧示例'), false);
 });
 
 test('chapter asset generation can route AI polish through the main API', async () => {

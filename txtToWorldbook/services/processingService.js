@@ -1,6 +1,7 @@
 ﻿import { buildLocalPresplitAssets } from './chapterAssetsLocalSplitService.js';
 
 import { defaultChapterAssetsPolishMessages } from '../core/constants.js';
+import { refreshSpecializedChapterAssetsPrompt } from '../core/chapterAssetsPromptSource.js';
 
 export function createProcessingService(deps = {}) {
     const {
@@ -2560,6 +2561,7 @@ export function createProcessingService(deps = {}) {
                 role: message.role,
                 content: renderPromptTemplate(message.content, variables),
             }));
+            messages[0].content = refreshSpecializedChapterAssetsPrompt(messages[0].content);
             return typeof promptRegistryService.composeMessageChain === 'function'
                 ? promptRegistryService.composeMessageChain(messages)
                 : messages;
