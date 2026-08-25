@@ -354,6 +354,40 @@ export function createBatchRuntimeService(deps = {}) {
     function cancelJob(jobId) { return scheduler?.cancel(jobId) || null; }
     function retryJob(jobId, options = {}) { return scheduler?.retry(jobId, options) || null; }
 
+    function clearBatch() {
+        const currentScheduler = scheduler;
+        if (currentScheduler) {
+            for (const job of currentScheduler.getJobs()) {
+                if (!['completed', 'failed', 'cancelled'].includes(job.status)) {
+                    currentScheduler.cancel(job.jobId, 'batch-cleared');
+                }
+            }
+        }
+        scheduler = null;
+        activeBatchId = null;
+        selectedJobId = null;
+        AppState.batch = {
+            activeBatchId: null,
+            selectedJobId: null,
+            status: 'idle',
+            progress: 0,
+            jobs: [],
+            errors: [],
+        };
+        AppState.memory.queue = [];
+        AppState.file.current = null;
+        AppState.file.hash = null;
+        AppState.file.novelName = '';
+        AppState.worldbook.generated = {};
+        AppState.worldbook.volumes = [];
+        AppState.worldbook.currentVolumeIndex = 0;
+        renderBatchJobs?.([]);
+        updateMemoryQueueUI?.();
+        showQueueSection?.(false);
+        showResultSection?.(false);
+        return true;
+    }
+
     function exportBatch(options = {}) {
         const jobs = getJobs();
         let selected = jobs;
@@ -444,6 +478,7 @@ export function createBatchRuntimeService(deps = {}) {
         resumeJob,
         cancelJob,
         retryJob,
+        clearBatch,
         exportBatch,
         downloadBatch,
         importBatch,

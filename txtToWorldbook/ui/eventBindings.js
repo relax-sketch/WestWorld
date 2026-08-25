@@ -155,6 +155,7 @@ export function bindExportEvents(deps = {}) {
         resumeBatchSelected,
         retryBatchSelected,
         cancelBatchSelected,
+        clearCurrentBatch,
         ErrorHandler,
         exportSettings,
         importSettings,
@@ -215,6 +216,8 @@ export function bindExportEvents(deps = {}) {
     if (batchRetryBtn && typeof retryBatchSelected === 'function') batchRetryBtn.addEventListener('click', retryBatchSelected);
     const batchCancelBtn = document.getElementById('ttw-batch-cancel-selected');
     if (batchCancelBtn && typeof cancelBatchSelected === 'function') batchCancelBtn.addEventListener('click', cancelBatchSelected);
+    const batchNewBtn = document.getElementById('ttw-batch-new');
+    if (batchNewBtn && typeof clearCurrentBatch === 'function') batchNewBtn.addEventListener('click', clearCurrentBatch);
     document.getElementById('ttw-export-settings').addEventListener('click', exportSettings);
     document.getElementById('ttw-import-settings').addEventListener('click', importSettings);
     document.getElementById('ttw-export-json').addEventListener('click', exportCharacterCard);

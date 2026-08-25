@@ -135,3 +135,66 @@ test('batch runtime isolates file state and keeps chapter failures inside one Fi
     assert.equal(jobA.output.resourceSettings.chapterAssetsMode, 'ai-anchor');
     assert.equal(jobA.output.parallelConfig.mainConcurrency, 1);
 });
+
+test('clearing a batch resets its projection and the next TXT starts a new batch', async () => {
+    const AppState = createSourceState();
+    const runtime = createBatchRuntimeService({
+        AppState,
+        packagePolicyService: {
+            buildResourcePackage(state) {
+                return {
+                    type: 'WestWorld.taskState',
+                    version: '3.6.0',
+                    memoryQueue: JSON.parse(JSON.stringify(state.memory.queue)),
+                    generatedWorldbook: {},
+                    worldbookVolumes: [],
+                    currentVolumeIndex: 0,
+                    fileHash: state.file.hash,
+                    originalFileName: state.file.current?.name || null,
+                    novelName: state.file.novelName,
+                };
+            },
+        },
+        MemoryHistoryDB: {
+            async saveJobSnapshot() {},
+            async saveBatchSnapshot() {},
+        },
+        fileUtils: {
+            async detectBestEncoding(file) { return { encoding: 'utf-8', content: file.name }; },
+            async calculateFileHash(content) { return `hash:${content}`; },
+        },
+        createMemoryQueueFromContent(content) {
+            return [{ title: 'chapter', content, chapterOutlineStatus: 'pending' }];
+        },
+        createProcessingServiceForState(state) {
+            return {
+                async processDirectorChunk(index) {
+                    state.memory.queue[index].chapterOutlineStatus = 'done';
+                    return true;
+                },
+            };
+        },
+        showQueueSection() {},
+        showResultSection() {},
+        updateMemoryQueueUI() {},
+        updateWorldbookPreview() {},
+        renderBatchJobs() {},
+    });
+
+    await runtime.addFiles([{ name: 'A.txt' }]);
+    await runtime.getScheduler().start();
+    const firstBatchId = runtime.getActiveBatchId();
+    assert.equal(runtime.getJobs().length, 1);
+
+    assert.equal(runtime.clearBatch(), true);
+    assert.equal(runtime.getActiveBatchId(), null);
+    assert.equal(runtime.getJobs().length, 0);
+    assert.equal(AppState.batch.status, 'idle');
+    assert.deepEqual(AppState.memory.queue, []);
+
+    await runtime.addFiles([{ name: 'B.txt' }]);
+    const secondBatchId = runtime.getActiveBatchId();
+    assert.notEqual(secondBatchId, firstBatchId);
+    assert.deepEqual(runtime.getJobs().map((job) => job.novelName), ['B']);
+    await runtime.getScheduler().start();
+});

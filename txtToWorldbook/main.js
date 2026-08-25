@@ -310,6 +310,21 @@ const pauseBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeSe
 const resumeBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.resumeJob(AppState.batch.selectedJobId);
 const retryBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.retryJob(AppState.batch.selectedJobId, { failedOnly: true });
 const cancelBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.cancelJob(AppState.batch.selectedJobId);
+const clearCurrentBatch = async () => {
+    const jobs = batchRuntimeService?.getJobs?.() || [];
+    if (jobs.length === 0) {
+        ErrorHandler.showUserError('当前没有批量任务');
+        return false;
+    }
+    const confirmed = await confirmAction(
+        '确定新建批次吗？当前批量任务将停止并从界面清空；已保存的批量快照仍可恢复。',
+        { title: '新建批次', danger: true },
+    );
+    if (!confirmed) return false;
+    batchRuntimeService.clearBatch();
+    ErrorHandler.showUserSuccess('已清空当前批次，可以重新选择 TXT');
+    return true;
+};
 const openBatchImport = () => document.getElementById('ttw-batch-import-input')?.click();
 const loadBatchFile = (file) => batchRuntimeService?.loadBatchFile(file);
 const restoreLatestBatch = () => Promise.resolve(batchRuntimeService?.restoreLatestBatch()).catch((error) => {
@@ -327,11 +342,16 @@ function renderBatchJobs(jobs = AppState.batch?.jobs || []) {
     }
     container.style.display = 'block';
     for (const job of jobs) {
+        const isSelected = AppState.batch?.selectedJobId === job.jobId;
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.08);cursor:pointer;';
-        row.title = '点击查看此文件任务';
+        row.style.cssText = `display:flex;gap:8px;align-items:center;padding:6px 8px;margin:2px 0;border:1px solid ${isSelected ? 'rgba(52,152,219,0.75)' : 'transparent'};border-radius:5px;background:${isSelected ? 'rgba(52,152,219,0.18)' : 'transparent'};cursor:pointer;`;
+        row.title = isSelected ? '当前选中的文件任务' : '点击选中并查看此文件任务';
         row.dataset.jobId = job.jobId;
+        row.setAttribute('aria-selected', String(isSelected));
         row.addEventListener('click', () => batchRuntimeService?.selectJob(job.jobId));
+        const marker = document.createElement('span');
+        marker.style.cssText = `width:14px;color:${isSelected ? '#3498db' : 'transparent'};font-weight:700;`;
+        marker.textContent = '✓';
         const name = document.createElement('span');
         name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         name.textContent = job.originalFileName || job.fileName || job.novelName || job.jobId;
@@ -341,7 +361,7 @@ function renderBatchJobs(jobs = AppState.batch?.jobs || []) {
         const errors = document.createElement('span');
         errors.style.cssText = 'color:#e67e22;font-size:11px;';
         errors.textContent = Array.isArray(job.errors) && job.errors.length > 0 ? `错误 ${job.errors.length}` : '';
-        row.append(name, status, errors);
+        row.append(marker, name, status, errors);
         container.appendChild(row);
     }
 }
@@ -1391,6 +1411,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     resumeBatchSelected,
     retryBatchSelected,
     cancelBatchSelected,
+    clearCurrentBatch,
     exportSettings: (...args) => exportSettings(...args),
     importSettings: (...args) => importSettings(...args),
     exportCharacterCard: (...args) => exportCharacterCard(...args),

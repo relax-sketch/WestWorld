@@ -18,6 +18,31 @@ function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function buildPackageFileNames(jobs) {
+    const used = new Set();
+    return Array.from(jobs, (job, index) => {
+        const rawName = job?.novelName
+            || job?.originalFileName
+            || job?.fileName
+            || `任务-${index + 1}`;
+        const cleanName = String(rawName)
+            .replace(/\.[^/.]+$/, '')
+            .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_')
+            .trim()
+            .replace(/[. ]+$/g, '')
+            .slice(0, 100) || `任务-${index + 1}`;
+        const baseName = `${cleanName}-工程包`;
+        let fileName = `${baseName}.json`;
+        let suffix = 2;
+        while (used.has(fileName.toLocaleLowerCase())) {
+            fileName = `${baseName}-${suffix}.json`;
+            suffix += 1;
+        }
+        used.add(fileName.toLocaleLowerCase());
+        return fileName;
+    });
+}
+
 function asBytes(value) {
     if (value instanceof Uint8Array) return value;
     if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -257,6 +282,7 @@ export class BatchPackageService {
 
     buildManifest(jobs = []) {
         const snapshots = Array.from(jobs, (job) => job?.jobId ? job : { jobId: job?.jobId });
+        const packageFiles = buildPackageFileNames(snapshots);
         const counts = countStatuses(snapshots);
         const items = snapshots.map((job, index) => ({
             jobId: String(job?.jobId || `job-${index + 1}`),
@@ -276,8 +302,8 @@ export class BatchPackageService {
             ),
             progress: clone(job?.progress || {}),
             errorCount: Array.isArray(job?.errors) ? job.errors.length : 0,
-            packageFile: `jobs/${String(job?.jobId || `job-${index + 1}`)}.json`,
-            path: `jobs/${String(job?.jobId || `job-${index + 1}`)}.json`,
+            packageFile: packageFiles[index],
+            path: packageFiles[index],
         }));
         return {
             version: BATCH_PACKAGE_VERSION,
@@ -309,11 +335,11 @@ export class BatchPackageService {
         const entries = [{ name: 'manifest.json', data: jsonBytes(manifest) }];
         const taskStates = list.map((job, index) => ({
             job,
-            jobId: String(job?.jobId || `job-${index + 1}`),
+            packageFile: manifest.items[index]?.packageFile || `任务-${index + 1}-工程包.json`,
         }));
         for (const item of taskStates) {
             entries.push({
-                name: `jobs/${item.jobId}.json`,
+                name: item.packageFile,
                 data: jsonBytes(this.buildTaskState(item.job)),
             });
         }

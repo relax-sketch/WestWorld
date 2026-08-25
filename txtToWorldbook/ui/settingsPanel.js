@@ -814,6 +814,7 @@ function buildFileUploadSectionHtml() {
                 <button id="ttw-batch-resume-selected" class="ttw-btn ttw-btn-small">▶ 恢复选中</button>
                 <button id="ttw-batch-retry-selected" class="ttw-btn ttw-btn-small">🔁 重试失败章节</button>
                 <button id="ttw-batch-cancel-selected" class="ttw-btn ttw-btn-small ttw-btn-warning">⏹ 取消选中</button>
+                <button id="ttw-batch-new" class="ttw-btn ttw-btn-small ttw-btn-warning" title="停止并清空当前批次；已保存快照仍可恢复">🧹 新建批次</button>
                 <input type="file" id="ttw-batch-import-input" accept=".zip,application/zip" style="display:none;">
             </div>
             <div id="ttw-batch-job-list" style="display:none;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.16);border-radius:6px;font-size:12px;"></div>

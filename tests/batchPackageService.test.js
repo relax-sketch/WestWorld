@@ -52,8 +52,9 @@ test('batch export contains manifest count/status and round-trips a store-only Z
     assert.equal(exported.manifest.status, 'completed');
     assert.equal(exported.manifest.counts.completed, 2);
     assert.equal(exported.manifest.items.length, 2);
-    assert.equal(exported.manifest.items[0].packageFile, 'jobs/job-a.json');
-    assert.equal(exported.manifest.jobs[0].path, 'jobs/job-a.json');
+    assert.equal(exported.manifest.items[0].packageFile, 'A-工程包.json');
+    assert.equal(exported.manifest.jobs[0].path, 'A-工程包.json');
+    assert.deepEqual(exported.entries, ['manifest.json', 'A-工程包.json', 'B-工程包.json']);
 
     const bytes = exported.bytes;
     assert.equal(readUInt32(bytes, 0), 0x04034b50);
@@ -62,6 +63,17 @@ test('batch export contains manifest count/status and round-trips a store-only Z
     assert.equal(parsed.manifest.count, 2);
     assert.deepEqual(parsed.jobs.map((job) => job.taskState), [state('A'), state('B')]);
     assert.equal(Object.hasOwn(parsed.jobs[0].taskState, 'batch'), false);
+});
+
+test('batch package names are safe, recognizable, and unique for duplicate novels', () => {
+    const service = createBatchPackageService();
+    const exported = service.exportBatch([
+        { jobId: 'job-a', novelName: '小说:A', status: 'completed', output: state('A') },
+        { jobId: 'job-b', novelName: '小说:A', status: 'completed', output: state('B') },
+    ]);
+
+    assert.deepEqual(exported.entries, ['manifest.json', '小说_A-工程包.json', '小说_A-工程包-2.json']);
+    assert.deepEqual(exported.manifest.items.map((item) => item.packageFile), exported.entries.slice(1));
 });
 
 test('the parser accepts the generated ZIP as an ArrayBuffer and preserves legacy raw JSON', () => {
@@ -80,4 +92,26 @@ test('the parser accepts the generated ZIP as an ArrayBuffer and preserves legac
     const parsed = service.parseBatchPackage(exported.bytes.buffer);
     assert.deepEqual(parsed.jobs[0].taskState, taskState);
     assert.deepEqual(Object.keys(parsed.jobs[0].taskState), Object.keys(taskState));
+});
+
+test('the parser still accepts earlier batch ZIP paths based on job ids', () => {
+    const service = createBatchPackageService();
+    const taskState = state('old-zip');
+    const manifest = {
+        type: 'WestWorld.batchManifest',
+        version: '1.0.0',
+        items: [{
+            jobId: 'legacy-job',
+            novelName: 'old-zip',
+            status: 'completed',
+            packageFile: 'jobs/legacy-job.json',
+        }],
+    };
+    const bytes = service.createZip([
+        { name: 'manifest.json', data: JSON.stringify(manifest) },
+        { name: 'jobs/legacy-job.json', data: JSON.stringify(taskState) },
+    ]);
+
+    const parsed = service.parseBatchPackage(bytes);
+    assert.deepEqual(parsed.jobs[0].taskState, taskState);
 });
