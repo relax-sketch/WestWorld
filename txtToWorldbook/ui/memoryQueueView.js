@@ -18,6 +18,7 @@ export function createMemoryQueueView(deps = {}) {
         memory.chapterOutlineError = '';
         memory.chapterAssetsDraft = null;
         memory.chapterAssetsSource = '';
+        memory.chapterAssetsApiSource = '';
         memory.chapterScript = { keyNodes: [], beats: [] };
         memory.chapterOpeningPreview = '';
         memory.chapterOpeningSent = false;

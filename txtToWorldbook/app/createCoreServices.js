@@ -45,6 +45,26 @@ export function createCoreServices(deps = {}) {
         return processingService;
     }
 
+    // Batch jobs need the same processing implementation with an isolated
+    // state object. The normal singleton above remains the owner of the
+    // legacy single-file flow.
+    function createProcessingServiceForState(state, overrides = {}) {
+        if (!state || typeof state !== 'object') {
+            throw new Error('批量处理缺少独立状态');
+        }
+        const batchContext = {
+            ...context,
+            runtimeState: state,
+            AppState: state,
+        };
+        const resolved = resolveDeps(deps.processingDeps, batchContext);
+        return createProcessingService({
+            ...resolved,
+            AppState: state,
+            ...overrides,
+        });
+    }
+
     let rerollService = null;
     function getRerollService() {
         if (rerollService) return rerollService;
@@ -75,6 +95,7 @@ export function createCoreServices(deps = {}) {
         tokenMetricsService,
         exportFormatService,
         getProcessingService,
+        createProcessingServiceForState,
         getRerollService,
         getRerollModals,
     };

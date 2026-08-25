@@ -70,12 +70,17 @@ export function createSettingsPersistenceService(deps) {
 
     function normalizeChapterAssetsApiTarget(value) {
         const target = String(value || '').trim();
-        return target === 'main' ? 'main' : 'director';
+        return ['main', 'director', 'main-then-director'].includes(target) ? target : 'director';
     }
 
     function normalizeChapterAssetsConcurrency(value) {
         const parsed = parseInt(value, 10);
         return Number.isFinite(parsed) ? Math.max(1, Math.min(64, parsed)) : 2;
+    }
+
+    function normalizeBatchFileConcurrency(value) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? Math.max(1, Math.min(5, parsed)) : 2;
     }
 
     function normalizeChapterAssetsBeatCount(value) {
@@ -132,6 +137,11 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.parallelConcurrency = AppState.config.parallel.concurrency;
         AppState.settings.parallelMainConcurrency = AppState.config.parallel.mainConcurrency || AppState.config.parallel.concurrency || 1;
         AppState.settings.parallelDirectorConcurrency = AppState.config.parallel.directorConcurrency || AppState.config.parallel.concurrency || 1;
+        AppState.settings.batchFileConcurrency = normalizeBatchFileConcurrency(
+            document.getElementById('ttw-batch-file-concurrency')?.value
+            ?? AppState.settings.batchFileConcurrency
+            ?? defaultSettings.batchFileConcurrency,
+        );
         AppState.settings.parallelMode = AppState.config.parallel.mode;
         AppState.settings.chapterCompletionMode = document.getElementById('ttw-chapter-completion-mode')?.value || AppState.settings.chapterCompletionMode || 'consistency';
         AppState.settings.categoryLightSettings = { ...AppState.config.categoryLight };
@@ -289,6 +299,7 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.chapterAssetsUseSpecializedPreset = parsed.chapterAssetsUseSpecializedPreset === true;
                 AppState.settings.chapterAssetsApiTarget = normalizeChapterAssetsApiTarget(parsed.chapterAssetsApiTarget || AppState.settings.chapterAssetsApiTarget);
                 AppState.settings.chapterAssetsConcurrency = normalizeChapterAssetsConcurrency(parsed.chapterAssetsConcurrency ?? AppState.settings.chapterAssetsConcurrency);
+                AppState.settings.batchFileConcurrency = normalizeBatchFileConcurrency(parsed.batchFileConcurrency ?? AppState.settings.batchFileConcurrency ?? defaultSettings.batchFileConcurrency);
                 AppState.settings.chapterAssetsWaitForPrevious = parsed.chapterAssetsWaitForPrevious ?? AppState.settings.chapterAssetsWaitForPrevious ?? true;
                 AppState.settings.chapterAssetsLocalBeatCount = normalizeChapterAssetsBeatCount(parsed.chapterAssetsLocalBeatCount ?? AppState.settings.chapterAssetsLocalBeatCount);
                 AppState.settings.chapterAssetsLocalSearchWindow = normalizeChapterAssetsSearchWindow(parsed.chapterAssetsLocalSearchWindow ?? AppState.settings.chapterAssetsLocalSearchWindow);

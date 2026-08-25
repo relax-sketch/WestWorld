@@ -144,6 +144,7 @@ function buildDirectorCutSettingsHtml() {
                 <select id="ttw-chapter-assets-api-target" class="ttw-select">
                     <option value="director">导演AI</option>
                     <option value="main">主AI</option>
+                    <option value="main-then-director">主AI失败后切导演AI</option>
                 </select>
             </label>
             <label style="display:flex;flex-direction:column;gap:5px;margin:0;">
@@ -796,14 +797,30 @@ function buildFileUploadSectionHtml() {
                 <button id="ttw-restore-snapshot" class="ttw-btn-small" title="从本地快照恢复上次任务（仅在你主动点击时触发）">🗂 读取任务快照</button>
                 <button id="ttw-import-task" class="ttw-btn-small" title="导入工程包并恢复章节队列、故事大纲、当前章节概览与世界书">📥 导入工程包</button>
                 <button id="ttw-export-task" class="ttw-btn-small" title="导出完整工程包，后续可一键恢复">📤 导出工程包</button>
+                <button id="ttw-batch-import" class="ttw-btn-small" title="导入批量工程包ZIP">📥 导入批量ZIP</button>
+                <button id="ttw-batch-export" class="ttw-btn-small" title="导出全部批量工程包ZIP">📦 导出批量ZIP</button>
+                <button id="ttw-batch-restore" class="ttw-btn-small" title="从IndexedDB恢复最近批量任务">🗂 恢复批量任务</button>
             </div>
         </div>
         <div class="ttw-section-content">
-            <div class="ttw-setting-hint" style="margin-bottom:8px;">💾 工程包会保存：章节队列、故事大纲、当前章节开场白状态、世界书与处理进度。</div>
+            <div class="ttw-setting-hint" style="margin-bottom:8px;">💾 工程包会保存：章节队列、故事大纲、当前章节开场白状态、世界书与处理进度。可一次选择多个 TXT，文件之间相互隔离并共享全局 API 限流。</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px;background:rgba(52,152,219,0.08);border:1px solid rgba(52,152,219,0.2);border-radius:6px;">
+                <span style="font-size:12px;color:var(--ttw-text-secondary);">批量文件并发</span>
+                <input type="number" id="ttw-batch-file-concurrency" class="ttw-input" min="1" max="5" value="2" style="width:64px;">
+                <span style="font-size:11px;color:var(--ttw-text-muted);">范围 1-5；章节资产、主 AI、导演 AI 仍使用各自总并发。</span>
+                <button id="ttw-batch-export-success" class="ttw-btn ttw-btn-small">✅ 导出成功项</button>
+                <button id="ttw-batch-export-selected" class="ttw-btn ttw-btn-small">🎯 导出选中文件</button>
+                <button id="ttw-batch-pause-selected" class="ttw-btn ttw-btn-small">⏸ 暂停选中</button>
+                <button id="ttw-batch-resume-selected" class="ttw-btn ttw-btn-small">▶ 恢复选中</button>
+                <button id="ttw-batch-retry-selected" class="ttw-btn ttw-btn-small">🔁 重试失败章节</button>
+                <button id="ttw-batch-cancel-selected" class="ttw-btn ttw-btn-small ttw-btn-warning">⏹ 取消选中</button>
+                <input type="file" id="ttw-batch-import-input" accept=".zip,application/zip" style="display:none;">
+            </div>
+            <div id="ttw-batch-job-list" style="display:none;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.16);border-radius:6px;font-size:12px;"></div>
             <div class="ttw-upload-area" id="ttw-upload-area">
                 <div style="font-size:48px;margin-bottom:12px;">📁</div>
-                <div style="font-size:14px;opacity:0.8;">点击或拖拽TXT文件到此处</div>
-                <input type="file" id="ttw-file-input" accept=".txt" style="display:none;">
+                <div style="font-size:14px;opacity:0.8;">点击或拖拽一个或多个 TXT 文件到此处</div>
+                <input type="file" id="ttw-file-input" accept=".txt" multiple style="display:none;">
             </div>
             <div id="ttw-file-info" class="ttw-file-info">
                 <span id="ttw-file-name"></span>
@@ -1151,6 +1168,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const chapterAssetsConcurrencyEl = document.getElementById('ttw-chapter-assets-concurrency');
     if (chapterAssetsConcurrencyEl) chapterAssetsConcurrencyEl.value = AppState.settings.chapterAssetsConcurrency || 2;
+
+    const batchFileConcurrencyEl = document.getElementById('ttw-batch-file-concurrency');
+    if (batchFileConcurrencyEl) batchFileConcurrencyEl.value = Math.max(1, Math.min(5, Number(AppState.settings.batchFileConcurrency || 2)));
 
     const chapterAssetsWaitPreviousEl = document.getElementById('ttw-chapter-assets-wait-previous');
     if (chapterAssetsWaitPreviousEl) chapterAssetsWaitPreviousEl.checked = AppState.settings.chapterAssetsWaitForPrevious !== false;

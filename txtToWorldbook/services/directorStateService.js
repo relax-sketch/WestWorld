@@ -115,6 +115,9 @@ export function ensureMemoryDirectorRuntime(memory, index = 0) {
     if (typeof memory.chapterAssetsSource !== 'string') {
         memory.chapterAssetsSource = '';
     }
+    if (typeof memory.chapterAssetsApiSource !== 'string') {
+        memory.chapterAssetsApiSource = '';
+    }
     if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
         memory.chapterScript = { keyNodes: [], beats: [] };
     }

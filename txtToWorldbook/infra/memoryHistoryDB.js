@@ -8,6 +8,8 @@
         rollStoreName: 'rolls',
         categoriesStoreName: 'categories',
         entryRollStoreName: 'entryRolls', // 新增：条目级别Roll历史
+        jobsStoreName: 'jobs',
+        batchesStoreName: 'batches',
         resolvedDbName: '',
         db: null,
         stateSaveThrottleMs: 10000,
@@ -45,7 +47,7 @@
             if (this.db) return this.db;
             const activeDbName = await this.resolveDbName();
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(activeDbName, 7); // 升级版本号
+                const request = indexedDB.open(activeDbName, 8); // 保留 currentState，新增批量任务存储
                 request.onupgradeneeded = (event) => {
                     const db = event.target.result;
                     let historyStore;
@@ -81,6 +83,15 @@
                         const entryRollStore = db.createObjectStore(this.entryRollStoreName, { keyPath: 'id', autoIncrement: true });
                         entryRollStore.createIndex('entryKey', 'entryKey', { unique: false }); // category:entryName
                         entryRollStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains(this.jobsStoreName)) {
+                        const jobsStore = db.createObjectStore(this.jobsStoreName, { keyPath: 'jobId' });
+                        jobsStore.createIndex('batchId', 'batchId', { unique: false });
+                        jobsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains(this.batchesStoreName)) {
+                        const batchesStore = db.createObjectStore(this.batchesStoreName, { keyPath: 'batchId' });
+                        batchesStore.createIndex('updatedAt', 'updatedAt', { unique: false });
                     }
                 };
                 request.onsuccess = (event) => {
@@ -456,6 +467,116 @@
                 const store = transaction.objectStore(this.stateStoreName);
                 const request = store.get('currentState');
                 request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async saveJobSnapshot(job, options = {}) {
+            const source = job && typeof job === 'object' ? job : {};
+            const jobId = String(source.jobId || '').trim();
+            if (!jobId) throw new Error('批量任务缺少 jobId');
+            const db = await this.openDB();
+            const record = {
+                jobId,
+                batchId: source.batchId || null,
+                value: JSON.parse(JSON.stringify(source)),
+                updatedAt: Date.now(),
+            };
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction([this.jobsStoreName], 'readwrite');
+                const request = transaction.objectStore(this.jobsStoreName).put(record);
+                request.onsuccess = () => resolve(record);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async loadJobSnapshot(jobId) {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.jobsStoreName], 'readonly')
+                    .objectStore(this.jobsStoreName)
+                    .get(String(jobId || ''));
+                request.onsuccess = () => resolve(request.result?.value || null);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async listJobSnapshots(batchId = null) {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.jobsStoreName], 'readonly')
+                    .objectStore(this.jobsStoreName)
+                    .getAll();
+                request.onsuccess = () => {
+                    const values = (request.result || [])
+                        .filter((record) => batchId == null || record.batchId === batchId)
+                        .map((record) => record.value)
+                        .filter(Boolean);
+                    resolve(values);
+                };
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async deleteJobSnapshot(jobId) {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.jobsStoreName], 'readwrite')
+                    .objectStore(this.jobsStoreName)
+                    .delete(String(jobId || ''));
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async saveBatchSnapshot(batch) {
+            const source = batch && typeof batch === 'object' ? batch : {};
+            const batchId = String(source.batchId || '').trim();
+            if (!batchId) throw new Error('批次缺少 batchId');
+            const db = await this.openDB();
+            const record = {
+                batchId,
+                value: JSON.parse(JSON.stringify(source)),
+                updatedAt: Date.now(),
+            };
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.batchesStoreName], 'readwrite')
+                    .objectStore(this.batchesStoreName)
+                    .put(record);
+                request.onsuccess = () => resolve(record);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async loadBatchSnapshot(batchId) {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.batchesStoreName], 'readonly')
+                    .objectStore(this.batchesStoreName)
+                    .get(String(batchId || ''));
+                request.onsuccess = () => resolve(request.result?.value || null);
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async listBatchSnapshots() {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.batchesStoreName], 'readonly')
+                    .objectStore(this.batchesStoreName)
+                    .getAll();
+                request.onsuccess = () => resolve((request.result || []).map((record) => record.value).filter(Boolean));
+                request.onerror = () => reject(request.error);
+            });
+        },
+
+        async deleteBatchSnapshot(batchId) {
+            const db = await this.openDB();
+            return new Promise((resolve, reject) => {
+                const request = db.transaction([this.batchesStoreName], 'readwrite')
+                    .objectStore(this.batchesStoreName)
+                    .delete(String(batchId || ''));
+                request.onsuccess = () => resolve();
                 request.onerror = () => reject(request.error);
             });
         },

@@ -144,6 +144,18 @@ export function bindExportEvents(deps = {}) {
         restoreTaskSnapshot,
         loadTaskState,
         saveTaskState,
+        saveCurrentSettings,
+        downloadBatchAll,
+        downloadBatchSuccess,
+        downloadBatchSelected,
+        openBatchImport,
+        loadBatchFile,
+        restoreLatestBatch,
+        pauseBatchSelected,
+        resumeBatchSelected,
+        retryBatchSelected,
+        cancelBatchSelected,
+        ErrorHandler,
         exportSettings,
         importSettings,
         exportCharacterCard,
@@ -169,6 +181,40 @@ export function bindExportEvents(deps = {}) {
     }
     document.getElementById('ttw-import-task').addEventListener('click', loadTaskState);
     document.getElementById('ttw-export-task').addEventListener('click', saveTaskState);
+    const batchExportBtn = document.getElementById('ttw-batch-export');
+    if (batchExportBtn && typeof downloadBatchAll === 'function') batchExportBtn.addEventListener('click', downloadBatchAll);
+    const batchExportSuccessBtn = document.getElementById('ttw-batch-export-success');
+    if (batchExportSuccessBtn && typeof downloadBatchSuccess === 'function') batchExportSuccessBtn.addEventListener('click', downloadBatchSuccess);
+    const batchExportSelectedBtn = document.getElementById('ttw-batch-export-selected');
+    if (batchExportSelectedBtn && typeof downloadBatchSelected === 'function') batchExportSelectedBtn.addEventListener('click', downloadBatchSelected);
+    const batchImportBtn = document.getElementById('ttw-batch-import');
+    if (batchImportBtn && typeof openBatchImport === 'function') batchImportBtn.addEventListener('click', openBatchImport);
+    const batchRestoreBtn = document.getElementById('ttw-batch-restore');
+    if (batchRestoreBtn && typeof restoreLatestBatch === 'function') batchRestoreBtn.addEventListener('click', restoreLatestBatch);
+    const batchImportInput = document.getElementById('ttw-batch-import-input');
+    if (batchImportInput && typeof loadBatchFile === 'function') {
+        batchImportInput.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            Promise.resolve(loadBatchFile(file)).catch((error) => {
+                ErrorHandler?.showUserError?.(`批量工程包导入失败：${error?.message || error}`);
+            }).finally(() => {
+                event.target.value = '';
+            });
+        });
+    }
+    const batchConcurrencyInput = document.getElementById('ttw-batch-file-concurrency');
+    if (batchConcurrencyInput && typeof saveCurrentSettings === 'function') {
+        batchConcurrencyInput.addEventListener('change', () => saveCurrentSettings());
+    }
+    const batchPauseBtn = document.getElementById('ttw-batch-pause-selected');
+    if (batchPauseBtn && typeof pauseBatchSelected === 'function') batchPauseBtn.addEventListener('click', pauseBatchSelected);
+    const batchResumeBtn = document.getElementById('ttw-batch-resume-selected');
+    if (batchResumeBtn && typeof resumeBatchSelected === 'function') batchResumeBtn.addEventListener('click', resumeBatchSelected);
+    const batchRetryBtn = document.getElementById('ttw-batch-retry-selected');
+    if (batchRetryBtn && typeof retryBatchSelected === 'function') batchRetryBtn.addEventListener('click', retryBatchSelected);
+    const batchCancelBtn = document.getElementById('ttw-batch-cancel-selected');
+    if (batchCancelBtn && typeof cancelBatchSelected === 'function') batchCancelBtn.addEventListener('click', cancelBatchSelected);
     document.getElementById('ttw-export-settings').addEventListener('click', exportSettings);
     document.getElementById('ttw-import-settings').addEventListener('click', importSettings);
     document.getElementById('ttw-export-json').addEventListener('click', exportCharacterCard);
@@ -245,10 +291,10 @@ export function bindFileEvents(deps = {}) {
         e.preventDefault();
         uploadArea.style.borderColor = '#555';
         uploadArea.style.background = 'transparent';
-        if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files);
     });
     fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) handleFileSelect(e.target.files[0]);
+        if (e.target.files.length > 0) handleFileSelect(e.target.files);
     });
 
     document.getElementById('ttw-clear-file').addEventListener('click', handleClearFile);

@@ -102,7 +102,9 @@ export function createProcessingService(deps = {}) {
 
     function isRunActive(runId) {
         if (!runId) return true;
-        return AppState.processing.runId === runId && !AppState.processing.isStopped;
+        return AppState.processing.runId === runId
+            && !AppState.processing.isStopped
+            && !AppState.processing.abortSignal?.aborted;
     }
 
     function throwIfRunInactive(runId) {
@@ -131,9 +133,15 @@ export function createProcessingService(deps = {}) {
     }
 
     function resolveChapterAssetsApiTarget() {
-        return String(AppState.settings?.chapterAssetsApiTarget || '').trim() === 'main'
-            ? 'main'
+        const target = String(AppState.settings?.chapterAssetsApiTarget || '').trim();
+        return ['main', 'director', 'main-then-director'].includes(target)
+            ? target
             : 'director';
+    }
+
+    function resolveChapterAssetsApiTargets() {
+        const target = resolveChapterAssetsApiTarget();
+        return target === 'main-then-director' ? ['main', 'director'] : [target];
     }
 
     function shouldWaitForPreviousChapterAssets() {
@@ -178,7 +186,7 @@ export function createProcessingService(deps = {}) {
         let acquired = false;
         try {
             throwIfRunInactive(runId);
-            await semaphore.acquire();
+            await semaphore.acquire(AppState.processing?.abortSignal);
             acquired = true;
             throwIfRunInactive(runId);
             return await fn();
@@ -256,6 +264,32 @@ export function createProcessingService(deps = {}) {
 
             await new Promise((resolve) => setTimeout(resolve, 120));
         }
+    }
+
+    function waitForChapterAssetRetryDelay(delay, runId) {
+        const signal = AppState.processing?.abortSignal;
+        if (!signal) {
+            return new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        if (signal.aborted) return Promise.reject(new Error('ABORTED'));
+        return new Promise((resolve, reject) => {
+            let timer = null;
+            const onAbort = () => {
+                if (timer === null) return;
+                clearTimeout(timer);
+                timer = null;
+                signal.removeEventListener('abort', onAbort);
+                reject(new Error('ABORTED'));
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            timer = setTimeout(() => {
+                timer = null;
+                signal.removeEventListener('abort', onAbort);
+                resolve();
+            }, delay);
+        }).then(() => {
+            throwIfRunInactive(runId);
+        });
     }
 
     function extractStatusCode(error) {
@@ -518,6 +552,9 @@ export function createProcessingService(deps = {}) {
         if (typeof memory.chapterAssetsSource !== 'string') {
             memory.chapterAssetsSource = '';
         }
+        if (typeof memory.chapterAssetsApiSource !== 'string') {
+            memory.chapterAssetsApiSource = '';
+        }
         if (!memory.chapterScript || typeof memory.chapterScript !== 'object') {
             memory.chapterScript = { keyNodes: [], beats: [] };
         }
@@ -654,7 +691,11 @@ export function createProcessingService(deps = {}) {
 
         try {
             updateStreamContent(`🎯 [第${chapterIndex}章] 发起入场事件精炼请求（${beats.length}个节拍）\n`);
-            const response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, chapterIndex));
+            const response = await runWithApiSemaphore('main', runId, async () => callAPI(
+                prompt,
+                chapterIndex,
+                { signal: AppState.processing?.abortSignal },
+            ));
             const parsed = extractJsonObject(response);
             if (parsed?.entry_events && Array.isArray(parsed.entry_events)) {
                 parsed.entry_events.forEach((item) => {
@@ -2029,7 +2070,7 @@ export function createProcessingService(deps = {}) {
         };
     }
 
-    function validateChapterAssetsOrThrow(assets, memory, index) {
+    function validateChapterAssetsOrThrow(assets, memory, index, apiLabel = '导演API') {
         const beats = Array.isArray(assets?.script?.beats) ? assets.script.beats : [];
         const beatSummary = summarizeBeatOriginalText(beats);
         if (beats.length < 3 || beats.length > 8) {
@@ -2056,7 +2097,7 @@ export function createProcessingService(deps = {}) {
                     beats: debugBeats,
                 }, null, 2);
                 if (typeof updateStreamContent === 'function') {
-                    updateStreamContent(`⚠️ [第${index + 1}章][导演API] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
+                    updateStreamContent(`⚠️ [第${index + 1}章][${apiLabel}] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
                 }
                 throw createChapterAssetsValidationError(index, `第${i + 1}个节拍原文为空`, {
                     beatIndex: i + 1,
@@ -2186,8 +2227,10 @@ export function createProcessingService(deps = {}) {
     }
 
     function normalizeToNewContract(parsed, memory, index, meta = {}) {
-        const fallbackOutline = toShortOutline(memory?.content || '', 200) || `${memory?.chapterTitle || `第${index + 1}章`}剧情推进。`;
-        const outline = toShortOutline(parsed?.outline || parsed?.summary || parsed?.chapter_outline || '', 200) || fallbackOutline;
+        const outline = toShortOutline(parsed?.outline || parsed?.summary || parsed?.chapter_outline || '', 200);
+        if (!outline) {
+            throw createChapterAssetsContractError(index, '导演响应缺少 outline');
+        }
 
         const parsedScriptCandidate = parsed?.script || parsed?.chapterScript || null;
         if (parsedScriptCandidate && typeof parsedScriptCandidate === 'object' && Array.isArray(parsedScriptCandidate.beats)) {
@@ -2360,7 +2403,7 @@ export function createProcessingService(deps = {}) {
         });
     }
 
-    function appendDirectorRawResponseDebug(index, error) {
+    function appendDirectorRawResponseDebug(index, error, apiLabel = '导演API') {
         const detail = error?.detail && typeof error.detail === 'object' ? error.detail : {};
         const rawDebugPreview = typeof detail.rawDebugPreview === 'string'
             ? detail.rawDebugPreview
@@ -2377,7 +2420,7 @@ export function createProcessingService(deps = {}) {
             : '';
         const lengthLabel = Number.isFinite(rawLength) ? `（${rawLength} 字符）` : '';
         updateStreamContent(
-            `📄 [第${index + 1}章][导演API] 原始响应预览${lengthLabel}（用于排查非JSON）:\n`
+            `📄 [第${index + 1}章][${apiLabel}] 原始响应预览${lengthLabel}（用于排查非JSON）:\n`
             + '```text\n'
             + `${text}${truncated}\n`
             + '```\n'
@@ -2425,20 +2468,49 @@ export function createProcessingService(deps = {}) {
         };
     }
 
-    function getChapterAssetsApiCaller() {
-        const target = resolveChapterAssetsApiTarget();
-        if (target === 'main') {
+    function getChapterAssetsApiCaller(target = resolveChapterAssetsApiTarget()) {
+        const normalizedTarget = ['main', 'director'].includes(target) ? target : 'director';
+        if (normalizedTarget === 'main') {
             return {
-                target,
+                target: normalizedTarget,
                 label: '主API',
                 caller: callAPI,
             };
         }
         return {
-            target,
+            target: normalizedTarget,
             label: '导演API',
             caller: typeof callDirectorAPI === 'function' ? callDirectorAPI : callAPI,
         };
+    }
+
+    function getChapterAssetsApiRouteLabel() {
+        return resolveChapterAssetsApiTargets()
+            .map((target) => getChapterAssetsApiCaller(target).label)
+            .join('→');
+    }
+
+    function getChapterAssetsRouteSource(target) {
+        const targets = resolveChapterAssetsApiTargets();
+        if (target === 'director' && targets.length > 1 && targets[0] === 'main') {
+            return 'director-after-main';
+        }
+        return target;
+    }
+
+    function resolveChapterAssetsRetryLimit(maxRetries = AppState.settings?.chapterOutlineMaxRetries ?? 1) {
+        const configuredRetries = Number(maxRetries);
+        return Number.isFinite(configuredRetries)
+            ? Math.max(0, Math.min(3, Math.round(configuredRetries)))
+            : 1;
+    }
+
+    function tagChapterAssetsFailure(error, apiRoute) {
+        if (error && typeof error === 'object') {
+            error.chapterAssetsApiTarget = apiRoute.target;
+            error.chapterAssetsApiLabel = apiRoute.label;
+        }
+        return error;
     }
 
     function getLocalPolishPromptTemplate() {
@@ -2515,9 +2587,12 @@ export function createProcessingService(deps = {}) {
 
     function storePolishFailureDraft(memory, index, localAssets, error) {
         memory.chapterAssetsDraft = createChapterAssetsDraft(localAssets, error);
+        memory.chapterAssetsSource = 'local-presplit-only';
+        memory.chapterAssetsApiSource = 'local-presplit-only';
         memory.chapterOutlineStatus = 'polish_failed';
         memory.chapterOutlineError = compactErrorMessage(error || new Error('AI补全失败'));
-        updateStreamContent(`🛑 [第${index + 1}章][AI补全] 补全失败，已保留本地预切草稿等待用户选择: ${memory.chapterOutlineError}\n`);
+        const apiLabel = error?.chapterAssetsApiLabel || 'AI补全';
+        updateStreamContent(`🛑 [第${index + 1}章][${apiLabel}][AI补全] 补全失败，已保留本地预切草稿等待用户选择: ${memory.chapterOutlineError}\n`);
         updateMemoryQueueUI();
     }
 
@@ -2582,7 +2657,7 @@ export function createProcessingService(deps = {}) {
         return merged;
     }
 
-    function parseChapterAssetsPolishResponse(response, localAssets, memory, index) {
+    function parseChapterAssetsPolishResponse(response, localAssets, memory, index, apiLabel = '导演API') {
         const rawLength = String(response || '').length;
         const rawPreview = String(response || '').replace(/\s+/g, ' ').slice(0, 180);
         const repairMeta = {};
@@ -2639,7 +2714,7 @@ export function createProcessingService(deps = {}) {
                     : null,
             },
         };
-        validateChapterAssetsOrThrow(assets, memory, index);
+        validateChapterAssetsOrThrow(assets, memory, index, apiLabel);
         return assets;
     }
 
@@ -2647,6 +2722,7 @@ export function createProcessingService(deps = {}) {
         memory.chapterOutline = assets.outline;
         memory.chapterScript = assets.script;
         memory.chapterAssetsSource = source;
+        memory.chapterAssetsApiSource = assets?.meta?.routeSource || assets?.meta?.apiTarget || '';
         memory.chapterAssetsDraft = null;
         const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
         memory.chapterCurrentBeatIndex = beatCount > 0
@@ -2654,7 +2730,8 @@ export function createProcessingService(deps = {}) {
             : 0;
         memory.chapterOutlineStatus = 'done';
         memory.chapterOutlineError = '';
-        updateStreamContent(`✅ [第${index + 1}章][AI补全] 章节资产写入完成，source=${source}, beats=${beatCount}\n`);
+        const apiLabel = assets?.meta?.apiLabel || 'AI补全';
+        updateStreamContent(`✅ [第${index + 1}章][${apiLabel}][AI补全] 章节资产写入完成，source=${source}, beats=${beatCount}\n`);
         updateMemoryQueueUI();
         return assets;
     }
@@ -2665,37 +2742,48 @@ export function createProcessingService(deps = {}) {
             maxRetries = AppState.settings.chapterOutlineMaxRetries ?? 1,
             runId = null,
         } = options;
-        const configuredRetries = Number(maxRetries);
-        const retryLimit = Number.isFinite(configuredRetries)
-            ? Math.max(0, Math.min(3, Math.round(configuredRetries)))
-            : 1;
-        const apiRoute = getChapterAssetsApiCaller();
         let lastError = null;
-
-        for (let attempt = 0; attempt <= retryLimit; attempt++) {
-            try {
-                throwIfRunInactive(runId);
-                const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
-                const prompt = buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
-                updateStreamContent(`🧩 [第${index + 1}章][AI补全] 经${apiRoute.label}发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
-                const response = await runWithApiSemaphore('chapter-assets', runId, async () => apiRoute.caller(prompt, taskId));
-                updateStreamContent(`✅ [第${index + 1}章][AI补全] ${apiRoute.label}请求成功，响应 ${String(response || '').length} 字符\n`);
-                const assets = parseChapterAssetsPolishResponse(response, localAssets, memory, index);
-                updateStreamContent(`🔎 [第${index + 1}章][AI补全] 响应校验通过，beats=${assets.script.beats.length}\n`);
-                return assets;
-            } catch (error) {
-                lastError = error;
-                if (error?.message === 'ABORTED') throw error;
-                const canRetry = shouldRetryError(error);
-                const brief = formatProcessingError(error, { chapterIndex: index + 1, task: 'AI补全' });
-                if (attempt < retryLimit && isRunActive(runId) && canRetry) {
-                    const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-                    updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
-                    await new Promise((resolve) => setTimeout(resolve, delay));
-                    continue;
+        for (const target of resolveChapterAssetsApiTargets()) {
+            const apiRoute = getChapterAssetsApiCaller(target);
+            const retryLimit = resolveChapterAssetsRetryLimit(maxRetries);
+            lastError = null;
+            for (let attempt = 0; attempt <= retryLimit; attempt++) {
+                try {
+                    throwIfRunInactive(runId);
+                    const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
+                    const prompt = buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
+                    updateStreamContent(`🧩 [第${index + 1}章][${apiRoute.label}][AI补全] 发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}，${apiRoute.target === 'main' ? '主AI' : '导演AI'}尝试 ${attempt + 1}/${retryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
+                    const response = await runWithApiSemaphore(apiRoute.target, runId, async () => apiRoute.caller(
+                        prompt,
+                        taskId,
+                        { signal: AppState.processing?.abortSignal },
+                    ));
+                    updateStreamContent(`✅ [第${index + 1}章][${apiRoute.label}][AI补全] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                    const assets = parseChapterAssetsPolishResponse(response, localAssets, memory, index, apiRoute.label);
+                    assets.meta.apiTarget = apiRoute.target;
+                    assets.meta.apiLabel = apiRoute.label;
+                    assets.meta.routeSource = getChapterAssetsRouteSource(apiRoute.target);
+                    updateStreamContent(`🔎 [第${index + 1}章][${apiRoute.label}][AI补全] 响应校验通过，beats=${assets.script.beats.length}\n`);
+                    return assets;
+                } catch (error) {
+                    lastError = tagChapterAssetsFailure(error, apiRoute);
+                    if (error?.message === 'ABORTED') throw error;
+                    const canRetry = shouldRetryError(error);
+                    const brief = formatProcessingError(error, { chapterIndex: index + 1, task: `${apiRoute.label} AI补全` });
+                    if (attempt < retryLimit && isRunActive(runId) && canRetry) {
+                        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+                        updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
+                        await waitForChapterAssetRetryDelay(delay, runId);
+                        continue;
+                    }
+                    updateStreamContent(`❌ ${brief}\n`);
+                    break;
                 }
-                updateStreamContent(`❌ ${brief}\n`);
-                break;
+            }
+
+            if (target !== 'director' && resolveChapterAssetsApiTargets().length > 1) {
+                updateStreamContent(`⚠️ [第${index + 1}章][${apiRoute.label}] 最终失败，主AI最终失败，切换导演AI目标（切换导演API目标，不受可重试性限制）\n`);
+                continue;
             }
         }
 
@@ -2742,6 +2830,7 @@ export function createProcessingService(deps = {}) {
                 taskId,
                 runId,
             });
+            throwIfRunInactive(runId);
             return commitPolishedAssets(memory, index, assets, 'local-presplit-ai-polish');
         } catch (error) {
             if (error?.message === 'ABORTED') throw error;
@@ -2767,11 +2856,6 @@ export function createProcessingService(deps = {}) {
             maxRetries = AppState.settings.chapterOutlineMaxRetries ?? 1,
             runId = null,
         } = options;
-        const configuredRetries = Number(maxRetries);
-        const contractRetryLimit = Number.isFinite(configuredRetries)
-            ? Math.max(0, Math.min(3, Math.round(configuredRetries)))
-            : 1;
-
         throwIfRunInactive(runId);
 
         // 一致性优先：默认等上一章状态落稳后再构造“上一章摘要”上下文；高并发模式可在设置中关闭等待。
@@ -2793,7 +2877,7 @@ export function createProcessingService(deps = {}) {
         updateMemoryQueueUI();
 
         let lastError = null;
-        const apiRoute = getChapterAssetsApiCaller();
+        let lastApiRoute = getChapterAssetsApiCaller('director');
         const commitAssets = (assets, source = 'director-unknown') => {
             memory.chapterOutline = assets.outline;
             memory.chapterScript = assets.script;
@@ -2810,100 +2894,126 @@ export function createProcessingService(deps = {}) {
             }
             memory.chapterOutlineStatus = 'done';
             memory.chapterOutlineError = '';
-            updateStreamContent(`✅ [第${index + 1}章][导演API] 章节资产校验通过，source=${source}, beats=${beatCount}\n`);
+            const apiLabel = assets?.meta?.apiLabel || lastApiRoute.label;
+            updateStreamContent(`✅ [第${index + 1}章][${apiLabel}] 章节资产校验通过，source=${source}, beats=${beatCount}\n`);
             updateMemoryQueueUI();
             return assets;
         };
 
-        for (let attempt = 0; attempt <= contractRetryLimit; attempt++) {
-            try {
-                throwIfRunInactive(runId);
-                const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
-                const prompt = buildChapterAssetsPrompt(memory, index, retryHint);
-                updateStreamContent(`🧭 [第${index + 1}章][章节资产] 经${apiRoute.label}发起切拍请求（尝试 ${attempt + 1}/${contractRetryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
-                let response = '';
+        for (const target of resolveChapterAssetsApiTargets()) {
+            const apiRoute = getChapterAssetsApiCaller(target);
+            lastApiRoute = apiRoute;
+            const contractRetryLimit = resolveChapterAssetsRetryLimit(maxRetries);
+            lastError = null;
+            for (let attempt = 0; attempt <= contractRetryLimit; attempt++) {
                 try {
-                    response = await runWithApiSemaphore('chapter-assets', runId, async () => apiRoute.caller(prompt, taskId));
-                    updateStreamContent(`✅ [第${index + 1}章][章节资产] ${apiRoute.label}请求成功，响应 ${String(response || '').length} 字符\n`);
-                } catch (apiError) {
-                    if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
-                        updateStreamContent(`❌ [第${index + 1}章][章节资产] ${apiRoute.label}请求失败: ${compactErrorMessage(apiError)}\n`);
+                    throwIfRunInactive(runId);
+                    const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
+                    const prompt = buildChapterAssetsPrompt(memory, index, retryHint);
+                    updateStreamContent(`🧭 [第${index + 1}章][${apiRoute.label}][章节资产] 发起切拍请求（尝试 ${attempt + 1}/${contractRetryLimit + 1}，${apiRoute.target === 'main' ? '主AI' : '导演AI'}尝试 ${attempt + 1}/${contractRetryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
+                    let response = '';
+                    try {
+                        response = await runWithApiSemaphore(apiRoute.target, runId, async () => apiRoute.caller(
+                            prompt,
+                            taskId,
+                            { signal: AppState.processing?.abortSignal },
+                        ));
+                        updateStreamContent(`✅ [第${index + 1}章][${apiRoute.label}][章节资产] 请求成功，响应 ${String(response || '').length} 字符\n`);
+                    } catch (apiError) {
+                        if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
+                            updateStreamContent(`❌ [第${index + 1}章][${apiRoute.label}][章节资产] 请求失败: ${compactErrorMessage(apiError)}\n`);
+                        }
+                        throw apiError;
                     }
-                    throw apiError;
-                }
-                throwIfRunInactive(runId);
-                const rawLen = String(response || '').length;
-                const rawText = String(response || '').trim().slice(0, 4000);
-                const truncatedNote = rawLen > 4000 ? `\n...（已截断，完整响应 ${rawLen} 字符）` : '';
-                updateStreamContent(
-                    `📄 [第${index + 1}章][导演API] AI原始响应（${rawLen} 字符）:\n`
-                    + '```text\n'
-                    + `${rawText}${truncatedNote}\n`
-                    + '```\n'
-                );
-                const assets = parseChapterAssetsResponse(response, memory, index);
+                    throwIfRunInactive(runId);
+                    const rawLen = String(response || '').length;
+                    const rawText = String(response || '').trim().slice(0, 4000);
+                    const truncatedNote = rawLen > 4000 ? `\n...（已截断，完整响应 ${rawLen} 字符）` : '';
+                    updateStreamContent(
+                        `📄 [第${index + 1}章][${apiRoute.label}] AI原始响应（${rawLen} 字符）:\n`
+                        + '```text\n'
+                        + `${rawText}${truncatedNote}\n`
+                        + '```\n'
+                    );
+                    const assets = parseChapterAssetsResponse(response, memory, index);
+                    assets.meta.apiTarget = apiRoute.target;
+                    assets.meta.apiLabel = apiRoute.label;
+                    assets.meta.routeSource = getChapterAssetsRouteSource(apiRoute.target);
 
-                // 新增：用AI从每个节拍前40字精炼入场事件
-                if (assets?.script?.beats?.length > 0) {
-                    await refineBeatsEntryEvents(assets.script.beats, index + 1, runId);
-                }
+                    // 新增：用AI从每个节拍前40字精炼入场事件
+                    if (assets?.script?.beats?.length > 0) {
+                        await refineBeatsEntryEvents(assets.script.beats, index + 1, runId);
+                    }
 
-                const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
-                const sourceTag = assets?.meta?.source || 'director-unknown';
-                updateStreamContent(`🔎 [第${index + 1}章][导演API] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
-                if (beatSummary.emptyBeatIndices.length > 0) {
-                    const beats = assets?.script?.beats || [];
-                    const debugBeats = beats.map((b, i) => ({
-                        index: i + 1,
-                        original_text_length: (b.original_text || '').length,
-                        original_text_preview: String(b.original_text || '').slice(0, 80),
-                        anchor: b._debug_anchor || '',
-                        warnings: b._debug_warnings || [],
-                    }));
-                    const debugJson = JSON.stringify({
-                        emptyBeatIndices: beatSummary.emptyBeatIndices,
-                        lengths: beatSummary.lengths,
-                        anchorStarts: assets?.meta?.anchorStarts || [],
-                        appliedCuts: assets?.meta?.appliedCuts || [],
-                        splitPointAnchors: assets?.meta?.splitPointAnchors || [],
-                        beats: debugBeats,
-                        meta: assets?.meta || {},
-                    }, null, 2);
-                    updateStreamContent(`⚠️ [第${index + 1}章][导演API] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
-                }
-                validateChapterAssetsOrThrow(assets, memory, index);
-                throwIfRunInactive(runId);
-                return commitAssets(assets, sourceTag);
-            } catch (error) {
-                lastError = error;
-                if (error?.message === 'ABORTED') {
-                    throw error;
-                }
+                    const beatSummary = summarizeBeatOriginalText(assets?.script?.beats);
+                    const sourceTag = assets?.meta?.source || 'director-unknown';
+                    const routeSource = assets?.meta?.routeSource || getChapterAssetsRouteSource(apiRoute.target);
+                    updateStreamContent(`🔎 [第${index + 1}章][${apiRoute.label}] 响应解析完成: source=${sourceTag}, beats=${beatSummary.count}, 空原文节拍=${beatSummary.emptyBeatIndices.length}${beatSummary.emptyBeatIndices.length ? `(${beatSummary.emptyBeatIndices.join(',')})` : ''}\n`);
+                    if (beatSummary.emptyBeatIndices.length > 0) {
+                        const beats = assets?.script?.beats || [];
+                        const debugBeats = beats.map((b, i) => ({
+                            index: i + 1,
+                            original_text_length: (b.original_text || '').length,
+                            original_text_preview: String(b.original_text || '').slice(0, 80),
+                            anchor: b._debug_anchor || '',
+                            warnings: b._debug_warnings || [],
+                        }));
+                        const debugJson = JSON.stringify({
+                            emptyBeatIndices: beatSummary.emptyBeatIndices,
+                            lengths: beatSummary.lengths,
+                            anchorStarts: assets?.meta?.anchorStarts || [],
+                            appliedCuts: assets?.meta?.appliedCuts || [],
+                            splitPointAnchors: assets?.meta?.splitPointAnchors || [],
+                            beats: debugBeats,
+                            meta: assets?.meta || {},
+                        }, null, 2);
+                        updateStreamContent(`⚠️ [第${index + 1}章][${apiRoute.label}] 空原文节拍调试JSON:\n\`\`\`json\n${debugJson}\n\`\`\`\n`);
+                    }
+                    validateChapterAssetsOrThrow(assets, memory, index);
+                    throwIfRunInactive(runId);
+                    // Keep the legacy marker for legacy single-route
+                    // snapshots, while exposing the actual route handoff for
+                    // new assets and the main-then-director fallback.
+                    const committedSource = resolveChapterAssetsApiTargets().length === 1
+                        && sourceTag === 'legacy-script'
+                        ? sourceTag
+                        : routeSource;
+                    return commitAssets(assets, committedSource);
+                } catch (error) {
+                    lastError = tagChapterAssetsFailure(error, apiRoute);
+                    if (error?.message === 'ABORTED') {
+                        throw error;
+                    }
 
-                const isContractError = error?.code === 'CHAPTER_ASSETS_CONTRACT';
-                const isSplitError = error?.code === 'CHAPTER_ASSETS_SPLIT' || error?.code === 'CHAPTER_ASSETS_VALIDATION';
+                    const isContractError = error?.code === 'CHAPTER_ASSETS_CONTRACT';
+                    const isSplitError = error?.code === 'CHAPTER_ASSETS_SPLIT' || error?.code === 'CHAPTER_ASSETS_VALIDATION';
 
-                if (isContractError && error?.detail?.splitPointIndex) {
-                    updateStreamContent(`ℹ️ [第${index + 1}章][导演API] 契约诊断: split_point[${error.detail.splitPointIndex}] 重点检查 anchor 是否可定位\n`);
-                }
-                if (isContractError) {
-                    appendDirectorRawResponseDebug(index, error);
-                }
+                    if (isContractError && error?.detail?.splitPointIndex) {
+                        updateStreamContent(`ℹ️ [第${index + 1}章][${apiRoute.label}] 契约诊断: split_point[${error.detail.splitPointIndex}] 重点检查 anchor 是否可定位\n`);
+                    }
+                    if (isContractError) {
+                        appendDirectorRawResponseDebug(index, error, apiRoute.label);
+                    }
 
-                const canRetry = shouldRetryError(error);
-                const brief = formatProcessingError(error, { chapterIndex: index + 1, task: '导演API' });
-                if (attempt < contractRetryLimit && isRunActive(runId) && canRetry) {
-                    const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-                    updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
-                    await new Promise((resolve) => setTimeout(resolve, delay));
-                    continue;
+                    const canRetry = shouldRetryError(error);
+                    const brief = formatProcessingError(error, { chapterIndex: index + 1, task: `${apiRoute.label}章节资产` });
+                    if (attempt < contractRetryLimit && isRunActive(runId) && canRetry) {
+                        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+                        updateStreamContent(`⚠️ ${brief}，${delay / 1000}秒后重试...\n`);
+                        await waitForChapterAssetRetryDelay(delay, runId);
+                        continue;
+                    }
+                    if (isSplitError) {
+                        updateStreamContent(`🛑 [第${index + 1}章][${apiRoute.label}] 章节切分失败，已标记该章节失败并继续后续流程（可在章节概览页重roll本章）\n`);
+                    }
+                    if (!canRetry) {
+                        updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
+                    }
                 }
-                if (isSplitError) {
-                    updateStreamContent(`🛑 [第${index + 1}章][导演API] 章节切分失败，已标记该章节失败并继续后续流程（可在章节概览页重roll本章）\n`);
-                }
-                if (!canRetry) {
-                    updateStreamContent(`🛑 ${brief}（不可重试，已停止自动重试）\n`);
-                }
+            }
+
+            if (target !== 'director' && resolveChapterAssetsApiTargets().length > 1) {
+                updateStreamContent(`⚠️ [第${index + 1}章][${apiRoute.label}] 最终失败，主AI最终失败，切换导演AI目标（切换导演API目标，不受可重试性限制）\n`);
             }
         }
 
@@ -2911,13 +3021,17 @@ export function createProcessingService(deps = {}) {
 
         memory.chapterOutlineStatus = 'failed';
         memory.chapterOutlineError = compactErrorMessage(lastError || new Error('大纲生成失败'));
-        updateStreamContent(`❌ [第${index + 1}章][导演API] 章节资产生成失败: ${memory.chapterOutlineError}\n`);
-        updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: '导演API' })}\n`);
+        updateStreamContent(`❌ [第${index + 1}章][${lastApiRoute.label}] 章节资产生成失败: ${memory.chapterOutlineError}\n`);
+        updateStreamContent(`⚠️ ${formatProcessingError(lastError || new Error(memory.chapterOutlineError), { chapterIndex: index + 1, task: `${lastApiRoute.label}章节资产` })}\n`);
         updateMemoryQueueUI();
         throw lastError || new Error(memory.chapterOutlineError);
     }
 
     async function generateChapterAssets(index, options = {}) {
+        const runId = options?.runId || null;
+        if (runId && !AppState.processing.runId) {
+            AppState.processing.runId = runId;
+        }
         const mode = String(AppState.settings?.chapterAssetsMode || 'ai-anchor').trim();
         if (mode === 'local-presplit-ai-polish') {
             return generateChapterAssetsLocalPresplitAiPolish(index, options);
@@ -2935,7 +3049,9 @@ export function createProcessingService(deps = {}) {
         if (!AppState.processing.isRerolling && AppState.processing.isStopped) throw new Error('ABORTED');
         throwIfRunInactive(runId);
 
-        await waitForPreviousChapterReady(index, runId);
+        if (shouldWaitForPreviousChapterAssets()) {
+            await waitForPreviousChapterReady(index, runId);
+        }
         throwIfRunInactive(runId);
 
         ensureChapterRuntime(memory, index);
@@ -2971,7 +3087,7 @@ export function createProcessingService(deps = {}) {
         if (tasks.length === 0) return { failedIndices };
 
         const chapterAssetsConcurrency = resolveChapterAssetsConcurrency();
-        updateStreamContent(`\n🚀 导演切拍并行处理 ${tasks.length} 个章节 (切拍并发: ${chapterAssetsConcurrency}, API路由: ${getChapterAssetsApiCaller().label}, 等待上一章: ${shouldWaitForPreviousChapterAssets() ? '开启' : '关闭'})\n${'='.repeat(50)}\n`);
+        updateStreamContent(`\n🚀 导演切拍并行处理 ${tasks.length} 个章节 (切拍并发: ${chapterAssetsConcurrency}, API路由: ${getChapterAssetsApiRouteLabel()}, 等待上一章: ${shouldWaitForPreviousChapterAssets() ? '开启' : '关闭'})\n${'='.repeat(50)}\n`);
         let completed = 0;
         AppState.globalSemaphore = new Semaphore(chapterAssetsConcurrency);
 
@@ -3087,7 +3203,11 @@ export function createProcessingService(deps = {}) {
                 updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
                 let response = '';
                 try {
-                    response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, taskId));
+                    response = await runWithApiSemaphore('main', runId, async () => callAPI(
+                        prompt,
+                        taskId,
+                        { signal: AppState.processing?.abortSignal },
+                    ));
                     updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
                 } catch (apiError) {
                     if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
@@ -3344,7 +3464,11 @@ ${'='.repeat(50)}
             updateStreamContent(`🧠 [第${chapterIndex}章][主API] 发起世界书请求\n`);
             let response = '';
             try {
-                response = await runWithApiSemaphore('main', runId, async () => callAPI(prompt, chapterIndex));
+                response = await runWithApiSemaphore('main', runId, async () => callAPI(
+                    prompt,
+                    chapterIndex,
+                    { signal: AppState.processing?.abortSignal },
+                ));
                 updateStreamContent(`✅ [第${chapterIndex}章][主API] 请求成功，响应 ${String(response || '').length} 字符\n`);
             } catch (apiError) {
                 if (apiError?.message !== 'ABORTED' && !apiError?.__apiLogged) {
@@ -3757,7 +3881,7 @@ ${'='.repeat(50)}
         const result = await generateChapterAssets(index, {
             force: true,
             taskId: index + 1,
-            maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
+            maxRetries: AppState.settings.chapterOutlineMaxRetries ?? 1,
         });
 
         const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
@@ -3798,7 +3922,7 @@ ${'='.repeat(50)}
         try {
             const assets = await polishLocalPresplitAssets(memory, index, localAssets, {
                 taskId: index + 1,
-                maxRetries: Math.max(1, AppState.settings.chapterOutlineMaxRetries ?? 1),
+                maxRetries: AppState.settings.chapterOutlineMaxRetries ?? 1,
             });
             const result = commitPolishedAssets(memory, index, assets, 'local-presplit-ai-polish');
             const processedCount = AppState.memory.queue.filter((m) => m.processed).length;
@@ -3830,6 +3954,7 @@ ${'='.repeat(50)}
             source: 'local-presplit-only',
         };
         memory.chapterAssetsSource = 'local-presplit-only';
+        memory.chapterAssetsApiSource = 'local-presplit-only';
         memory.chapterAssetsDraft = null;
         memory.chapterCurrentBeatIndex = 0;
         memory.chapterOutlineStatus = 'done';
@@ -3849,6 +3974,8 @@ ${'='.repeat(50)}
         processMemoryChunkIndependent,
         processMemoryChunksParallel,
         processMemoryChunk,
+        processDirectorChunk,
+        generateChapterAssets,
         handleStopProcessing,
         handleStartProcessing,
         handleStartDirectorProcessing,

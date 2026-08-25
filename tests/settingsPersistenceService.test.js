@@ -103,3 +103,35 @@ test('loading saved chapter asset settings does not alter director mode semantic
     assert.equal(AppState.settings.chapterAssetsShowRetryPolishButton, false);
     assert.equal(AppState.settings.chapterAssetsShowUseLocalFallbackButton, true);
 });
+
+test('loading saved chapter asset settings accepts main-then-director routing', () => {
+    assert.equal(defaultSettings.chapterAssetsApiTarget, 'director');
+    globalThis.localStorage = {
+        getItem: () => JSON.stringify({ chapterAssetsApiTarget: 'main-then-director' }),
+        setItem() {},
+    };
+    const AppState = {
+        settings: {},
+        processing: {},
+        config: {
+            parallel: {},
+            chapterRegex: {},
+            categoryDefault: {},
+            entryPosition: {},
+        },
+        persistent: {},
+    };
+    const registry = createPromptRegistryService({ AppState });
+    const service = createSettingsPersistenceService({
+        AppState,
+        defaultSettings,
+        migrateLegacyPromptSettings: registry.migrateLegacySettings,
+        updateSettingsUI() {},
+        updateChapterRegexUI() {},
+        handleProviderChange() {},
+    });
+
+    service.loadSavedSettings();
+
+    assert.equal(AppState.settings.chapterAssetsApiTarget, 'main-then-director');
+});

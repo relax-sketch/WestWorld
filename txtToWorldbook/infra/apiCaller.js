@@ -1,5 +1,41 @@
 ﻿import { Logger } from '../core/logger.js';
 
+function createAbortError() {
+	const error = new Error('ABORTED');
+	error.name = 'AbortError';
+	return error;
+}
+
+function waitWithAbort(delay, signal) {
+	if (signal?.aborted) return Promise.reject(createAbortError());
+	return new Promise((resolve, reject) => {
+		let timer = null;
+		const onAbort = () => {
+			clearTimeout(timer);
+			timer = null;
+			signal.removeEventListener('abort', onAbort);
+			reject(createAbortError());
+		};
+		const cleanupResolve = () => {
+			if (timer === null) return;
+			timer = null;
+				signal?.removeEventListener('abort', onAbort);
+				resolve();
+			};
+			if (signal) signal.addEventListener('abort', onAbort, { once: true });
+			timer = setTimeout(cleanupResolve, delay);
+	});
+}
+
+const responseAbortCleanup = new WeakMap();
+
+function releaseResponseAbort(response) {
+	const cleanup = responseAbortCleanup.get(response);
+	if (!cleanup) return;
+	responseAbortCleanup.delete(response);
+	cleanup();
+}
+
 const APICaller = {
 	/**
 	 * fetchWithTimeout
@@ -10,23 +46,35 @@ const APICaller = {
 	 * @returns {Promise<any>}
 	 */
 	async fetchWithTimeout(url, options = {}, timeout = 120000) {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), timeout);
+				const { signal: externalSignal, ...fetchOptions } = options || {};
+				if (externalSignal?.aborted) throw createAbortError();
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => controller.abort(), timeout);
+				const onExternalAbort = () => controller.abort();
+				if (externalSignal) externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+				let handedOff = false;
+				const cleanup = () => {
+					if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+				};
 
 		try {
 			const response = await fetch(url, {
-				...options,
-				signal: controller.signal
-			});
-			clearTimeout(timeoutId);
-			return response;
-		} catch (error) {
-			clearTimeout(timeoutId);
-			if (error.name === 'AbortError') {
-				throw new Error('请求超时');
-			}
-			throw error;
-		}
+					...fetchOptions,
+					signal: controller.signal
+				});
+					handedOff = true;
+					responseAbortCleanup.set(response, cleanup);
+					return response;
+			} catch (error) {
+				if (externalSignal?.aborted) throw createAbortError();
+				if (error.name === 'AbortError') {
+					throw new Error('请求超时');
+				}
+				throw error;
+				} finally {
+					clearTimeout(timeoutId);
+					if (!handedOff) cleanup();
+				}
 	},
 
 	async request(url, options = {}) {
@@ -78,19 +126,34 @@ const APICaller = {
 		throw new Error('无法从响应中提取有效的JSON');
 	},
 
-	async requestJSON(url, options = {}) {
-		const response = await this.request(url, options);
-		const text = await this.parseResponse(response);
-		return this.extractJSON(text);
-	},
+		async requestJSON(url, options = {}) {
+				const response = await this.request(url, options);
+				let text;
+				try {
+					text = await this.parseResponse(response);
+				} catch (error) {
+					if (options?.signal?.aborted) throw createAbortError();
+					throw error;
+				} finally {
+					releaseResponseAbort(response);
+				}
+			return this.extractJSON(text);
+		},
 
-	async requestText(url, options = {}) {
-		const response = await this.request(url, options);
-		return this.parseResponse(response);
+		async requestText(url, options = {}) {
+				const response = await this.request(url, options);
+				try {
+					return await this.parseResponse(response);
+				} catch (error) {
+					if (options?.signal?.aborted) throw createAbortError();
+					throw error;
+				} finally {
+					releaseResponseAbort(response);
+				}
 	},
 
 	async parseSSEStream(response, config = {}) {
-		const { onChunk = null, inactivityTimeout = 120000 } = config;
+			const { onChunk = null, inactivityTimeout = 120000, signal = null } = config;
 		if (!response.body) {
 			throw new Error('流式响应不可用');
 		}
@@ -194,9 +257,10 @@ const APICaller = {
 		};
 
 		resetInactivityTimer();
-		try {
-			while (true) {
-				const { done, value } = await reader.read();
+			try {
+				while (true) {
+					if (signal?.aborted) throw createAbortError();
+					const { done, value } = await reader.read();
 				if (done) break;
 				resetInactivityTimer();
 				const chunk = decoder.decode(value, { stream: true });
@@ -208,7 +272,10 @@ const APICaller = {
 					consumeLine(line);
 				}
 			}
-		} finally {
+			} catch (error) {
+				if (signal?.aborted) throw createAbortError();
+				throw error;
+			} finally {
 			if (inactivityTimer) clearTimeout(inactivityTimer);
 		}
 
@@ -224,11 +291,15 @@ const APICaller = {
 		return fullContent;
 	},
 
-	async requestStream(url, options = {}) {
-		const { onChunk = null, inactivityTimeout = 120000, ...requestOptions } = options;
-		const response = await this.request(url, requestOptions);
-		return this.parseSSEStream(response, { onChunk, inactivityTimeout });
-	},
+		async requestStream(url, options = {}) {
+				const { onChunk = null, inactivityTimeout = 120000, signal = null, ...requestOptions } = options;
+				const response = await this.request(url, { ...requestOptions, signal });
+				try {
+					return await this.parseSSEStream(response, { onChunk, inactivityTimeout, signal });
+				} finally {
+					releaseResponseAbort(response);
+				}
+		},
 
 	isRateLimitError(error) {
 		const message = String(error?.responseText || error?.message || '').toLowerCase();
@@ -236,19 +307,21 @@ const APICaller = {
 	},
 
 	async withRetry(task, config = {}) {
-		const { retries = 0, onRetry = null, shouldRetry = null } = config;
+		const { retries = 0, onRetry = null, shouldRetry = null, signal = null } = config;
 		let attempt = 0;
 		while (true) {
 			try {
+				if (signal?.aborted) throw createAbortError();
 				return await task(attempt);
 			} catch (error) {
+				if (signal?.aborted) throw createAbortError();
 				const canRetry = attempt < retries && (typeof shouldRetry === 'function' ? shouldRetry(error, attempt) : this.isRateLimitError(error));
 				if (!canRetry) throw error;
 				const delay = Math.pow(2, attempt) * 1000;
 				if (typeof onRetry === 'function') {
 					await onRetry(error, attempt + 1, delay);
 				}
-				await new Promise(resolve => setTimeout(resolve, delay));
+				await waitWithAbort(delay, signal);
 				attempt += 1;
 			}
 		}

@@ -531,6 +531,7 @@ export const defaultSettings = {
     parallelConcurrency: 1,
     parallelMainConcurrency: 2,
     parallelDirectorConcurrency: 2,
+    batchFileConcurrency: 2,
     parallelMode: 'independent',
     chapterCompletionMode: 'throughput',
     useTavernApi: true,

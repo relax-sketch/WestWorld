@@ -165,6 +165,7 @@ export function createTaskStateService(deps = {}) {
             ? normalized.chapterAssetsDraft
             : null;
         normalized.chapterAssetsSource = typeof normalized.chapterAssetsSource === 'string' ? normalized.chapterAssetsSource : '';
+        normalized.chapterAssetsApiSource = typeof normalized.chapterAssetsApiSource === 'string' ? normalized.chapterAssetsApiSource : '';
         normalized.chapterScript = normalizeChapterScript(normalized.chapterScript);
         normalized.chapterOpeningPreview = typeof normalized.chapterOpeningPreview === 'string' ? normalized.chapterOpeningPreview : '';
         normalized.chapterOpeningSent = normalized.chapterOpeningSent === true;

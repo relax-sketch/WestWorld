@@ -98,6 +98,7 @@ export function createShellRuntimeBindings(shellRuntime) {
         modalEventBinder: shellRuntime.modalEventBinder,
         handleFileSelect: shellRuntime.fileImportService.handleFileSelect,
         splitContentIntoMemory: shellRuntime.fileImportService.splitContentIntoMemory,
+        createMemoryQueueFromContent: shellRuntime.fileImportService.createMemoryQueueFromContent,
         handleClearFile: shellRuntime.fileImportService.handleClearFile,
         rechunkMemories: shellRuntime.fileImportService.rechunkMemories,
         saveCurrentSettings: (...args) => shellRuntime.modalRuntimeFacade.saveCurrentSettings(...args),

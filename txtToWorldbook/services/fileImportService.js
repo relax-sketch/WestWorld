@@ -14,11 +14,25 @@ export function createFileImportService(deps = {}) {
         updateWorldbookPreview,
         applyDefaultWorldbookEntries,
         saveCurrentSettings,
+        handleBatchFiles,
     } = deps;
 
     const INLINE_CHAPTER_MARKER_REGEX = /第\s*[零一二三四五六七八九十百千万两〇0-9]+\s*[章回卷节部篇]/giu;
     const INLINE_CHAPTER_BOUNDARY_CHAR_REGEX = /[。！？!?；;，,、”’」』）)\]】》〉]/u;
     async function handleFileSelect(file) {
+        const files = Array.isArray(file)
+            ? file
+            : (file && typeof file !== 'string' && typeof file.length === 'number' && !file.name
+                ? Array.from(file)
+                : null);
+        if (files) {
+            const txtFiles = files.filter((item) => item && typeof item.name === 'string');
+            if (txtFiles.length > 1 && typeof handleBatchFiles === 'function') {
+                return handleBatchFiles(txtFiles);
+            }
+            file = txtFiles[0] || null;
+        }
+        if (!file) return;
         if (!file.name.endsWith('.txt')) {
             ErrorHandler.showUserError('请选择TXT文件');
             return;
@@ -293,6 +307,7 @@ export function createFileImportService(deps = {}) {
             memory.chapterOutlineError = memory.chapterOutlineError || '';
             memory.chapterAssetsDraft = memory.chapterAssetsDraft || null;
             memory.chapterAssetsSource = memory.chapterAssetsSource || '';
+            memory.chapterAssetsApiSource = memory.chapterAssetsApiSource || '';
             memory.chapterScript = memory.chapterScript || { keyNodes: [], beats: [] };
             if (!Array.isArray(memory.chapterScript.beats)) {
                 memory.chapterScript.beats = [];
@@ -426,6 +441,39 @@ export function createFileImportService(deps = {}) {
         ErrorHandler.showUserSuccess(`重新分块完成！\n当前共 ${AppState.memory.queue.length} 个章节`);
     }
 
+    function createMemoryQueueFromContent(content) {
+        const clone = (value, fallback) => {
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (_) {
+                return fallback;
+            }
+        };
+        const isolatedState = {
+            settings: clone(AppState.settings || {}, {}),
+            config: clone(AppState.config || {}, {}),
+            memory: { queue: [] },
+        };
+        const isolatedService = createFileImportService({
+            AppState: isolatedState,
+            MemoryHistoryDB: { saveState: async () => {}, getSavedFileHash: async () => null },
+            Logger: Logger || { info() {}, error() {} },
+            ErrorHandler: ErrorHandler || { showUserError() {} },
+            confirmAction: async () => false,
+            fileUtils,
+            updateMemoryQueueUI() {},
+            updateStartButtonState() {},
+            showQueueSection() {},
+            showProgressSection() {},
+            showResultSection() {},
+            updateWorldbookPreview() {},
+            applyDefaultWorldbookEntries() {},
+            saveCurrentSettings() {},
+        });
+        isolatedService.splitContentIntoMemory(String(content || ''));
+        return isolatedState.memory.queue.map((memory) => clone(memory, memory));
+    }
+
     function createMemoryChunk(content, chunkIndex, chapterTitle = '') {
         return {
             title: `记忆${chunkIndex}`,
@@ -439,6 +487,7 @@ export function createFileImportService(deps = {}) {
             chapterOutlineError: '',
             chapterAssetsDraft: null,
             chapterAssetsSource: '',
+            chapterAssetsApiSource: '',
             chapterScript: { keyNodes: [], beats: [] },
             chapterOpeningPreview: '',
             chapterOpeningSent: false,
@@ -449,6 +498,7 @@ export function createFileImportService(deps = {}) {
     return {
         handleFileSelect,
         splitContentIntoMemory,
+        createMemoryQueueFromContent,
         handleClearFile,
         rechunkMemories,
     };

@@ -12,6 +12,41 @@ function normalizeMessageChain(messages) {
     });
 }
 
+function createAbortError() {
+    const error = new Error('ABORTED');
+    error.name = 'AbortError';
+    return error;
+}
+
+function runWithAbort(factory, signal) {
+    const operation = Promise.resolve().then(() => {
+        if (signal?.aborted) throw createAbortError();
+        return factory();
+    });
+    if (!signal) return operation;
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => signal.removeEventListener('abort', onAbort);
+        const onAbort = () => {
+            if (settled) return;
+            settled = true;
+            reject(createAbortError());
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        operation.then((value) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(value);
+        }, (error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+        });
+    });
+}
+
 export function createApiService(deps = {}) {
     const {
         AppState,
@@ -67,8 +102,9 @@ export function createApiService(deps = {}) {
         return `[${apiTag}]`;
     }
 
-    async function callSillyTavernAPI(messages, taskId = null, preserveRoles = false) {
+    async function callSillyTavernAPI(messages, taskId = null, preserveRoles = false, options = {}) {
         const timeout = AppState.settings.apiTimeout || 120000;
+        const signal = options?.signal;
         const logPrefix = buildApiLogPrefix('main', taskId);
         const promptLength = messages.reduce((total, message) => (
             total + String(message?.content ?? '').length
@@ -85,19 +121,19 @@ export function createApiService(deps = {}) {
 
             const context = SillyTavern.getContext();
             debugLog(`${logPrefix} 获取到SillyTavern上下文`);
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error(`API请求超时 (${timeout / 1000}秒)`)), timeout);
-            });
+            const runWithTimeout = (factory) => runWithAbort(() => Promise.race([
+                factory(),
+                new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error(`API请求超时 (${timeout / 1000}秒)`)), timeout);
+                }),
+            ]), signal);
 
             let result;
 
             if (typeof context.generateRaw === 'function') {
                 try {
                     debugLog(`${logPrefix} 尝试generateRaw消息数组格式 (ST 1.13.2+)`);
-                    result = await Promise.race([
-                        context.generateRaw({ prompt: messages }),
-                        timeoutPromise,
-                    ]);
+                    result = await runWithTimeout(() => context.generateRaw({ prompt: messages }));
                     debugLog(`${logPrefix} generateRaw消息数组格式成功`);
                 } catch (rawError) {
                     if (rawError.message?.includes('超时') || rawError.message?.includes('timeout') ||
@@ -109,18 +145,12 @@ export function createApiService(deps = {}) {
                     }
                     debugLog(`${logPrefix} 消息数组格式不支持(${rawError.message})，回退字符串模式`);
                     updateStreamContent(`⚠️ ${logPrefix} 酒馆不支持消息数组格式，已回退为字符串模式\n`);
-                    result = await Promise.race([
-                        context.generateRaw(messagesToString(messages), '', false),
-                        timeoutPromise,
-                    ]);
+                    result = await runWithTimeout(() => context.generateRaw(messagesToString(messages), '', false));
                 }
             } else if (typeof context.generateQuietPrompt === 'function') {
                 debugLog(`${logPrefix} 使用generateQuietPrompt（字符串模式）`);
                 updateStreamContent(`ℹ️ ${logPrefix} 酒馆API: 使用generateQuietPrompt（字符串模式，消息角色不生效）\n`);
-                result = await Promise.race([
-                    context.generateQuietPrompt(combinedPrompt, false, false),
-                    timeoutPromise,
-                ]);
+                result = await runWithTimeout(() => context.generateQuietPrompt(combinedPrompt, false, false));
             } else {
                 throw new Error('无法找到可用的生成函数');
             }
@@ -139,7 +169,7 @@ export function createApiService(deps = {}) {
             if (isConsolidateTask && isTimeoutError) {
                 updateStreamContent(`⚠️ ${logPrefix} 酒馆API超时，正在回退直连主API重试一次...\n`);
                 try {
-                    const fallbackResult = await callCustomAPI(messages, 'main', taskId);
+                    const fallbackResult = await callCustomAPI(messages, 'main', taskId, { signal });
                     updateStreamContent(`✅ ${logPrefix} 回退直连主API成功\n`);
                     return fallbackResult;
                 } catch (fallbackError) {
@@ -449,9 +479,10 @@ export function createApiService(deps = {}) {
         updateStreamContent(`🧠 ${logPrefix} 思维链(${source})：\n${normalized}\n`);
     }
 
-    async function callCustomAPI(messages, target = 'main', taskId = null) {
+    async function callCustomAPI(messages, target = 'main', taskId = null, options = {}) {
         const maxRetries = 3;
         const timeout = AppState.settings.apiTimeout || 120000;
+        const signal = options?.signal;
         const requestConfig = buildCustomApiRequest(messages, target);
         const promptLength = messages.reduce((total, message) => (
             total + String(message?.content ?? '').length
@@ -486,6 +517,7 @@ export function createApiService(deps = {}) {
                         ...config.requestOptions,
                         timeout,
                         inactivityTimeout: Math.min(timeout, 120000),
+                        signal,
                         onChunk: (_delta, _fullText, parsed) => {
                             const reasoningDelta = extractReasoningFromStreamPayload(parsed);
                             if (!reasoningDelta) return;
@@ -515,6 +547,7 @@ export function createApiService(deps = {}) {
                         const fallbackData = await APICaller.requestJSON(fallbackConfig.requestUrl, {
                             ...fallbackConfig.requestOptions,
                             timeout,
+                            signal,
                         });
                         result = extractCustomApiText(fallbackConfig.provider, fallbackData);
                         const fallbackReasoning = extractReasoningFromCustomApiResponse(fallbackConfig.provider, fallbackData);
@@ -537,6 +570,7 @@ export function createApiService(deps = {}) {
                 const data = await APICaller.requestJSON(requestConfig.requestUrl, {
                     ...requestConfig.requestOptions,
                     timeout,
+                    signal,
                 });
                 debugLog(`${logPrefix} JSON解析完成, 开始提取内容`);
                 const result = extractCustomApiText(requestConfig.provider, data);
@@ -553,6 +587,7 @@ export function createApiService(deps = {}) {
             }, {
                 retries: maxRetries,
                 shouldRetry: (error) => APICaller.isRateLimitError(error),
+                signal,
                 onRetry: async (error, nextAttempt, delay) => {
                     Logger.warn('API', `${logPrefix} 限流重试 #${nextAttempt}: ${error.message}`);
                     updateStreamContent(`⏳ ${logPrefix} 遇到限流，${delay}ms后重试...\n`);
@@ -714,7 +749,7 @@ export function createApiService(deps = {}) {
         };
     }
 
-    async function callTargetPrompt(prompt, taskId = null, target = 'main') {
+    async function callTargetPrompt(prompt, taskId = null, target = 'main', options = {}) {
         const preserveRoles = Array.isArray(prompt);
         const messages = preserveRoles
             ? normalizeMessageChain(prompt)
@@ -724,22 +759,22 @@ export function createApiService(deps = {}) {
         const logPrefix = buildApiLogPrefix(target, taskId);
         debugLog(`${logPrefix} 消息链转换完成, ${messages.length}条消息, roles=[${messages.map((m) => m.role).join(',')}]`);
         if (target === 'main' && AppState.settings.useTavernApi) {
-            return callSillyTavernAPI(messages, taskId, preserveRoles);
+            return callSillyTavernAPI(messages, taskId, preserveRoles, options);
         }
-        return callCustomAPI(messages, target, taskId);
+        return callCustomAPI(messages, target, taskId, options);
     }
 
-    async function callAPI(prompt, taskId = null) {
-        return callTargetPrompt(prompt, taskId, 'main');
+    async function callAPI(prompt, taskId = null, options = {}) {
+        return callTargetPrompt(prompt, taskId, 'main', options);
     }
 
-    async function callMainAPI(prompt, taskId = null) {
-        return callTargetPrompt(prompt, taskId, 'main');
+    async function callMainAPI(prompt, taskId = null, options = {}) {
+        return callTargetPrompt(prompt, taskId, 'main', options);
     }
 
-    async function callDirectorAPI(prompt, taskId = null) {
+    async function callDirectorAPI(prompt, taskId = null, options = {}) {
         try {
-            return await callTargetPrompt(prompt, taskId, 'director');
+            return await callTargetPrompt(prompt, taskId, 'director', options);
         } catch (error) {
             Logger.warn('API', `导演API失败，将交由本地导演兜底判定: ${error.message}`);
             updateStreamContent('⚠️ 导演API失败，将使用本地导演兜底判定\n');

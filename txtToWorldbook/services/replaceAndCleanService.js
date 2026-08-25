@@ -488,6 +488,7 @@ tochao">thinking\ntucao\ntochao</textarea>
         memory.chapterOutlineError = '';
         memory.chapterAssetsDraft = null;
         memory.chapterAssetsSource = '';
+        memory.chapterAssetsApiSource = '';
         memory.chapterScript = { keyNodes: [], beats: [] };
         memory.chapterCurrentBeatIndex = 0;
         memory.directorDecision = null;

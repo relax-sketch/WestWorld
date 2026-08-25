@@ -104,6 +104,7 @@ import { createFeatureBindings, createRerollBridge, createShellRuntimeBindings }
 import { createShellRuntimeConfig } from './app/createShellRuntimeConfig.js';
 import { createFeatureServices } from './app/createFeatureServices.js';
 import { createShellRuntime } from './app/createShellRuntime.js';
+import { createBatchRuntimeService } from './services/batchRuntimeService.js';
 import {
     buildAliasCategorySelectModal,
     buildAliasGroupsListHtml,
@@ -291,9 +292,59 @@ let loadSavedSettings = () => settingsPersistenceService?.loadSavedSettings();
 let _initializeModalState = () => modalLifecycle?.initializeModalState();
 let _restoreModalData = () => modalLifecycle?.restoreModalData();
 let shellRuntime = null;
+let batchRuntimeService = null;
 let _bindModalEvents = () => modalEventBinder?.bindModalEvents(shellRuntime?.getModalContainer?.());
 let closeModal = () => modalController?.closeModal();
 let open = () => modalController?.open();
+
+// Batch controls are intentionally lazy: the shell creates its DOM after the
+// core services, while the actual scheduler is wired immediately afterwards.
+const handleBatchFiles = (...args) => Promise.resolve(batchRuntimeService?.addFiles(...args)).catch((error) => {
+    ErrorHandler.showUserError(`批量文件处理失败：${error?.message || error}`);
+    return null;
+});
+const downloadBatchAll = () => batchRuntimeService?.downloadBatch();
+const downloadBatchSuccess = () => batchRuntimeService?.downloadBatch({ onlySuccessful: true });
+const downloadBatchSelected = () => batchRuntimeService?.downloadBatch({ selectedJobId: AppState.batch?.selectedJobId });
+const pauseBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.pauseJob(AppState.batch.selectedJobId);
+const resumeBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.resumeJob(AppState.batch.selectedJobId);
+const retryBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.retryJob(AppState.batch.selectedJobId, { failedOnly: true });
+const cancelBatchSelected = () => AppState.batch?.selectedJobId && batchRuntimeService?.cancelJob(AppState.batch.selectedJobId);
+const openBatchImport = () => document.getElementById('ttw-batch-import-input')?.click();
+const loadBatchFile = (file) => batchRuntimeService?.loadBatchFile(file);
+const restoreLatestBatch = () => Promise.resolve(batchRuntimeService?.restoreLatestBatch()).catch((error) => {
+    ErrorHandler.showUserError(`恢复批量任务失败：${error?.message || error}`);
+    return null;
+});
+
+function renderBatchJobs(jobs = AppState.batch?.jobs || []) {
+    const container = document.getElementById('ttw-batch-job-list');
+    if (!container) return;
+    container.replaceChildren();
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+    for (const job of jobs) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.08);cursor:pointer;';
+        row.title = '点击查看此文件任务';
+        row.dataset.jobId = job.jobId;
+        row.addEventListener('click', () => batchRuntimeService?.selectJob(job.jobId));
+        const name = document.createElement('span');
+        name.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        name.textContent = job.originalFileName || job.fileName || job.novelName || job.jobId;
+        const status = document.createElement('span');
+        status.style.color = job.status === 'failed' ? '#e74c3c' : (job.status === 'completed' ? '#2ecc71' : '#f1c40f');
+        status.textContent = `${job.status} ${Math.round(Number(job.progress?.percent || 0))}%`;
+        const errors = document.createElement('span');
+        errors.style.cssText = 'color:#e67e22;font-size:11px;';
+        errors.textContent = Array.isArray(job.errors) && job.errors.length > 0 ? `错误 ${job.errors.length}` : '';
+        row.append(name, status, errors);
+        container.appendChild(row);
+    }
+}
 let {
     importMergeService,
     replaceAndCleanService,
@@ -670,8 +721,8 @@ const coreServices = createCoreServices({
         getCategoryBaseOrder,
         getEntryConfig,
     },
-    processingDeps: ({ apiService, parserService }) => ({
-        AppState,
+    processingDeps: ({ apiService, parserService, runtimeState = AppState }) => ({
+        AppState: runtimeState,
         promptRegistryService,
         MemoryHistoryDB,
         Semaphore,
@@ -757,6 +808,7 @@ const {
     tokenMetricsService,
     exportFormatService,
     getProcessingService,
+    createProcessingServiceForState,
     getRerollService,
     getRerollModals,
 } = coreServices;
@@ -1295,6 +1347,7 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     testChapterRegex,
     renderMessageChainUI,
     handleFileSelect: (...args) => handleFileSelect(...args),
+    handleBatchFiles,
     handleClearFile: (...args) => handleClearFile(...args),
     handleStartConversion: (...args) => handleStartConversion(...args),
     handleStartDirectorConversion: (...args) => handleStartDirectorConversion(...args),
@@ -1326,6 +1379,17 @@ shellRuntime = createShellRuntime(createShellRuntimeConfig({
     importAndMergeCharacterCard,
     loadTaskState: (...args) => loadTaskState(...args),
     saveTaskState: (...args) => saveTaskState(...args),
+    saveCurrentSettingsForBatch: (...args) => saveCurrentSettings(...args),
+    downloadBatchAll,
+    downloadBatchSuccess,
+    downloadBatchSelected,
+    openBatchImport,
+    loadBatchFile,
+    restoreLatestBatch,
+    pauseBatchSelected,
+    resumeBatchSelected,
+    retryBatchSelected,
+    cancelBatchSelected,
     exportSettings: (...args) => exportSettings(...args),
     importSettings: (...args) => importSettings(...args),
     exportCharacterCard: (...args) => exportCharacterCard(...args),
@@ -1350,6 +1414,7 @@ const shellRuntimeBindings = createShellRuntimeBindings(shellRuntime);
     modalEventBinder,
     handleFileSelect,
     splitContentIntoMemory,
+    createMemoryQueueFromContent,
     handleClearFile,
     rechunkMemories,
 } = shellRuntimeBindings);
@@ -1360,6 +1425,23 @@ _restoreModalData = shellRuntimeBindings.restoreModalData;
 _bindModalEvents = shellRuntimeBindings.bindModalEvents;
 closeModal = shellRuntimeBindings.closeModal;
 open = shellRuntimeBindings.open;
+
+batchRuntimeService = createBatchRuntimeService({
+    AppState,
+    MemoryHistoryDB,
+    packagePolicyService,
+    createProcessingServiceForState,
+    createMemoryQueueFromContent,
+    fileUtils,
+    updateMemoryQueueUI,
+    updateProgress,
+    updateWorldbookPreview: () => worldbookView.updateWorldbookPreview(),
+    showQueueSection,
+    showResultSection,
+    ErrorHandler,
+    Logger,
+    renderBatchJobs,
+});
 
     // ========== 过渡期兼容别名（热修） ==========
     const {

@@ -47,6 +47,16 @@
             directorApiConcurrency: 0,
             pendingChapterAssets: new Set(),
         },
+        // Batch mode owns its real state outside the legacy single-file slots.
+        // This object only contains the UI projection and batch-level selection.
+        batch: {
+            activeBatchId: null,
+            selectedJobId: null,
+            status: 'idle',
+            progress: 0,
+            jobs: [],
+            errors: [],
+        },
         experience: {
             currentChapterIndex: 0,
             currentBeatIndex: 0,

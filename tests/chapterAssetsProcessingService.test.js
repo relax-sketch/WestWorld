@@ -54,7 +54,7 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
         settings: {
             ...defaultSettings,
             language: 'en',
-            chapterOutlineMaxRetries: 0,
+            chapterOutlineMaxRetries: 1,
             chapterAssetsUseSpecializedPreset: true,
             ...settings,
         },
@@ -82,6 +82,7 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
     };
     const prompts = [];
     const mainPrompts = [];
+    const logs = [];
     let directorCallIndex = 0;
     let mainCallIndex = 0;
     const promptRegistryService = createPromptRegistryService({ AppState });
@@ -91,14 +92,16 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
         MemoryHistoryDB: { saveState: async () => {} },
         updateMemoryQueueUI() {},
         updateProgress() {},
-        updateStreamContent() {},
+        updateStreamContent(message) { logs.push(String(message || '')); },
         debugLog() {},
         callAPI: async (prompt) => {
             mainPrompts.push(prompt);
             if (mainResponses.length > 0) {
                 const index = Math.min(mainCallIndex, mainResponses.length - 1);
                 mainCallIndex += 1;
-                return mainResponses[index];
+                const response = mainResponses[index];
+                if (response instanceof Error) throw response;
+                return response;
             }
             return JSON.stringify({ entry_events: [] });
         },
@@ -106,7 +109,9 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
             prompts.push(prompt);
             const index = Math.min(directorCallIndex, directorResponses.length - 1);
             directorCallIndex += 1;
-            return directorResponses[index];
+            const response = directorResponses[index];
+            if (response instanceof Error) throw response;
+            return response;
         },
         isTokenLimitError: () => false,
         parseAIResponse: () => ({}),
@@ -130,7 +135,7 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
         setProcessingStatus(status) { AppState.processing.status = status; },
         getProcessingStatus() { return AppState.processing.status || 'idle'; },
     });
-    return { AppState, service, prompts, mainPrompts };
+    return { AppState, service, prompts, mainPrompts, logs };
 }
 
 test('local pre-split AI polish mode merges metadata and preserves original text', async () => {
@@ -191,6 +196,60 @@ test('chapter asset generation can route AI polish through the main API', async 
     assert.equal(prompts.length, 0);
     assert.deepEqual(mainPrompts[0].map((message) => message.role), ['user', 'assistant', 'user']);
     assert.equal(mainPrompts[0][0].content.includes('- 固定节拍数量：3'), true);
+});
+
+test('chapter asset requests use the selected main API semaphore without chapter semaphore nesting', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const { AppState, service } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsApiTarget: 'main',
+            chapterAssetsLocalBeatCount: 3,
+        },
+        mainResponses: [buildPolishResponse()],
+    });
+    const acquired = [];
+    AppState.processing.mainApiSemaphore = {
+        async acquire() { acquired.push('main'); },
+        release() {},
+    };
+    AppState.processing.chapterAssetsApiSemaphore = {
+        async acquire() { acquired.push('chapter-assets'); },
+        release() {},
+    };
+
+    await service.generateChapterAssets(0, { force: true, maxRetries: 0 });
+
+    assert.deepEqual(acquired, ['main']);
+});
+
+test('director-only processing can skip the previous-chapter wait when disabled', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const { AppState, service } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsWaitForPrevious: false,
+            chapterAssetsLocalBeatCount: 3,
+        },
+        directorResponses: [buildPolishResponse()],
+    });
+    AppState.memory.queue.push({
+        title: '记忆2',
+        chapterTitle: '第2章',
+        content,
+        processed: false,
+        failed: false,
+        processing: false,
+        chapterOutline: '',
+        chapterOutlineStatus: 'pending',
+        chapterOutlineError: '',
+        chapterScript: { keyNodes: [], beats: [] },
+    });
+
+    assert.equal(await service.processDirectorChunk(1), true);
+    assert.equal(AppState.memory.queue[1].chapterOutlineStatus, 'done');
 });
 
 test('custom chapter polish prompt keeps precedence over the specialized message chain', async () => {
@@ -310,4 +369,141 @@ test('ai-anchor remains the default chapter asset generation mode', async () => 
     assert.equal(result.script.beats.map((beat) => beat.original_text).join(''), content);
     assert.equal(prompts[0].includes('split_points'), true);
     assert.equal(prompts[0].includes('本地预切节拍 JSON'), false);
+});
+
+test('missing outline is a contract failure eligible for route fallback', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const harness = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'ai-anchor',
+            chapterAssetsApiTarget: 'director',
+            chapterOutlineMaxRetries: 0,
+        },
+        directorResponses: [JSON.stringify({
+            script: { beats: [
+                { id: 'b1', original_text: 'a' },
+                { id: 'b2', original_text: 'b' },
+                { id: 'b3', original_text: 'c' },
+            ] },
+        })],
+    });
+
+    await assert.rejects(() => harness.service.generateChapterAssets(0, { force: true, maxRetries: 0 }), /缺少 outline/);
+    assert.equal(harness.AppState.memory.queue[0].chapterOutlineStatus, 'failed');
+});
+
+test('main-then-director switches after a non-retryable main validation failure', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const invalid = JSON.stringify({
+        outline: '无效响应',
+        beats: [{ id: 'b1', original_text: 'AI 不得返回原文' }, { id: 'b2' }, { id: 'b3' }],
+    });
+    const { AppState, service, logs, mainPrompts, prompts } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsApiTarget: 'main-then-director',
+            chapterAssetsLocalBeatCount: 3,
+            chapterOutlineMaxRetries: 0,
+        },
+        mainResponses: [invalid],
+        directorResponses: [buildPolishResponse()],
+    });
+
+    await service.generateChapterAssets(0, { force: true, maxRetries: 0, runId: 'job-1' });
+
+    assert.equal(AppState.memory.queue[0].chapterOutlineStatus, 'done');
+    assert.equal(mainPrompts.length, 1);
+    assert.equal(prompts.length, 1);
+    assert.equal(logs.some((line) => line.includes('[主API]') && line.includes('最终失败')), true);
+    assert.equal(logs.some((line) => line.includes('[导演API]') && line.includes('请求成功')), true);
+    assert.equal(logs.some((line) => line.includes('source=local-presplit-ai-polish')), true);
+    assert.equal(AppState.memory.queue[0].chapterAssetsApiSource, 'director-after-main');
+});
+
+test('main-then-director gives the director target an independent retry budget', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const { AppState, service, logs, mainPrompts, prompts } = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsApiTarget: 'main-then-director',
+            chapterAssetsLocalBeatCount: 3,
+            chapterOutlineMaxRetries: 1,
+        },
+        mainResponses: [new Error('main network failed')],
+        directorResponses: [new Error('director network failed'), buildPolishResponse()],
+    });
+
+    await service.generateChapterAssets(0, { force: true, maxRetries: 1 });
+
+    assert.equal(AppState.memory.queue[0].chapterOutlineStatus, 'done');
+    assert.equal(mainPrompts.length, 2);
+    assert.equal(prompts.length, 2);
+    assert.equal(logs.some((line) => line.includes('[导演API][AI补全] 发起元信息补全请求（尝试 2/2')), true);
+});
+
+test('cancelling during chapter asset retry backoff exits immediately', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const retryable = Object.assign(new Error('server unavailable'), { status: 500 });
+    const { AppState, service } = createHarness({
+        content,
+        settings: { chapterAssetsApiTarget: 'main' },
+        mainResponses: [retryable],
+    });
+    const controller = new AbortController();
+    AppState.processing.runId = 'run-cancel-backoff';
+    AppState.processing.abortSignal = controller.signal;
+    const startedAt = Date.now();
+    const pending = service.generateChapterAssets(0, {
+        force: true,
+        maxRetries: 1,
+        runId: 'run-cancel-backoff',
+    });
+    setTimeout(() => controller.abort(), 10);
+
+    await assert.rejects(pending, /ABORTED/);
+    assert.ok(Date.now() - startedAt < 500);
+});
+
+test('route exhaustion keeps local draft while ai-anchor marks the chapter failed', async () => {
+    const content = '第一段开场，人物进入。\n\n第二段推进，冲突升级。\n\n第三段收束，局势落定。';
+    const invalidPolish = JSON.stringify({
+        outline: '无效响应',
+        beats: [{ id: 'b1', original_text: 'AI 不得返回原文' }, { id: 'b2' }, { id: 'b3' }],
+    });
+    const localHarness = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'local-presplit-ai-polish',
+            chapterAssetsApiTarget: 'main-then-director',
+            chapterAssetsLocalBeatCount: 3,
+            chapterOutlineMaxRetries: 0,
+        },
+        mainResponses: [invalidPolish],
+        directorResponses: [invalidPolish],
+    });
+
+    await assert.rejects(() => localHarness.service.generateChapterAssets(0, { force: true, maxRetries: 0 }), /禁止字段/);
+    assert.equal(localHarness.AppState.memory.queue[0].chapterOutlineStatus, 'polish_failed');
+    assert.equal(!!localHarness.AppState.memory.queue[0].chapterAssetsDraft, true);
+
+    const anchorHarness = createHarness({
+        content,
+        settings: {
+            chapterAssetsMode: 'ai-anchor',
+            chapterAssetsApiTarget: 'director',
+            chapterOutlineMaxRetries: 0,
+        },
+        directorResponses: [JSON.stringify({
+            outline: '校验失败',
+            script: { beats: [{ id: 'b1', original_text: 'x' }, { id: 'b2', original_text: 'y' }, { id: 'b3', original_text: 'z' }] },
+        })],
+    });
+
+    await assert.rejects(() => anchorHarness.service.generateChapterAssets(0, { force: true, maxRetries: 0 }), /章节概览校验失败/);
+    assert.equal(anchorHarness.AppState.memory.queue[0].chapterOutlineStatus, 'failed');
+    assert.equal(anchorHarness.AppState.memory.queue[0].chapterAssetsDraft, null);
+    assert.equal(anchorHarness.logs.some((line) => line.includes('[导演API]') && line.includes('章节资产生成失败')), true);
 });
