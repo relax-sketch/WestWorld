@@ -176,6 +176,9 @@ export function createSettingsPersistenceService(deps) {
             document.getElementById('ttw-chapter-assets-mode')?.value
             || AppState.settings.chapterAssetsMode
         );
+        AppState.settings.chapterAssetsUseSpecializedPreset = document.getElementById('ttw-chapter-assets-use-specialized-preset')?.checked
+            ?? AppState.settings.chapterAssetsUseSpecializedPreset
+            ?? false;
         AppState.settings.chapterAssetsApiTarget = normalizeChapterAssetsApiTarget(
             document.getElementById('ttw-chapter-assets-api-target')?.value
             || AppState.settings.chapterAssetsApiTarget
@@ -283,6 +286,7 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorStateStartTag = parsed.directorStateStartTag || AppState.settings.directorStateStartTag || '<state>';
                 AppState.settings.directorStateEndTag = parsed.directorStateEndTag || AppState.settings.directorStateEndTag || '</state>';
                 AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(parsed.chapterAssetsMode || AppState.settings.chapterAssetsMode);
+                AppState.settings.chapterAssetsUseSpecializedPreset = parsed.chapterAssetsUseSpecializedPreset === true;
                 AppState.settings.chapterAssetsApiTarget = normalizeChapterAssetsApiTarget(parsed.chapterAssetsApiTarget || AppState.settings.chapterAssetsApiTarget);
                 AppState.settings.chapterAssetsConcurrency = normalizeChapterAssetsConcurrency(parsed.chapterAssetsConcurrency ?? AppState.settings.chapterAssetsConcurrency);
                 AppState.settings.chapterAssetsWaitForPrevious = parsed.chapterAssetsWaitForPrevious ?? AppState.settings.chapterAssetsWaitForPrevious ?? true;

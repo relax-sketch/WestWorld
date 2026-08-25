@@ -178,6 +178,10 @@ function buildDirectorCutSettingsHtml() {
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
             <label class="ttw-checkbox-label" style="margin:0;">
+                <input type="checkbox" id="ttw-chapter-assets-use-specialized-preset">
+                <span>使用特化预设</span>
+            </label>
+            <label class="ttw-checkbox-label" style="margin:0;">
                 <input type="checkbox" id="ttw-chapter-assets-wait-previous" checked>
                 <span>等待上一章摘要</span>
             </label>
@@ -190,8 +194,8 @@ function buildDirectorCutSettingsHtml() {
                 <span>显示“使用本地兜底”</span>
             </label>
         </div>
-        <div style="font-size:12px;color:var(--ttw-text-secondary);margin-bottom:6px;">AI补全提示词</div>
-        <textarea id="ttw-chapter-assets-polish-prompt" rows="8" class="ttw-textarea-small" placeholder="留空则使用内置默认提示词"></textarea>
+        <div style="font-size:12px;color:var(--ttw-text-secondary);margin-bottom:6px;">自定义 AI补全提示词（非空时覆盖默认/特化预设）</div>
+        <textarea id="ttw-chapter-assets-polish-prompt" rows="8" class="ttw-textarea-small" placeholder="留空表示按上面的默认选择"></textarea>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="ttw-btn ttw-btn-small" id="ttw-save-chapter-assets-polish-prompt">保存</button>
             <button type="button" class="ttw-btn ttw-btn-small" id="ttw-reset-chapter-assets-polish-prompt">恢复默认</button>
@@ -1138,6 +1142,9 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const chapterAssetsModeEl = document.getElementById('ttw-chapter-assets-mode');
     if (chapterAssetsModeEl) chapterAssetsModeEl.value = AppState.settings.chapterAssetsMode || 'ai-anchor';
+
+    const chapterAssetsSpecializedPresetEl = document.getElementById('ttw-chapter-assets-use-specialized-preset');
+    if (chapterAssetsSpecializedPresetEl) chapterAssetsSpecializedPresetEl.checked = AppState.settings.chapterAssetsUseSpecializedPreset === true;
 
     const chapterAssetsApiTargetEl = document.getElementById('ttw-chapter-assets-api-target');
     if (chapterAssetsApiTargetEl) chapterAssetsApiTargetEl.value = AppState.settings.chapterAssetsApiTarget || 'director';

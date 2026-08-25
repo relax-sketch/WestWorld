@@ -3,6 +3,7 @@
     defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
     defaultChapterAssetsPolishPrompt,
+    defaultChapterAssetsPolishPromptLegacy,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -539,7 +540,11 @@ export function bindSettingEvents(deps = {}) {
         if (type === 'consolidate') return defaultConsolidatePrompt;
         if (type === 'alias-merge') return defaultAliasMergePrompt;
         if (type === 'chapter-assets') return defaultChapterAssetsPrompt;
-        if (type === 'chapter-assets-polish') return defaultChapterAssetsPolishPrompt;
+        if (type === 'chapter-assets-polish') {
+            return AppState.settings.chapterAssetsUseSpecializedPreset === true
+                ? defaultChapterAssetsPolishPrompt
+                : defaultChapterAssetsPolishPromptLegacy;
+        }
         if (type === 'director-framework') return defaultDirectorFrameworkPrompt;
         if (type === 'director-injection') return defaultDirectorInjectionPrompt;
         return '';
@@ -821,6 +826,7 @@ export function bindSettingEvents(deps = {}) {
         '#ttw-director-diagnostics-bind': { click: bindDirectorSession },
         '#ttw-director-diagnostics-clear': { click: clearDirectorLogs },
         '#ttw-chapter-assets-mode': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
+        '#ttw-chapter-assets-use-specialized-preset': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
         '#ttw-chapter-assets-api-target': { change: () => saveCurrentSettings({ syncPromptFieldsFromDom: false }) },
         '#ttw-chapter-assets-concurrency': { change: (e) => {
             const value = Math.max(1, Math.min(64, parseInt(e.target.value, 10) || 2));
@@ -858,7 +864,7 @@ export function bindSettingEvents(deps = {}) {
             ErrorHandler?.showUserSuccess?.('AI补全提示词已恢复为默认');
         } },
         '#ttw-copy-default-chapter-assets-polish-prompt': { click: () => {
-            writeClipboard(defaultChapterAssetsPolishPrompt)
+            writeClipboard(getPromptDefaultValue('chapter-assets-polish'))
                 .then(() => ErrorHandler?.showUserSuccess?.('默认 AI补全提示词已复制'))
                 .catch((error) => ErrorHandler?.showUserError?.(`复制失败：${error?.message || error}`));
         } },

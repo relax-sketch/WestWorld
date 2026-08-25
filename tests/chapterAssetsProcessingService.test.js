@@ -55,6 +55,7 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
             ...defaultSettings,
             language: 'en',
             chapterOutlineMaxRetries: 0,
+            chapterAssetsUseSpecializedPreset: true,
             ...settings,
         },
         memory: {
@@ -152,6 +153,16 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     assert.equal(result.script.beats.map((beat) => beat.original_text).join(''), content);
     assert.equal(result.script.beats[0].entryEvent, '角色进入事件1');
     assert.equal(prompts[0].includes('本地预切节拍 JSON'), true);
+    assert.equal(prompts[0].includes('{CHAPTER_TITLE}'), false);
+    assert.equal(prompts[0].includes('{PREVIOUS_OUTLINE}'), false);
+    assert.equal(prompts[0].includes('{BEAT_COUNT}'), false);
+    assert.equal(prompts[0].includes('{LOCAL_BEATS_JSON}'), false);
+    assert.equal((prompts[0].match(/你是章节导演资产元信息补全助手/g) || []).length, 1);
+    assert.equal(
+        (prompts[0].match(/<interactive_input>\n你是章节导演资产元信息补全助手/g) || []).length,
+        1,
+    );
+    assert.equal((prompts[0].match(/<\/interactive_input>/g) || []).length, 1);
 });
 
 test('chapter asset generation can route AI polish through the main API', async () => {

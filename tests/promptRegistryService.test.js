@@ -7,6 +7,7 @@ import {
 } from '../txtToWorldbook/services/promptRegistryService.js';
 import {
     defaultChapterAssetsPolishPrompt,
+    defaultChapterAssetsPolishPromptLegacy,
     defaultDirectorInjectionPrompt,
     defaultWorldbookPrompt,
 } from '../txtToWorldbook/core/constants.js';
@@ -36,7 +37,9 @@ test('registry exposes immutable project defaults for existing prompts', () => {
 });
 
 test('chapter assets polish prompt is internal and hidden from general prompt editor modules', () => {
-    const registry = createPromptRegistryService({ AppState: createState() });
+    const registry = createPromptRegistryService({
+        AppState: createState({ chapterAssetsUseSpecializedPreset: true }),
+    });
 
     assert.equal(
         registry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH).body,
@@ -50,6 +53,69 @@ test('chapter assets polish prompt is internal and hidden from general prompt ed
         registry.listModules({ includeInternal: true }).some((module) => module.id === PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH),
         true,
     );
+});
+
+test('chapter assets polish uses the legacy prompt until the specialized preset is selected', () => {
+    const legacyRegistry = createPromptRegistryService({ AppState: createState() });
+    const legacyResolved = legacyRegistry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH);
+
+    assert.equal(legacyResolved.body, defaultChapterAssetsPolishPromptLegacy);
+    assert.deepEqual(legacyResolved.requiredPlaceholders, [
+        '{CHAPTER_TITLE}',
+        '{PREVIOUS_OUTLINE}',
+        '{BEAT_COUNT}',
+        '{LOCAL_BEATS_JSON}',
+    ]);
+    assert.deepEqual(legacyRegistry.getWarnings(
+        PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH,
+        legacyResolved,
+    ), []);
+
+    const specializedRegistry = createPromptRegistryService({
+        AppState: createState({ chapterAssetsUseSpecializedPreset: true }),
+    });
+    const specializedResolved = specializedRegistry.getResolvedModule(PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH);
+
+    assert.equal(specializedResolved.body, defaultChapterAssetsPolishPrompt);
+    assert.deepEqual(specializedResolved.requiredPlaceholders, [
+        '{CHAPTER_TITLE}',
+        '{PREVIOUS_OUTLINE}',
+        '{LOCAL_BEATS_JSON}',
+        '{BEAT_COUNT}',
+    ]);
+});
+
+test('chapter assets polish default is the offline-compiled single-message director template', () => {
+    const task = '你是章节导演资产元信息补全助手';
+    const taskMarker = `<interactive_input>\n${task}`;
+    const removedModules = [
+        '✅️我不是主角。（不讨好）',
+        '🎁对白风格（ooc了自己改）配合对白生动化',
+        '❄️文风：轻小说（上一版本默认）',
+        '➡️文风结束',
+        '🤖防机器人',
+        '⚙️自定义设置',
+        '⚙️正文添加标签',
+        '🎁去八股',
+    ];
+
+    assert.equal((defaultChapterAssetsPolishPrompt.match(new RegExp(task, 'g')) || []).length, 1);
+    assert.equal((defaultChapterAssetsPolishPrompt.match(new RegExp(taskMarker, 'g')) || []).length, 1);
+    assert.equal((defaultChapterAssetsPolishPrompt.match(/<\/interactive_input>/g) || []).length, 1);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('<Interaction_history>'), true);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('<Creating_guidance>'), false);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('赋予角色自主性：鼓励角色通过自己的性格情感做出选择，推动剧情'), false);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('<think_format>'), true);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('Avant de produire le résultat'), true);
+    assert.equal(defaultChapterAssetsPolishPrompt.includes('<think><|no-trans|>'), true);
+    assert.deepEqual(
+        ['{CHAPTER_TITLE}', '{PREVIOUS_OUTLINE}', '{BEAT_COUNT}', '{LOCAL_BEATS_JSON}']
+            .filter((placeholder) => !defaultChapterAssetsPolishPrompt.includes(placeholder)),
+        [],
+    );
+    for (const moduleName of removedModules) {
+        assert.equal(defaultChapterAssetsPolishPrompt.includes(moduleName), false, moduleName);
+    }
 });
 
 test('an explicit empty override is preserved and warns rather than restoring default', () => {

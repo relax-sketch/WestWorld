@@ -2,6 +2,7 @@ import {
     defaultAliasMergePrompt,
     defaultChapterAssetsPrompt,
     defaultChapterAssetsPolishPrompt,
+    defaultChapterAssetsPolishPromptLegacy,
     defaultConsolidatePrompt,
     defaultDirectorFrameworkPrompt,
     defaultDirectorInjectionPrompt,
@@ -263,6 +264,13 @@ const defaultDirectorFallbackInBeatPrompt = `从“{CURRENT_SUMMARY}”已进行
 
 const defaultDirectorFallbackEndPrompt = `承接“{CURRENT_SUMMARY}”的当前局面继续动作。→完成本节拍内仍未落定的可见互动。→在本节拍边界内形成可承接的临时收束。`;
 
+const LEGACY_CHAPTER_ASSETS_POLISH_PLACEHOLDERS = Object.freeze([
+    '{CHAPTER_TITLE}',
+    '{PREVIOUS_OUTLINE}',
+    '{BEAT_COUNT}',
+    '{LOCAL_BEATS_JSON}',
+]);
+
 export const DEFAULT_PROMPT_MODULE_DEFINITIONS = Object.freeze({
     [PROMPT_MODULE_IDS.LANGUAGE_ZH]: moduleDefinition(
         PROMPT_MODULE_IDS.LANGUAGE_ZH,
@@ -319,7 +327,7 @@ export const DEFAULT_PROMPT_MODULE_DEFINITIONS = Object.freeze({
         PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH,
         defaultChapterAssetsPolishPrompt,
         {
-            requiredPlaceholders: ['{CHAPTER_TITLE}', '{LOCAL_BEATS_JSON}', '{BEAT_COUNT}'],
+            requiredPlaceholders: ['{CHAPTER_TITLE}', '{PREVIOUS_OUTLINE}', '{LOCAL_BEATS_JSON}', '{BEAT_COUNT}'],
             internal: true,
         },
     ),
@@ -414,17 +422,26 @@ export function createPromptRegistryService(deps = {}) {
 
     function getResolvedModule(id) {
         const definition = getDefinition(id);
-        const override = getSettings().promptOverrides[id] || {};
+        const settings = getSettings();
+        const useLegacyChapterAssetsPolishPrompt = id === PROMPT_MODULE_IDS.DIRECTOR_CHAPTER_ASSETS_POLISH
+            && settings.chapterAssetsUseSpecializedPreset !== true;
+        const defaultLayers = useLegacyChapterAssetsPolishPrompt
+            ? { ...definition.defaultLayers, body: defaultChapterAssetsPolishPromptLegacy }
+            : definition.defaultLayers;
+        const requiredPlaceholders = useLegacyChapterAssetsPolishPrompt
+            ? LEGACY_CHAPTER_ASSETS_POLISH_PLACEHOLDERS
+            : definition.requiredPlaceholders;
+        const override = settings.promptOverrides[id] || {};
         const layers = {};
         for (const key of ['prefix', 'body', 'suffix']) {
             layers[key] = Object.prototype.hasOwnProperty.call(override, key)
                 ? String(override[key] ?? '')
-                : definition.defaultLayers[key];
+                : defaultLayers[key];
         }
         return {
             id,
             title: definition.title,
-            requiredPlaceholders: [...definition.requiredPlaceholders],
+            requiredPlaceholders: [...requiredPlaceholders],
             ...layers,
         };
     }
@@ -493,7 +510,7 @@ export function createPromptRegistryService(deps = {}) {
             warnings.push({ type: 'empty-body', moduleId: id });
         }
         const combined = `${layers.prefix || ''}\n${layers.body || ''}\n${layers.suffix || ''}`;
-        for (const placeholder of definition.requiredPlaceholders) {
+        for (const placeholder of layers.requiredPlaceholders || definition.requiredPlaceholders) {
             if (!combined.includes(placeholder)) {
                 warnings.push({ type: 'missing-placeholder', moduleId: id, placeholder });
             }
