@@ -52,6 +52,7 @@ export function createShellPlaceholders() {
         entryConfigModals: null,
         handleFileSelect: noopAsync,
         splitContentIntoMemory: noop,
+        createMemoryQueueFromContent: noopAsync,
         handleClearFile: noopAsync,
         rechunkMemories: noop,
     };

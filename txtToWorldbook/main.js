@@ -359,6 +359,7 @@ let {
     entryConfigModals,
     handleFileSelect,
     splitContentIntoMemory,
+    createMemoryQueueFromContent,
     handleClearFile,
     rechunkMemories,
 } = createShellPlaceholders();
