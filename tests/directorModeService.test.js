@@ -136,6 +136,28 @@ test('local-fallback mode skips the director API and uses the editable fallback 
     assert.equal(result.content.includes('LOCAL FALLBACK'), true);
 });
 
+test('local director success emits one concise success toast', async () => {
+    const calls = [];
+    const previousToastr = globalThis.toastr;
+    globalThis.toastr = {
+        success: (...args) => calls.push(args),
+    };
+    try {
+        const setup = createService({ mode: 'local-fallback' });
+        const result = await prepare(setup.service);
+
+        assert.equal(result.ok, true);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0][0], '成功');
+    } finally {
+        if (previousToastr === undefined) {
+            delete globalThis.toastr;
+        } else {
+            globalThis.toastr = previousToastr;
+        }
+    }
+});
+
 test('director context and actor injection guidance fragments are editable registry modules', async () => {
     const setup = createService({
         mode: 'local-fallback',

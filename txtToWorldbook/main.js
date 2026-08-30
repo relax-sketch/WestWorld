@@ -1117,6 +1117,7 @@ const {
     showCurrentChapterPanel,
     showSettingsPanel,
     goToNextBeat,
+    goToPreviousBeat,
     goToNextChapter,
     getReadingProgressStatus,
 } = chapterExperienceView;
@@ -1536,6 +1537,7 @@ batchRuntimeService = createBatchRuntimeService({
     publicApi.testDirectorInjection = (...args) => directorService.testDirectorInjection(...args);
     publicApi.bindDirectorSessionToCurrentChapter = (...args) => directorService.bindDirectorSessionToCurrentChapter(...args);
     publicApi.nextBeat = (...args) => goToNextBeat(...args);
+    publicApi.previousBeat = (...args) => goToPreviousBeat(...args);
     publicApi.nextChapter = (...args) => goToNextChapter(...args);
     publicApi.getReadingProgressStatus = (...args) => getReadingProgressStatus(...args);
     window[WESTWORLD_TTW_API_KEY] = publicApi;

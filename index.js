@@ -22,6 +22,7 @@ const LEGACY_REPO_URL = 'https://github.com/lokenpee/StoryWeaver';
 const WESTWORLD_DIRECTOR_DEBUG_KEY = 'westworld-director-debug';
 const LEGACY_DIRECTOR_DEBUG_KEY = 'storyweaver-director-debug';
 const CHAT_CONTROL_BAR_ID = 'westworld-chat-control-bar';
+const CHAT_CONTROL_PREVIOUS_ID = 'westworld-chat-previous-beat';
 const CHAT_CONTROL_PAUSE_ID = 'westworld-chat-pause-toggle';
 const CHAT_CONTROL_PROGRESS_BADGE_ID = 'westworld-chat-progress-badge';
 const CHAT_CONTROL_STYLE_ID = 'westworld-chat-control-style';
@@ -532,6 +533,7 @@ function createWestWorldApiShell() {
         testDirectorInjection: (options) => getTxtToWorldbookApiSafe()?.testDirectorInjection?.(options) || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
         bindDirectorSessionToCurrentChapter: () => getTxtToWorldbookApiSafe()?.bindDirectorSessionToCurrentChapter?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready' },
         nextBeat: () => getTxtToWorldbookApiSafe()?.nextBeat?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
+        previousBeat: () => getTxtToWorldbookApiSafe()?.previousBeat?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
         nextChapter: () => getTxtToWorldbookApiSafe()?.nextChapter?.() || Promise.resolve({ ok: false, reason: 'txtToWorldbook-api-not-ready' }),
         getReadingProgressStatus: () => getTxtToWorldbookApiSafe()?.getReadingProgressStatus?.() || { ok: false, reason: 'txtToWorldbook-api-not-ready', display: '0/0' },
     };
@@ -1002,12 +1004,14 @@ function ensureChatControlStyle() {
     style.id = CHAT_CONTROL_STYLE_ID;
     style.textContent = `
 #${CHAT_CONTROL_BAR_ID},
+#${CHAT_CONTROL_PREVIOUS_ID},
 #${CHAT_CONTROL_PAUSE_ID} {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 #${CHAT_CONTROL_BAR_ID} .westworld-chat-control-icon,
+#${CHAT_CONTROL_PREVIOUS_ID} .westworld-chat-control-icon,
 #${CHAT_CONTROL_PAUSE_ID} .westworld-chat-control-icon {
     height: 20px;
     width: 20px;
@@ -1018,7 +1022,8 @@ function ensureChatControlStyle() {
     justify-content: center;
     pointer-events: none;
 }
-#${CHAT_CONTROL_BAR_ID}.westworld-chat-control-disabled {
+#${CHAT_CONTROL_BAR_ID}.westworld-chat-control-disabled,
+#${CHAT_CONTROL_PREVIOUS_ID}.westworld-chat-control-disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
@@ -1052,13 +1057,13 @@ function ensureChatControlStyle() {
 function getChatControlStatus() {
     const api = getTxtToWorldbookApiSafe();
     if (!api || typeof api.getReadingProgressStatus !== 'function') {
-        return { ok: false, reason: 'txtToWorldbook-api-not-ready', display: '0/0', canNextBeat: false, canNextChapter: false, totalBeats: 0 };
+        return { ok: false, reason: 'txtToWorldbook-api-not-ready', display: '0/0', canPreviousBeat: false, canNextBeat: false, canNextChapter: false, totalBeats: 0 };
     }
     try {
         return api.getReadingProgressStatus();
     } catch (error) {
         console.warn('[WestWorld] failed to read progress status:', error?.message || error);
-        return { ok: false, reason: 'status-error', display: '0/0', canNextBeat: false, canNextChapter: false, totalBeats: 0 };
+        return { ok: false, reason: 'status-error', display: '0/0', canPreviousBeat: false, canNextBeat: false, canNextChapter: false, totalBeats: 0 };
     }
 }
 
@@ -1070,6 +1075,7 @@ function updateChatControlBar() {
     const status = getChatControlStatus();
     const hasBeat = status?.ok === true && Number(status.totalBeats || 0) > 0;
     const nextBeatItem = bar?.querySelector('[data-westworld-action="next-beat"]') || bar;
+    const previousBeatItem = document.getElementById(CHAT_CONTROL_PREVIOUS_ID);
     const pauseItem = document.getElementById(CHAT_CONTROL_PAUSE_ID);
     const busy = bar?.dataset.busy === '1';
 
@@ -1085,6 +1091,14 @@ function updateChatControlBar() {
         nextBeatItem.setAttribute('aria-disabled', disabled ? 'true' : 'false');
         nextBeatItem.title = status?.ok
             ? `WestWorld 下一拍 ${status?.display || '0/0'}`
+            : 'WestWorld 未就绪';
+    }
+    if (previousBeatItem) {
+        const disabled = busy || !hasBeat || status.canPreviousBeat !== true;
+        previousBeatItem.classList.toggle('westworld-chat-control-disabled', disabled);
+        previousBeatItem.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        previousBeatItem.title = status?.ok
+            ? `WestWorld 上一拍 ${status?.display || '0/0'}`
             : 'WestWorld 未就绪';
     }
     if (pauseItem) {
@@ -1164,12 +1178,44 @@ async function handleChatControlAction() {
 
         const status = result?.status || getChatControlStatus();
         if (result?.ok) {
+            const textarea = document.getElementById('send_textarea');
+            if (textarea) {
+                textarea.value = '开始下一拍';
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                textarea.focus();
+            }
             toastr.success(advancedChapter ? '已进入下一章' : `已切换到 ${status?.display || '0/0'}`);
         } else {
             toastr.warning('无法切换下一拍');
         }
     } catch (error) {
         console.warn('[WestWorld] chat control action failed:', error?.message || error);
+        toastr.error(error?.message || 'WestWorld 控制失败');
+    } finally {
+        setChatControlBusy(false);
+        scheduleChatControlRefresh(0);
+    }
+}
+
+async function handlePreviousBeatAction() {
+    const api = getTxtToWorldbookApiSafe();
+    if (!api || typeof api.previousBeat !== 'function') {
+        toastr.warning('WestWorld 控制接口不可用');
+        updateChatControlBar();
+        return;
+    }
+
+    setChatControlBusy(true);
+    try {
+        const result = await api.previousBeat();
+        const status = result?.status || getChatControlStatus();
+        if (result?.ok) {
+            toastr.success(`已切换到 ${status?.display || '0/0'}`);
+        } else {
+            toastr.warning('无法切换上一拍');
+        }
+    } catch (error) {
+        console.warn('[WestWorld] previous beat action failed:', error?.message || error);
         toastr.error(error?.message || 'WestWorld 控制失败');
     } finally {
         setChatControlBusy(false);
@@ -1188,6 +1234,26 @@ function createChatControlBarElement() {
     }
 
     const fragment = document.createDocumentFragment();
+
+    const previousBeatItem = document.createElement('div');
+    previousBeatItem.id = CHAT_CONTROL_PREVIOUS_ID;
+    previousBeatItem.setAttribute('role', 'menuitem');
+    previousBeatItem.tabIndex = 0;
+    previousBeatItem.dataset.westworldAction = 'previous-beat';
+    previousBeatItem.innerHTML = `
+        <div class="fa-solid fa-backward-step westworld-chat-control-icon"></div>
+        <span>上一拍</span>
+    `;
+    previousBeatItem.addEventListener('click', () => {
+        if (previousBeatItem.getAttribute('aria-disabled') === 'true') return;
+        void handlePreviousBeatAction();
+    });
+    previousBeatItem.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        if (previousBeatItem.getAttribute('aria-disabled') === 'true') return;
+        void handlePreviousBeatAction();
+    });
 
     const nextBeatItem = document.createElement('div');
     nextBeatItem.id = CHAT_CONTROL_BAR_ID;
@@ -1229,8 +1295,9 @@ function createChatControlBarElement() {
         toggleDirectorPaused('magic-wand');
     });
 
-    fragment.appendChild(nextBeatItem);
+    fragment.appendChild(previousBeatItem);
     fragment.appendChild(pauseItem);
+    fragment.appendChild(nextBeatItem);
     return fragment;
 }
 
@@ -1240,8 +1307,13 @@ function ensureChatControlWandStyle() {
     style.id = CHAT_CONTROL_WAND_STYLE_ID;
     style.textContent = `
 #${CHAT_CONTROL_WAND_CONTAINER_ID} {
-    display: flex;
-    align-items: baseline;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+}
+#${CHAT_CONTROL_BAR_ID} {
+    grid-column: 1 / -1;
+    justify-content: center;
 }
 `;
     document.head.appendChild(style);
