@@ -107,6 +107,13 @@ test('reading progress restores once in the background without rendering a fake 
     assert.match(source, /previousBeatItem\.hidden\s*=\s*!showProgress/);
 });
 
+test('reading progress appends the inclusive remaining chapter count', async () => {
+    const source = await readRepoFile('txtToWorldbook/ui/chapterExperienceView.js');
+
+    assert.match(source, /remainingChapters\s*=\s*Math\.max\(1,\s*queue\.length\s*-\s*chapterIndex\)/);
+    assert.match(source, /`\$\{beatIndex \+ 1\}\/\$\{totalBeats\}\/\$\{remainingChapters\}`/);
+});
+
 test('director pause toggle disables PromptManager injection and LittleWhite prompt exposure', async () => {
     const source = await readRepoFile('index.js');
 

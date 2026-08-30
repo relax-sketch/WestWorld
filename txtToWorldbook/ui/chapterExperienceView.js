@@ -1552,6 +1552,7 @@ export function createChapterExperienceView(deps = {}) {
         const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
         const totalBeats = Array.isArray(beats) ? beats.length : 0;
         const maxBeatIndex = Math.max(0, totalBeats - 1);
+        const remainingChapters = Math.max(1, queue.length - chapterIndex);
         const beatIndex = totalBeats > 0
             ? (Number.isInteger(memory.chapterCurrentBeatIndex)
                 ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, maxBeatIndex))
@@ -1567,7 +1568,8 @@ export function createChapterExperienceView(deps = {}) {
             totalChapters: queue.length,
             currentBeat: totalBeats > 0 ? beatIndex + 1 : 0,
             totalBeats,
-            display: totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}` : '0/0',
+            remainingChapters,
+            display: totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}/${remainingChapters}` : '0/0',
             canPreviousBeat: totalBeats > 0 && beatIndex > 0,
             canNextBeat: totalBeats > 0 && beatIndex < maxBeatIndex,
             canNextChapter: chapterIndex < maxChapterIndex,
