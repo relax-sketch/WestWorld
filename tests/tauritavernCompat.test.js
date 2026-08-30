@@ -72,15 +72,21 @@ test('TauriTavern chat controls stay in magic wand with a separate progress badg
     assert.match(source, /document\.getElementById\('extensionsMenuButton'\)/);
     assert.match(source, /insertAdjacentElement\('afterend', badge\)/);
     assert.match(source, /dataset\.westworldAction\s*=\s*'next-beat'/);
+    assert.match(source, /dataset\.westworldAction\s*=\s*'previous-beat'/);
     assert.match(source, /dataset\.westworldAction\s*=\s*'toggle-pause'/);
+    assert.match(source, /fa-backward-step westworld-chat-control-icon/);
     assert.match(source, /fa-forward-step westworld-chat-control-icon/);
     assert.match(source, /fa-pause westworld-chat-control-icon/);
     assert.match(source, /<span>下一拍<\/span>/);
+    assert.match(source, /<span>上一拍<\/span>/);
     assert.match(source, /data-westworld-role="pause-label">停止<\/span>/);
     assert.doesNotMatch(source, /data-westworld-action="next-chapter"/);
     assert.doesNotMatch(source, /data-westworld-role="beat-counter"|data-westworld-role="state-status"/);
     assert.doesNotMatch(source, /westworld-chat-control-title|>WestWorld<\/div>|<button[^>]*westworld-chat-control/);
     assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
+    assert.match(source, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    assert.match(source, /textarea\.value\s*=\s*'开始下一拍'/);
+    assert.match(source, /textarea\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
 });
 
 test('director pause toggle disables PromptManager injection and LittleWhite prompt exposure', async () => {

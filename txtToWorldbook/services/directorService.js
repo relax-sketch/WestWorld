@@ -1513,7 +1513,6 @@ export function createDirectorService(deps = {}) {
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`🧭 ${turnPrefix} 发起回合判定请求（节拍 ${lockedBeatIdx + 1}/${beats.length}）\n`);
             }
-            notifyDirectorJudgement('info', `导演判定请求已发送：第${chapterIndex + 1}章，节拍 ${lockedBeatIdx + 1}/${beats.length}`);
             const response = await callDirectorAPI(prompt, chapterIndex + 1);
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`✅ ${turnPrefix} 判定请求成功，响应 ${String(response || '').length} 字符\n`);
@@ -1524,7 +1523,6 @@ export function createDirectorService(deps = {}) {
                     directorTelemetry?.markGateSkipped?.('directorFallbackOnError=false', { failure: 'parse' });
                     return shouldInjectChat ? null : { ok: false, reason: 'directorFallbackOnError=false' };
                 }
-                notifyDirectorJudgement('warning', '导演判定收到响应，但不是有效 JSON，已使用兜底判定');
                 directorWarn('导演返回内容无法解析为JSON，已使用回退判定', toShortText(response, 220));
                 if (typeof updateStreamContent === 'function') {
                     updateStreamContent(`⚠️ ${turnPrefix} 响应不是有效JSON，已切换回退判定\n`);
@@ -1533,7 +1531,6 @@ export function createDirectorService(deps = {}) {
                 decisionSource = 'fallback-parse';
             } else {
                 decision = normalizeDecision(parsed, lockedBeatIdx, beats, directionContext);
-                notifyDirectorJudgement('success', `导演判定成功：锁定节拍 ${decision.stage_idx + 1}/${beats.length}`);
             }
 
             // 新增：输出导演决策详情日志
@@ -1563,7 +1560,6 @@ export function createDirectorService(deps = {}) {
                 directorTelemetry?.markGateSkipped?.('directorFallbackOnError=false', { failure: 'api-error' });
                 return shouldInjectChat ? null : { ok: false, reason: 'directorFallbackOnError=false' };
             }
-            notifyDirectorJudgement('warning', `导演判定请求失败，已使用兜底：${error?.message || String(error)}`);
             directorWarn('导演判定失败，已使用回退判定', error?.message || String(error));
             if (typeof updateStreamContent === 'function') {
                 updateStreamContent(`❌ ${turnPrefix} 判定请求失败: ${error?.message || String(error)}\n`);
@@ -1673,6 +1669,7 @@ export function createDirectorService(deps = {}) {
             contentHash: hashText(injection),
             at: Date.now(),
         };
+        notifyDirectorJudgement('success', '成功');
 
         if (!shouldInjectChat) {
             const contentPreview = injection.slice(0, 180).replace(/\s+/g, ' ').trim();

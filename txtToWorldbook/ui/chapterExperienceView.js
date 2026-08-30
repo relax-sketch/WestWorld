@@ -1519,6 +1519,7 @@ export function createChapterExperienceView(deps = {}) {
                 currentBeat: 0,
                 totalBeats: 0,
                 display: '0/0',
+                canPreviousBeat: false,
                 canNextBeat: false,
                 canNextChapter: false,
             };
@@ -1540,6 +1541,7 @@ export function createChapterExperienceView(deps = {}) {
                 currentBeat: 0,
                 totalBeats: 0,
                 display: '0/0',
+                canPreviousBeat: false,
                 canNextBeat: false,
                 canNextChapter: chapterIndex < maxChapterIndex,
             };
@@ -1565,6 +1567,7 @@ export function createChapterExperienceView(deps = {}) {
             currentBeat: totalBeats > 0 ? beatIndex + 1 : 0,
             totalBeats,
             display: totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}` : '0/0',
+            canPreviousBeat: totalBeats > 0 && beatIndex > 0,
             canNextBeat: totalBeats > 0 && beatIndex < maxBeatIndex,
             canNextChapter: chapterIndex < maxChapterIndex,
         };
@@ -1582,6 +1585,21 @@ export function createChapterExperienceView(deps = {}) {
         }
 
         await switchCurrentBeat(1);
+        return { ok: true, status: getReadingProgressStatus() };
+    }
+
+    async function goToPreviousBeat() {
+        const status = getReadingProgressStatus();
+        if (!status.ok) {
+            ErrorHandler.showUserError('暂无可切换节拍的章节');
+            return { ok: false, reason: status.reason || 'chapter-missing', status };
+        }
+        if (!status.canPreviousBeat) {
+            ErrorHandler.showUserError('已是第一拍');
+            return { ok: false, reason: 'first-beat', status };
+        }
+
+        await switchCurrentBeat(-1);
         return { ok: true, status: getReadingProgressStatus() };
     }
 
@@ -1895,6 +1913,7 @@ export function createChapterExperienceView(deps = {}) {
             renderCurrentPanel();
         },
         goToNextBeat,
+        goToPreviousBeat,
         goToNextChapter,
         getReadingProgressStatus,
         generateOpeningText,
