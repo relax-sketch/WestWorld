@@ -29,3 +29,8 @@
 
    ```powershell
    python -c "text = '''大量中文内容'''"
+   ```
+
+## 分支上传约定
+
+- 当用户说“上传到 main”或“上传到 Master”时，均指上传到主分支 `master`。
