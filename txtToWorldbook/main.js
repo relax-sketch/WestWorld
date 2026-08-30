@@ -93,6 +93,7 @@ import { createProcessingStateService } from './services/processingStateService.
 import { createRepairService } from './services/repairService.js';
 import { createWorldbookRuntimeService } from './services/worldbookRuntimeService.js';
 import { createDirectorService } from './services/directorService.js';
+import { ensureDirectorRuntimeReady } from './services/directorStateService.js';
 import { createDirectorTelemetryService } from './services/directorTelemetryService.js';
 import { createPackagePolicyService } from './services/packagePolicyService.js';
 import { createAppContext } from './app/createApp.js';
@@ -172,6 +173,7 @@ const { AppState, MemoryHistoryDB } = createAppContext({
     defaultSettings,
     Logger,
 });
+let readingProgressReadyPromise = null;
 
 // ============================================================
 // 第三区：工具函数
@@ -1540,6 +1542,16 @@ batchRuntimeService = createBatchRuntimeService({
     publicApi.previousBeat = (...args) => goToPreviousBeat(...args);
     publicApi.nextChapter = (...args) => goToNextChapter(...args);
     publicApi.getReadingProgressStatus = (...args) => getReadingProgressStatus(...args);
+    publicApi.ensureReadingProgressReady = () => {
+        if (!readingProgressReadyPromise) {
+            readingProgressReadyPromise = ensureDirectorRuntimeReady({
+                AppState,
+                MemoryHistoryDB,
+                telemetry: directorTelemetry,
+            });
+        }
+        return readingProgressReadyPromise;
+    };
     window[WESTWORLD_TTW_API_KEY] = publicApi;
     window[LEGACY_STORYWEAVER_TTW_API_KEY] = publicApi;
 

@@ -85,8 +85,26 @@ test('TauriTavern chat controls stay in magic wand with a separate progress badg
     assert.doesNotMatch(source, /westworld-chat-control-title|>WestWorld<\/div>|<button[^>]*westworld-chat-control/);
     assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
     assert.match(source, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    assert.doesNotMatch(source, /#\$\{CHAT_CONTROL_BAR_ID\}\s*\{[^}]*justify-content:\s*center/s);
     assert.match(source, /textarea\.value\s*=\s*'开始下一拍'/);
     assert.match(source, /textarea\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
+});
+
+test('reading progress restores once in the background without rendering a fake zero state', async () => {
+    const source = await readRepoFile('index.js');
+    const mainSource = await readRepoFile('txtToWorldbook/main.js');
+    const bootstrapStart = source.indexOf('async function bootstrap()');
+    const bootstrapSection = source.slice(bootstrapStart);
+
+    assert.match(mainSource, /let\s+readingProgressReadyPromise\s*=\s*null/);
+    assert.match(mainSource, /ensureReadingProgressReady[\s\S]*ensureDirectorRuntimeReady/);
+    assert.match(source, /function\s+restoreReadingProgressInBackground\s*\(/);
+    assert.match(bootstrapSection, /restoreReadingProgressInBackground\(\)/);
+    assert.doesNotMatch(bootstrapSection, /await\s+restoreReadingProgressInBackground\(\)/);
+    assert.match(source, /badge\.textContent\s*=\s*loading\s*\?\s*'…'/);
+    assert.match(source, /badge\.hidden\s*=\s*!showProgress/);
+    assert.match(source, /nextBeatItem\.hidden\s*=\s*!showProgress/);
+    assert.match(source, /previousBeatItem\.hidden\s*=\s*!showProgress/);
 });
 
 test('director pause toggle disables PromptManager injection and LittleWhite prompt exposure', async () => {
