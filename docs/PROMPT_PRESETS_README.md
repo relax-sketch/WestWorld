@@ -123,13 +123,15 @@ WestWorld 在：
 - 不要只在页面初始化时生成一次。
 - 自定义章节模板目前不自动添加这个标识；如果以后需要，应明确把它加入自定义模板流程。
 
-## 五、当前龙族示例文本的替换方式
+## 五、动态小说示例文本
 
-当前文本资源也位于：
+特化预设当前使用的小说资源是：
+
+`txtToWorldbook/assets/fanren-xiuxian-zhuan.gb18030.txt`
+
+该文件以 GB18030 解码。读取和游标逻辑位于：
 
 `txtToWorldbook/core/chapterAssetsPromptSource.js`
-
-其中的 `defaultDragonNovelPromptSource` 是内置示例文本。
 
 组装时，WestWorld 会处理特化预设第一条 `user` 消息：
 
@@ -144,22 +146,22 @@ WestWorld 在：
 
 1. 重新生成反标识。
 2. 替换 `[对话已重置]` 之前的示例区域。
-3. 使用内置的 `defaultDragonNovelPromptSource`。
-4. 保留 `[对话已重置]` 之后的任务规则。
+3. 从小说 TXT 的持久化游标处顺序读取约 14000 个字符。
+4. 请求构建后立即保存下一次读取位置。
+5. 最后一段可以短于 14000 字符；下一次请求从文件开头继续。
+6. 保留 `[对话已重置]` 之后的任务规则。
 
-这样换小说示例时，不会误删后面的 JSON 约束、资产字段说明和交互规则。
+游标保存在浏览器 `localStorage` 的
+`westworldSpecializedPromptSourceCursor:v1` 项中，因此重启 SillyTavern 或重新加载扩展后仍会续读。
+这样替换小说示例时，不会误删后面的 JSON 约束、资产字段说明和交互规则。
 
 ## 六、以后只替换小说示例
 
-如果只是把龙族示例换成另一部小说，推荐只改：
+如果以后换成另一部小说，需要：
 
-`txtToWorldbook/core/chapterAssetsPromptSource.js`
-
-中的：
-
-```js
-export const defaultDragonNovelPromptSource = '...';
-```
+1. 替换 `txtToWorldbook/assets/` 中的 TXT。
+2. 按文件实际编码调整 `TextDecoder`。
+3. 修改 `SPECIALIZED_PROMPT_SOURCE_ID`，让旧文件的游标自动失效并从新文件开头读取。
 
 不要修改：
 
@@ -177,7 +179,8 @@ npm test
 
 并确认：
 
-- 第一条消息包含新小说文本。
+- 连续请求的第一条消息包含小说的连续不同分段。
+- 游标在重新加载后可以续读，文件末尾可以回绕。
 - 每次构建的 `meaningless test` 不相同。
 - `outline` 和 `beats` 约束仍然存在。
 - 三条消息角色仍为 `user, assistant, user`。

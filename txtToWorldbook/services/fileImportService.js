@@ -222,10 +222,9 @@ export function createFileImportService(deps = {}) {
         const shortChunkMergeThreshold = Math.max(0, parseInt(AppState.settings.minChunkSize, 10) || 0);
         AppState.memory.queue = [];
 
-        // Normalize inline chapter markers like “……」第二章” into line-start chapter headers.
-        const normalizedContent = normalizeInlineChapterMarkers(content);
-
-        const matches = detectChapterMatches(normalizedContent, AppState.config.chapterRegex.pattern);
+        // Always split from the first character by target size. Chapter-like text is ordinary content.
+        const normalizedContent = typeof content === 'string' ? content : String(content || '');
+        const matches = [];
 
         if (matches.length > 0) {
             const chapters = [];
@@ -299,9 +298,7 @@ export function createFileImportService(deps = {}) {
 
         AppState.memory.queue.forEach((memory, index) => {
             memory.title = `记忆${index + 1}`;
-            if (!memory.chapterTitle || !String(memory.chapterTitle).trim()) {
-                memory.chapterTitle = `第${index + 1}章`;
-            }
+            memory.chapterTitle = `第${index + 1}章`;
             memory.chapterOutline = memory.chapterOutline || '';
             memory.chapterOutlineStatus = memory.chapterOutlineStatus || 'pending';
             memory.chapterOutlineError = memory.chapterOutlineError || '';

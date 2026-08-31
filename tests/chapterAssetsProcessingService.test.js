@@ -5,6 +5,8 @@ import { defaultSettings } from '../txtToWorldbook/core/constants.js';
 import {
     defaultDragonNovelPromptSource,
     refreshSpecializedChapterAssetsPrompt,
+    SPECIALIZED_PROMPT_CURSOR_STORAGE_KEY,
+    takeNextSpecializedPromptSourceChunk,
 } from '../txtToWorldbook/core/chapterAssetsPromptSource.js';
 import { createPromptRegistryService } from '../txtToWorldbook/services/promptRegistryService.js';
 import { createProcessingService } from '../txtToWorldbook/services/processingService.js';
@@ -53,7 +55,13 @@ function buildLegacyAnchorResponse(content) {
     });
 }
 
-function createHarness({ settings = {}, content, directorResponses = [], mainResponses = [] } = {}) {
+function createHarness({
+    settings = {},
+    content,
+    directorResponses = [],
+    mainResponses = [],
+    specializedPromptChunks = ['动态小说测试片段'],
+} = {}) {
     const AppState = {
         settings: {
             ...defaultSettings,
@@ -89,6 +97,7 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
     const logs = [];
     let directorCallIndex = 0;
     let mainCallIndex = 0;
+    let specializedChunkIndex = 0;
     const promptRegistryService = createPromptRegistryService({ AppState });
     const service = createProcessingService({
         AppState,
@@ -138,6 +147,11 @@ function createHarness({ settings = {}, content, directorResponses = [], mainRes
         handleRepairMemoryWithSplit: async () => {},
         setProcessingStatus(status) { AppState.processing.status = status; },
         getProcessingStatus() { return AppState.processing.status || 'idle'; },
+        async takeNextSpecializedPromptChunk() {
+            const index = Math.min(specializedChunkIndex, specializedPromptChunks.length - 1);
+            specializedChunkIndex += 1;
+            return { text: specializedPromptChunks[index] };
+        },
     });
     return { AppState, service, prompts, mainPrompts, logs };
 }
@@ -167,7 +181,8 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     const assistantMessage = prompts[0][1].content;
     const finalMessage = prompts[0][2].content;
     assert.match(firstMessage, /^<\|no-trans\|>meaningless test: [^\r\n]+/);
-    assert.equal(firstMessage.includes(defaultDragonNovelPromptSource), true);
+    assert.equal(firstMessage.includes('动态小说测试片段'), true);
+    assert.equal(firstMessage.includes(defaultDragonNovelPromptSource), false);
     assert.equal(firstMessage.includes('- 章节标题：第1章'), true);
     assert.equal(firstMessage.includes('- 上一章摘要：无'), true);
     assert.equal(firstMessage.includes('- 固定节拍数量：3'), true);
@@ -182,16 +197,44 @@ test('local pre-split AI polish mode merges metadata and preserves original text
     assert.equal((finalMessage.match(/<interactive_input>/g) || []).length >= 1, true);
 });
 
-test('specialized chapter prompt refreshes the anti-marker and Dragon source on every build', () => {
+test('specialized chapter prompt refreshes the anti-marker and supplied source on every build', () => {
     const template = '<|no-trans|>meaningless test: old-marker\n旧示例\n[对话已重置]\n保留的提示词引导';
-    const first = refreshSpecializedChapterAssetsPrompt(template);
-    const second = refreshSpecializedChapterAssetsPrompt(template);
+    const first = refreshSpecializedChapterAssetsPrompt(template, '连续小说片段一');
+    const second = refreshSpecializedChapterAssetsPrompt(template, '连续小说片段二');
     const markerPattern = /^<\|no-trans\|>meaningless test: ([^\n]+)/;
 
     assert.notEqual(first.match(markerPattern)?.[1], second.match(markerPattern)?.[1]);
-    assert.equal(first.includes(defaultDragonNovelPromptSource), true);
+    assert.equal(first.includes('连续小说片段一'), true);
+    assert.equal(second.includes('连续小说片段二'), true);
     assert.equal(first.endsWith('\n[对话已重置]\n保留的提示词引导'), true);
     assert.equal(first.includes('旧示例'), false);
+});
+
+test('specialized TXT chunks advance sequentially, persist the cursor, and wrap at EOF', async () => {
+    const values = new Map();
+    const storage = {
+        getItem(key) { return values.get(key) ?? null; },
+        setItem(key, value) { values.set(key, value); },
+    };
+    const options = {
+        sourceText: '甲乙丙丁戊',
+        sourceId: 'unit-test-source',
+        chunkSize: 2,
+        storage,
+    };
+
+    const first = await takeNextSpecializedPromptSourceChunk(options);
+    const second = await takeNextSpecializedPromptSourceChunk(options);
+    const finalShortChunk = await takeNextSpecializedPromptSourceChunk(options);
+    const wrapped = await takeNextSpecializedPromptSourceChunk(options);
+
+    assert.deepEqual(
+        [first.text, second.text, finalShortChunk.text, wrapped.text],
+        ['甲乙', '丙丁', '戊', '甲乙'],
+    );
+    assert.equal(finalShortChunk.wrapped, true);
+    assert.equal(wrapped.start, 0);
+    assert.equal(JSON.parse(values.get(SPECIALIZED_PROMPT_CURSOR_STORAGE_KEY)).cursor, 2);
 });
 
 test('chapter asset generation can route AI polish through the main API', async () => {

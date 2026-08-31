@@ -1,7 +1,10 @@
 ﻿import { buildLocalPresplitAssets } from './chapterAssetsLocalSplitService.js';
 
 import { defaultChapterAssetsPolishMessages } from '../core/constants.js';
-import { refreshSpecializedChapterAssetsPrompt } from '../core/chapterAssetsPromptSource.js';
+import {
+    refreshSpecializedChapterAssetsPrompt,
+    takeNextSpecializedPromptSourceChunk,
+} from '../core/chapterAssetsPromptSource.js';
 
 export function createProcessingService(deps = {}) {
     const {
@@ -36,6 +39,7 @@ export function createProcessingService(deps = {}) {
         handleRepairMemoryWithSplit,
         setProcessingStatus,
         getProcessingStatus,
+        takeNextSpecializedPromptChunk = takeNextSpecializedPromptSourceChunk,
     } = deps;
 
     const SPLIT_TYPES = new Set([
@@ -2531,7 +2535,7 @@ export function createProcessingService(deps = {}) {
         }));
     }
 
-    function buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint = '') {
+    async function buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint = '') {
         const chapterIndex = index + 1;
         const chapterTitle = memory.chapterTitle || `第${chapterIndex}章`;
         const previousMemory = index > 0 ? AppState.memory.queue[index - 1] : null;
@@ -2561,7 +2565,11 @@ export function createProcessingService(deps = {}) {
                 role: message.role,
                 content: renderPromptTemplate(message.content, variables),
             }));
-            messages[0].content = refreshSpecializedChapterAssetsPrompt(messages[0].content);
+            const sourceChunk = await takeNextSpecializedPromptChunk();
+            messages[0].content = refreshSpecializedChapterAssetsPrompt(
+                messages[0].content,
+                sourceChunk?.text,
+            );
             return typeof promptRegistryService.composeMessageChain === 'function'
                 ? promptRegistryService.composeMessageChain(messages)
                 : messages;
@@ -2753,7 +2761,7 @@ export function createProcessingService(deps = {}) {
                 try {
                     throwIfRunInactive(runId);
                     const retryHint = attempt > 0 && lastError ? compactErrorMessage(lastError) : '';
-                    const prompt = buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
+                    const prompt = await buildChapterAssetsPolishPrompt(memory, index, localAssets, retryHint);
                     updateStreamContent(`🧩 [第${index + 1}章][${apiRoute.label}][AI补全] 发起元信息补全请求（尝试 ${attempt + 1}/${retryLimit + 1}，${apiRoute.target === 'main' ? '主AI' : '导演AI'}尝试 ${attempt + 1}/${retryLimit + 1}，资产并发=${resolveChapterAssetsConcurrency()}）\n`);
                     const response = await runWithApiSemaphore(apiRoute.target, runId, async () => apiRoute.caller(
                         prompt,
