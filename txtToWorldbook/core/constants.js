@@ -575,6 +575,7 @@ export const defaultSettings = {
     directorFallbackOnError: true,
     directorAutoFallbackToMain: true,
     directorRunEveryTurn: true,
+    nextBeatPrefillText: '开始这一拍',
     directorStateStartTag: '<state>',
     directorStateEndTag: '</state>',
     directorInjectionMode: 'loose',

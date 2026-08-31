@@ -287,6 +287,10 @@ function buildBasicSettingsHtml() {
         <div>
             <button id="ttw-rechunk-btn" class="ttw-btn ttw-btn-small" style="background:rgba(230,126,34,0.5);" title="修改字数后点击重新分块">🔄 重新分块</button>
         </div>
+    </div>
+    <div style="margin-bottom:12px;">
+        <label class="ttw-label">下一拍预输入文字</label>
+        <input type="text" id="ttw-next-beat-prefill-text" value="开始这一拍" class="ttw-input">
     </div>`;
 }
 
@@ -1023,6 +1027,13 @@ export function hydrateSettingsFromState(deps = {}) {
 
     const minChunkSizeEl = document.getElementById('ttw-min-chunk-size');
     if (minChunkSizeEl) minChunkSizeEl.value = AppState.settings.minChunkSize ?? 1500;
+
+    const nextBeatPrefillTextEl = document.getElementById('ttw-next-beat-prefill-text');
+    if (nextBeatPrefillTextEl) {
+        nextBeatPrefillTextEl.value = typeof AppState.settings.nextBeatPrefillText === 'string'
+            ? AppState.settings.nextBeatPrefillText
+            : '开始这一拍';
+    }
 
     const apiTimeoutEl = document.getElementById('ttw-api-timeout');
     if (apiTimeoutEl) apiTimeoutEl.value = Math.round((AppState.settings.apiTimeout || 120000) / 1000);

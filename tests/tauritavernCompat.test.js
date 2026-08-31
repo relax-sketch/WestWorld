@@ -86,7 +86,8 @@ test('TauriTavern chat controls stay in magic wand with a separate progress badg
     assert.doesNotMatch(mountSection, /form_sheld|send_form|tt-chat-input-shell|insertBefore/);
     assert.match(source, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
     assert.doesNotMatch(source, /#\$\{CHAT_CONTROL_BAR_ID\}\s*\{[^}]*justify-content:\s*center/s);
-    assert.match(source, /textarea\.value\s*=\s*'开始下一拍'/);
+    assert.match(source, /api\.getNextBeatPrefillText\?\.\(\)/);
+    assert.match(source, /textarea\.value\s*=\s*typeof configuredText === 'string' \? configuredText : '开始这一拍'/);
     assert.match(source, /textarea\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/);
 });
 

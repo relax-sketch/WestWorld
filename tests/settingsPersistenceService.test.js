@@ -135,3 +135,58 @@ test('loading saved chapter asset settings accepts main-then-director routing', 
 
     assert.equal(AppState.settings.chapterAssetsApiTarget, 'main-then-director');
 });
+
+test('next beat prefill uses the default when no saved value exists', () => {
+    globalThis.localStorage = {
+        getItem: () => null,
+        setItem() {},
+    };
+    const service = createSettingsPersistenceService({
+        AppState: { settings: {} },
+        defaultSettings,
+        updateSettingsUI() {},
+        updateChapterRegexUI() {},
+        handleProviderChange() {},
+    });
+
+    assert.equal(defaultSettings.nextBeatPrefillText, '开始这一拍');
+    assert.equal(service.getNextBeatPrefillText(), '开始这一拍');
+});
+
+test('next beat prefill is saved, loaded, and read from persistent settings', () => {
+    const storage = new Map();
+    globalThis.localStorage = {
+        getItem: (key) => storage.get(key) ?? null,
+        setItem: (key, value) => storage.set(key, value),
+    };
+    globalThis.document = {
+        getElementById: (id) => id === 'ttw-next-beat-prefill-text' ? { value: '进入新节拍' } : null,
+    };
+    const AppState = {
+        settings: { ...defaultSettings },
+        processing: {},
+        config: {
+            parallel: {},
+            chapterRegex: {},
+            categoryLight: {},
+            categoryDefault: {},
+            entryPosition: {},
+            plotOutline: {},
+        },
+        persistent: {},
+    };
+    const service = createSettingsPersistenceService({
+        AppState,
+        defaultSettings,
+        updateSettingsUI() {},
+        updateChapterRegexUI() {},
+        handleProviderChange() {},
+    });
+
+    service.saveCurrentSettings();
+    AppState.settings.nextBeatPrefillText = '开始这一拍';
+    service.loadSavedSettings();
+
+    assert.equal(AppState.settings.nextBeatPrefillText, '进入新节拍');
+    assert.equal(service.getNextBeatPrefillText(), '进入新节拍');
+});

@@ -180,6 +180,10 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.directorFallbackOnError = document.getElementById('ttw-director-fallback-on-error')?.checked ?? AppState.settings.directorFallbackOnError ?? true;
         AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
         AppState.settings.directorRunEveryTurn = document.getElementById('ttw-director-run-every-turn')?.checked ?? AppState.settings.directorRunEveryTurn ?? true;
+        const nextBeatPrefillTextEl = document.getElementById('ttw-next-beat-prefill-text');
+        if (nextBeatPrefillTextEl) {
+            AppState.settings.nextBeatPrefillText = nextBeatPrefillTextEl.value;
+        }
         AppState.settings.directorStateStartTag = document.getElementById('ttw-director-state-start-tag')?.value || AppState.settings.directorStateStartTag || '<state>';
         AppState.settings.directorStateEndTag = document.getElementById('ttw-director-state-end-tag')?.value || AppState.settings.directorStateEndTag || '</state>';
         AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(
@@ -293,6 +297,9 @@ export function createSettingsPersistenceService(deps) {
                 AppState.settings.directorFallbackOnError = parsed.directorFallbackOnError ?? parsed.directorAutoFallbackToMain ?? true;
                 AppState.settings.directorAutoFallbackToMain = AppState.settings.directorFallbackOnError;
                 AppState.settings.directorRunEveryTurn = parsed.directorRunEveryTurn ?? true;
+                AppState.settings.nextBeatPrefillText = typeof parsed.nextBeatPrefillText === 'string'
+                    ? parsed.nextBeatPrefillText
+                    : defaultSettings.nextBeatPrefillText;
                 AppState.settings.directorStateStartTag = parsed.directorStateStartTag || AppState.settings.directorStateStartTag || '<state>';
                 AppState.settings.directorStateEndTag = parsed.directorStateEndTag || AppState.settings.directorStateEndTag || '</state>';
                 AppState.settings.chapterAssetsMode = normalizeChapterAssetsMode(parsed.chapterAssetsMode || AppState.settings.chapterAssetsMode);
@@ -377,5 +384,16 @@ export function createSettingsPersistenceService(deps) {
     return {
         saveCurrentSettings,
         loadSavedSettings,
+        getNextBeatPrefillText() {
+            try {
+                const saved = localStorage.getItem(SETTINGS_STORAGE_KEY)
+                    || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
+                if (saved) {
+                    const value = JSON.parse(saved)?.nextBeatPrefillText;
+                    if (typeof value === 'string') return value;
+                }
+            } catch (e) { }
+            return defaultSettings.nextBeatPrefillText;
+        },
     };
 }

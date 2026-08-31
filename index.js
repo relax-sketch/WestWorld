@@ -1196,7 +1196,8 @@ async function handleChatControlAction() {
         if (result?.ok) {
             const textarea = document.getElementById('send_textarea');
             if (textarea) {
-                textarea.value = '开始下一拍';
+                const configuredText = api.getNextBeatPrefillText?.();
+                textarea.value = typeof configuredText === 'string' ? configuredText : '开始这一拍';
                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
                 textarea.focus();
             }

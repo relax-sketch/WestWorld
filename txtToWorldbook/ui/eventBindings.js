@@ -1012,7 +1012,7 @@ export function bindSettingEvents(deps = {}) {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });
-    ['ttw-director-state-start-tag', 'ttw-director-state-end-tag'].forEach((id) => {
+    ['ttw-director-state-start-tag', 'ttw-director-state-end-tag', 'ttw-next-beat-prefill-text'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', saveCurrentSettings);
     });

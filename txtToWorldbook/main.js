@@ -1541,6 +1541,7 @@ batchRuntimeService = createBatchRuntimeService({
     publicApi.nextBeat = (...args) => goToNextBeat(...args);
     publicApi.previousBeat = (...args) => goToPreviousBeat(...args);
     publicApi.nextChapter = (...args) => goToNextChapter(...args);
+    publicApi.getNextBeatPrefillText = () => settingsPersistenceService.getNextBeatPrefillText();
     publicApi.getReadingProgressStatus = (...args) => getReadingProgressStatus(...args);
     publicApi.ensureReadingProgressReady = () => {
         if (!readingProgressReadyPromise) {
