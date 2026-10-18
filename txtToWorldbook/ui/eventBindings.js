@@ -14,6 +14,7 @@ import {
     missingDirectorApiMethodResult,
     resolveDirectorDiagnosticsApi,
 } from './directorDiagnosticsApi.js';
+import { bindDirectorOutputSettings } from './directorOutputSettings.js';
 
 export function bindActionEvents(deps = {}) {
     const {
@@ -654,6 +655,7 @@ export function bindSettingEvents(deps = {}) {
         const status = api.getDirectorRuntimeStatus?.() || api.getDirectorStatus?.() || null;
         const gate = api.getDirectorGateStatus?.() || null;
         const promptManager = api.getDirectorPromptManagerStatus?.() || gate?.promptManager || null;
+        const output = api.getDirectorOutputStatus?.() || gate?.output || null;
         const context = api.getDirectorContext?.({ includeRuntime: true }) || null;
         const logs = api.getDirectorLogs?.(20) || [];
         return {
@@ -667,6 +669,7 @@ export function bindSettingEvents(deps = {}) {
             status,
             gate,
             promptManager,
+            output,
             context,
             logs,
         };
@@ -688,6 +691,8 @@ export function bindSettingEvents(deps = {}) {
         const beat = context.beat || {};
 
         const cells = [
+            ['写入预设', snapshot.output?.presetEnabled === false ? '未勾选' : '已勾选'],
+            ['写入世界书', snapshot.output?.worldbookEnabled ? (snapshot.output.worldbook?.ok && snapshot.output.worldbook?.exists ? '已绑定' : '待检查绑定') : '未勾选'],
             ['API', snapshot.available ? `已连接:${snapshot.apiSource || 'unknown'}` : '缺失'],
             ['Hook', status.hookRegistered ? '已注册' : '未注册'],
             ['外层API', snapshot.outerApiReady ? '已注册' : '缺失'],
@@ -753,6 +758,8 @@ export function bindSettingEvents(deps = {}) {
         renderDirectorDiagnostics();
         ErrorHandler?.showUserSuccess?.('导演日志已清空');
     };
+
+    bindDirectorOutputSettings({ AppState, ErrorHandler });
 
     const repairDirectorPromptManagerEntry = async () => {
         const api = getDirectorApi();

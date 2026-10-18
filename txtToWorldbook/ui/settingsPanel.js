@@ -8,6 +8,7 @@
     defaultDirectorInjectionPrompt,
     defaultWorldbookPrompt,
 } from '../core/constants.js';
+import { buildDirectorOutputSettingsHtml, hydrateDirectorOutputSettings } from './directorOutputSettings.js';
 
 function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -108,6 +109,7 @@ ${buildApiConfigCard('director', '🎬 导演AI配置')}
 
 function buildDirectorDiagnosticsHtml() {
     return `
+    ${buildDirectorOutputSettingsHtml()}
     <div class="ttw-setting-card ttw-setting-card-blue" id="ttw-director-diagnostics-card">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
             <div style="font-weight:bold;color:#8bc5ff;">导演运行诊断</div>
@@ -1021,6 +1023,7 @@ export function hydrateSettingsFromState(deps = {}) {
     } = deps;
 
     if (!AppState) return;
+    hydrateDirectorOutputSettings(AppState.settings);
 
     const chunkSizeEl = document.getElementById('ttw-chunk-size');
     if (chunkSizeEl) chunkSizeEl.value = AppState.settings.chunkSize;

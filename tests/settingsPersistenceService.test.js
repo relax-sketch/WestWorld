@@ -8,6 +8,10 @@ import { createSettingsPersistenceService } from '../txtToWorldbook/services/set
 test('loading saved settings migrates prompt fields while retaining local API configuration', () => {
     const saved = {
         customWorldbookPrompt: 'OLD PROMPT',
+        directorPresetEnabled: false,
+        directorWorldbookEnabled: true,
+        directorWorldName: 'My Book',
+        directorWorldEntryUid: '0',
         promptPrefixPreset: 'OLD PREFIX',
         mainApi: { provider: 'openai-compatible', apiKey: 'secret', endpoint: 'local', model: 'm', maxTokens: 500 },
     };
@@ -39,6 +43,10 @@ test('loading saved settings migrates prompt fields while retaining local API co
     service.loadSavedSettings();
 
     assert.equal(AppState.settings.mainApi.apiKey, 'secret');
+    assert.equal(AppState.settings.directorPresetEnabled, false);
+    assert.equal(AppState.settings.directorWorldbookEnabled, true);
+    assert.equal(AppState.settings.directorWorldName, 'My Book');
+    assert.equal(AppState.settings.directorWorldEntryUid, '0');
     assert.equal(
         AppState.settings.promptOverrides[PROMPT_MODULE_IDS.WORLDBOOK_SYSTEM].body,
         'OLD PROMPT',

@@ -1522,6 +1522,19 @@ batchRuntimeService = createBatchRuntimeService({
         MemoryHistoryDB,
     }));
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
+    publicApi.getDirectorOutputSettings = () => ({
+        directorPresetEnabled: AppState.settings.directorPresetEnabled,
+        directorWorldbookEnabled: AppState.settings.directorWorldbookEnabled,
+        directorWorldName: AppState.settings.directorWorldName,
+        directorWorldEntryUid: AppState.settings.directorWorldEntryUid,
+    });
+    publicApi.setDirectorOutputSettings = (config) => {
+        AppState.settings.directorPresetEnabled = config.presetEnabled;
+        AppState.settings.directorWorldbookEnabled = config.worldbookEnabled;
+        AppState.settings.directorWorldName = config.worldName;
+        AppState.settings.directorWorldEntryUid = config.entryUid;
+        saveCurrentSettings({ syncPromptFieldsFromDom: false });
+    };
     publicApi.prepareDirectorInjectionForGeneration = (...args) => directorService.prepareDirectorInjectionForGeneration(...args);
     publicApi.recordDirectorPromptReadyInspection = (...args) => directorService.recordDirectorPromptReadyInspection(...args);
     publicApi.isDirectorEnabled = () => (AppState.settings.directorMode || (AppState.settings.directorEnabled === false ? 'off' : 'api')) !== 'off';
