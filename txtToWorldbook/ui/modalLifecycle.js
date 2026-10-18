@@ -11,8 +11,8 @@ export function createModalLifecycle(deps) {
 
     function initializeModalState() {
         addModalStyles();
-        bindModalEvents();
         loadSavedSettings();
+        bindModalEvents();
         loadCategoryLightSettings();
     }
 

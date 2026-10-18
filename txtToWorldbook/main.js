@@ -1522,6 +1522,7 @@ batchRuntimeService = createBatchRuntimeService({
         MemoryHistoryDB,
     }));
     publicApi.runDirectorBeforeGeneration = (...args) => directorService.runDirectorBeforeGeneration(...args);
+    settingsPersistenceService.loadDirectorOutputSettings();
     publicApi.getDirectorOutputSettings = () => ({
         directorPresetEnabled: AppState.settings.directorPresetEnabled,
         directorWorldbookEnabled: AppState.settings.directorWorldbookEnabled,

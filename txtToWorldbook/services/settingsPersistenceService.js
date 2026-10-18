@@ -251,6 +251,17 @@ export function createSettingsPersistenceService(deps) {
         AppState.settings.plotOutlineExportConfig = AppState.config.plotOutline;
     }
 
+    function loadDirectorOutputSettings() {
+        try {
+            const saved = localStorage.getItem(SETTINGS_STORAGE_KEY)
+                || localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY);
+            const parsed = saved ? JSON.parse(saved) : {};
+            for (const key of ['directorPresetEnabled', 'directorWorldbookEnabled', 'directorWorldName', 'directorWorldEntryUid']) {
+                if (Object.hasOwn(parsed, key)) AppState.settings[key] = parsed[key];
+            }
+        } catch (_) { }
+    }
+
     function loadSavedSettings() {
         try {
             const saved = localStorage.getItem(SETTINGS_STORAGE_KEY)
@@ -383,6 +394,7 @@ export function createSettingsPersistenceService(deps) {
 
     return {
         saveCurrentSettings,
+        loadDirectorOutputSettings,
         loadSavedSettings,
         getNextBeatPrefillText() {
             try {

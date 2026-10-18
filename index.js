@@ -626,7 +626,15 @@ function clearDirectorPromptManager(reason = '') {
         ? clearDirectorPromptManagerContent(promptManager, reason, getDirectorPromptManagerOptions())
         : { ok: true, skipped: true };
     directorTrace(`PromptManager director prompt cleared: ${reason || 'no-reason'}`);
-    if (output.worldbookEnabled) return directorWorldInfo.write(output, '', { clear: true });
+    if (output.worldbookEnabled) return directorWorldInfo.write(output, '', { clear: true }).then((worldbook) => {
+        if (!worldbook.ok) safeToastr('error', `清空世界书导演正文失败：${worldbook.message || worldbook.reason}`);
+        return {
+            ...(output.presetEnabled ? result : worldbook),
+            ok: worldbook.ok || (output.presetEnabled && result.ok),
+            reason: worldbook.reason || result.reason,
+            outputs: { preset: result, worldbook },
+        };
+    });
     return result;
 }
 
@@ -657,16 +665,22 @@ function toggleDirectorPaused(reason = 'manual-toggle') {
 
 async function setDirectorPromptManagerDirectorContent(content) {
     const output = getDirectorOutput();
-    if (output.worldbookEnabled) {
-        const result = await directorWorldInfo.write(output, content);
-        if (!result.ok) return result;
-        if (directorPromptGate.paused) return { ok: false, reason: 'director-paused' };
-    }
-    const result = output.presetEnabled && scriptApi.main_api === 'openai' && getDirectorPromptManagerStatusSafe().activeEnabled !== false
+    const preset = output.presetEnabled && scriptApi.main_api === 'openai' && getDirectorPromptManagerStatusSafe().activeEnabled !== false
         ? setDirectorPromptManagerContent(promptManager, content, getDirectorPromptManagerOptions())
         : { ok: true, skipped: true };
+    const worldbook = output.worldbookEnabled
+        ? await directorWorldInfo.write(output, content)
+        : { ok: true, skipped: true };
+    if (output.worldbookEnabled && directorPromptGate.paused) return { ok: false, reason: 'director-paused' };
+    const ok = (preset.ok && !preset.skipped) || (worldbook.ok && !worldbook.skipped);
     directorTrace(`PromptManager director prompt content length=${String(content || '').length}`);
-    return result;
+    return {
+        ...(preset.ok && !preset.skipped ? preset : worldbook),
+        ok,
+        partial: ok && (!preset.ok || !worldbook.ok),
+        reason: !worldbook.ok ? worldbook.reason : preset.reason,
+        outputs: { preset, worldbook },
+    };
 }
 
 function clearExternalPreparedDirectorPrompt(reason = '') {
@@ -782,21 +796,23 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         const generationType = String(eventContext?.type || '');
         const generationParams = eventContext?.params || {};
 
+        const promptEntry = output.presetEnabled && scriptApi.main_api === 'openai'
+            ? repairDirectorPromptManagerEntry({ save: true })
+            : { ok: true };
+        if (!promptEntry.ok && !output.worldbookEnabled) {
+            markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
+            return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
+        }
+        const presetAvailable = output.presetEnabled && scriptApi.main_api === 'openai'
+            && promptEntry.ok && promptEntry.activeEnabled !== false;
         if (output.worldbookEnabled) {
             const validation = await directorWorldInfo.validate(output);
-            if (!validation.ok) {
+            if (!validation.ok && !presetAvailable) {
+                await clearDirectorPromptManager('worldbook-binding-invalid');
                 safeToastr('error', validation.message || validation.reason);
                 markDirectorGateSkipped(validation.reason, validation);
                 return validation;
             }
-        }
-        const promptEntry = output.presetEnabled && scriptApi.main_api === 'openai'
-            ? repairDirectorPromptManagerEntry({ save: true })
-            : { ok: true };
-        if (!promptEntry.ok) {
-            if (output.worldbookEnabled) safeToastr('error', promptEntry.message || promptEntry.reason);
-            markDirectorGateSkipped(promptEntry.reason || 'prompt-manager-entry-not-ready', promptEntry);
-            return { ok: false, reason: promptEntry.reason || 'prompt-manager-entry-not-ready' };
         }
         const promptManagerEntryDisabled = output.presetEnabled && promptEntry.activeEnabled === false;
         if (promptManagerEntryDisabled) {
@@ -826,8 +842,9 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
         }
 
         const clearedOutput = await clearDirectorPromptManager('generation-started');
-        if (output.worldbookEnabled && !clearedOutput.ok) {
-            safeToastr('error', clearedOutput.message || clearedOutput.reason);
+        if (output.worldbookEnabled && !clearedOutput.ok && !presetAvailable) {
+            const failed = clearedOutput.outputs?.worldbook || clearedOutput;
+            safeToastr('error', failed.message || failed.reason);
             return clearedOutput;
         }
 
@@ -904,18 +921,22 @@ async function prepareDirectorPromptManagerForGeneration(eventContext = {}) {
             return { ok: false, reason: 'director-output-changed-or-paused' };
         }
         const setResult = await setDirectorPromptManagerDirectorContent(promptToSet.content);
+        for (const [target, result] of Object.entries(setResult.outputs || {})) {
+            if (result.ok) continue;
+            safeToastr('error', `${target === 'worldbook' ? '世界书' : '预设'}写入失败：${result.message || result.reason}`);
+            markDirectorEvent('DIRECTOR_OUTPUT_ERROR', { target, ...result });
+        }
         if (!setResult.ok) {
-            if (output.worldbookEnabled) safeToastr('error', setResult.message || setResult.reason);
             markDirectorGateSkipped(setResult.reason || 'prompt-manager-set-failed', setResult);
             return { ok: false, reason: setResult.reason || 'prompt-manager-set-failed' };
         }
 
-        markDirectorEvent(output.worldbookEnabled ? 'WORLD_BOOK_READY' : 'PROMPT_MANAGER_READY', {
+        markDirectorEvent(output.worldbookEnabled && setResult.outputs?.worldbook?.ok ? 'WORLD_BOOK_READY' : 'PROMPT_MANAGER_READY', {
             contentLength: promptToSet.content.length,
             meta: promptToSet.meta || null,
             status: getDirectorOutputStatus(),
         });
-        return { ok: true, meta: promptToSet.meta || null };
+        return { ok: true, partial: setResult.partial, outputs: setResult.outputs, meta: promptToSet.meta || null };
     } catch (error) {
         await clearDirectorPromptManager('prepare-error');
         console.warn('[WestWorld] director PromptManager prepare failed:', error?.message || error);

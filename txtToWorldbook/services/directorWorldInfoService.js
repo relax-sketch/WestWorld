@@ -66,8 +66,20 @@ export function createDirectorWorldInfoService({ loadApi }) {
             if (current !== value) {
                 const updated = structuredClone(data);
                 updated.entries[config.entryUid].content = value;
-                await api.saveWorldInfo(config.worldName, updated, true);
+                try {
+                    await api.saveWorldInfo(config.worldName, updated, true);
+                    // Native saves populate the cache before the request and may hide HTTP errors.
+                    api.worldInfoCache?.delete(config.worldName);
+                    const persisted = await api.loadWorldInfo(config.worldName);
+                    if (persisted?.entries?.[config.entryUid]?.content !== value) {
+                        throw Object.assign(new Error('世界书保存校验失败，请重试'), { code: 'worldbook-save-verification-failed' });
+                    }
+                } catch (error) {
+                    api.worldInfoCache?.delete(config.worldName);
+                    throw error;
+                }
             }
+            if (current !== value || written.get(key) !== value) api.reloadEditor?.(config.worldName);
             written.set(key, value);
             status = { ok: true, exists: true, ...config, contentLength: value.length };
             return { ...status };

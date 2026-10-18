@@ -68,6 +68,10 @@ test('worldbook-only generation writes before returning and never creates a pres
     assert.equal(f.saves[0].immediate, true);
     for (const type of ['regenerate', 'swipe', 'continue']) assert.equal((await f.generate(type)).ok, true);
     assert.equal(f.data().entries[0].content, `${marker}\nround 4`);
+    const cleared = await f.ctx.clearDirectorPromptManager('manual-clear');
+    assert.equal(cleared.ok, true);
+    assert.equal(cleared.contentLength, 0);
+    assert.notEqual(cleared.skipped, true);
 });
 
 test('preset-only preserves the original generation route; both checked write identical content', async () => {
@@ -151,4 +155,51 @@ test('saving independent choices keeps presets selected when enabling worldbook 
     await f.generate();
     assert.equal(f.presetContent(), '');
     assert.equal(f.data().entries[0].content, `${marker}\nround 3`);
+});
+
+test('a removed world entry cannot leave stale preset content or block the next preset update', async () => {
+    const f = fixture({ preset: true });
+    await f.generate();
+    delete f.data().entries[0];
+    const result = await f.generate();
+    assert.equal(result.ok, true);
+    assert.equal(result.partial, true);
+    assert.equal(result.outputs.worldbook.reason, 'worldbook-entry-missing');
+    assert.equal(f.presetContent(), `${marker}\nround 2`);
+});
+
+test('world save failures do not block preset output and a later world save can recover', async () => {
+    const f = fixture({ preset: true });
+    const api = await f.ctx.loadWorldApi();
+    const save = api.saveWorldInfo;
+    api.saveWorldInfo = async () => { throw new Error('offline'); };
+    f.ctx.loadWorldApi = async () => api;
+    const result = await f.generate();
+    assert.equal(result.ok, true);
+    assert.equal(result.partial, true);
+    assert.equal(result.outputs.worldbook.ok, false);
+    assert.equal(f.presetContent(), `${marker}\nround 1`);
+    api.saveWorldInfo = save;
+    const recovered = await f.generate();
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.partial, false);
+    assert.equal(f.presetContent(), f.data().entries[0].content);
+});
+
+test('unavailable preset settings do not block a working worldbook output', async () => {
+    const f = fixture({ preset: true });
+    f.promptManager.serviceSettings = null;
+    const result = await f.generate();
+    assert.equal(result.ok, true);
+    assert.equal(result.partial, true);
+    assert.equal(result.outputs.preset.ok, false);
+    assert.equal(f.data().entries[0].content, `${marker}\nround 1`);
+});
+
+test('worldbook-only failures return failure rather than pretending an output was written', async () => {
+    const f = fixture();
+    delete f.data().entries[0];
+    assert.equal((await f.generate()).ok, false);
+    assert.equal(f.runs(), 0);
+    assert.equal(f.presetContent(), undefined);
 });

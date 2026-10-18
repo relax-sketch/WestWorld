@@ -45,34 +45,60 @@ export function bindDirectorOutputSettings({ AppState, ErrorHandler }) {
     const book = document.getElementById('ttw-director-world-name');
     const entry = document.getElementById('ttw-director-world-entry');
     const status = document.getElementById('ttw-director-output-status');
+    const save = document.getElementById('ttw-director-output-save');
+    const refreshButton = document.getElementById('ttw-director-world-refresh');
     const api = () => window.WestWorld;
     let request = 0;
-    const loadEntries = async (selectedUid = '') => {
-        const version = ++request;
+    let loading = false;
+    let saving = false;
+    const setLoading = (value, version) => {
+        if (version !== request) return;
+        loading = value;
+        save.disabled = loading || saving;
+    };
+    const loadEntries = async (selectedUid = '', version = ++request) => {
         const worldName = book.value;
+        setLoading(true, version);
         fillOptions(entry, [], '', '请选择条目');
-        if (!worldName) return;
-        const result = await api()?.listDirectorWorldEntries?.(worldName);
-        if (version !== request || book.value !== worldName) return;
-        if (!result?.ok) { status.textContent = result?.message || '无法读取世界书条目'; return; }
-        fillOptions(entry, result.entries, selectedUid, '请选择条目');
+        try {
+            if (!worldName) return;
+            const result = await api()?.listDirectorWorldEntries?.(worldName);
+            if (version !== request || book.value !== worldName) return;
+            if (!result?.ok) { status.textContent = result?.message || '无法读取世界书条目'; return; }
+            fillOptions(entry, result.entries, selectedUid, '请选择条目');
+            status.textContent = '';
+        } catch (error) {
+            if (version === request) status.textContent = `无法读取世界书条目：${error.message}`;
+        } finally { setLoading(false, version); }
     };
     const refresh = async () => {
+        const version = ++request;
         const worldName = book.value;
         const uid = entry.value;
-        const result = await api()?.listDirectorWorldBooks?.();
-        if (!result?.ok) { status.textContent = result?.message || '无法读取世界书列表'; return; }
-        fillOptions(book, result.books.map((name) => ({ uid: name, name })), worldName, '请选择世界书');
-        await loadEntries(uid);
+        setLoading(true, version);
+        try {
+            const result = await api()?.listDirectorWorldBooks?.();
+            if (version !== request || book.value !== worldName || entry.value !== uid) return;
+            if (!result?.ok) { status.textContent = result?.message || '无法读取世界书列表'; return; }
+            fillOptions(book, result.books.map((name) => ({ uid: name, name })), worldName, '请选择世界书');
+            await loadEntries(uid, version);
+        } catch (error) {
+            if (version === request) status.textContent = `无法读取世界书列表：${error.message}`;
+        } finally { setLoading(false, version); }
     };
     worldbook.addEventListener('change', () => {
         document.getElementById('ttw-director-worldbook-controls').hidden = !worldbook.checked;
         if (worldbook.checked) void refresh();
+        else setLoading(false, ++request);
     });
     book.addEventListener('change', () => { void loadEntries(); });
-    document.getElementById('ttw-director-world-refresh').addEventListener('click', () => { void refresh(); });
-    document.getElementById('ttw-director-output-save').addEventListener('click', async (event) => {
-        event.target.disabled = true;
+    refreshButton.addEventListener('click', () => { void refresh(); });
+    save.addEventListener('click', async () => {
+        if (loading || saving) return;
+        saving = true;
+        save.disabled = true;
+        const controls = [preset, worldbook, book, entry, refreshButton];
+        controls.forEach((control) => { control.disabled = true; });
         try {
             const result = await api()?.configureDirectorOutput?.({ presetEnabled: preset.checked, worldbookEnabled: worldbook.checked, worldName: book.value, entryUid: entry.value });
             status.textContent = result?.ok ? '已保存，下次生成时写入所选位置。' : (result?.message || result?.reason || '保存失败');
@@ -80,7 +106,11 @@ export function bindDirectorOutputSettings({ AppState, ErrorHandler }) {
         } catch (error) {
             status.textContent = `保存失败：${error.message}`;
             ErrorHandler?.showUserError?.(status.textContent);
-        } finally { event.target.disabled = false; }
+        } finally {
+            saving = false;
+            controls.forEach((control) => { control.disabled = false; });
+            save.disabled = loading;
+        }
     });
     hydrateDirectorOutputSettings(AppState.settings);
     if (worldbook.checked) void refresh();

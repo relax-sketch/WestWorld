@@ -11,14 +11,17 @@ function fixture() {
         custom: { keep: true },
     };
     const saves = [];
+    let editorData = structuredClone(data);
+    const reloads = [];
     const api = {
         world_names: ['测试书'],
         loadWorldInfo: async () => structuredClone(data),
         saveWorldInfo: async (name, updated, immediate) => { saves.push({ name, updated, immediate }); data = updated; },
+        reloadEditor: (name) => { reloads.push(name); editorData = structuredClone(data); },
     };
     return {
         service: createDirectorWorldInfoService({ loadApi: async () => api }),
-        api, saves,
+        api, saves, reloads, editorData: () => editorData,
         config: getDirectorOutputConfig({ directorWorldbookEnabled: true, directorWorldName: '测试书', directorWorldEntryUid: 0 }),
         data: () => data,
     };
@@ -78,12 +81,14 @@ test('clearing removes owned generated text while preserving manual replacements
 test('failed saves do not mutate the loaded object and writes recover after rejection', async () => {
     const f = fixture();
     const original = f.data();
+    const load = f.api.loadWorldInfo;
     f.api.loadWorldInfo = async () => original;
     const save = f.api.saveWorldInfo;
     f.api.saveWorldInfo = async () => { throw new Error('断网'); };
     assert.equal((await f.service.write(f.config, '失败正文')).ok, false);
     assert.equal(original.entries[0].content, '手动正文');
     f.api.saveWorldInfo = save;
+    f.api.loadWorldInfo = load;
     assert.equal((await f.service.write(f.config, '成功正文')).ok, true);
     assert.equal(f.data().entries[0].content, '成功正文');
 });
@@ -96,4 +101,55 @@ test('concurrent content writes and clears are saved in request order', async ()
         f.service.write(f.config, '', { clear: true }),
     ]);
     assert.deepEqual(f.saves.map((save) => save.updated.entries[0].content), ['first', 'second', '']);
+});
+
+test('HTTP failures and network failures invalidate optimistic native cache and allow a real retry', async () => {
+    for (const mode of ['http500', 'network', 'lost-ack']) {
+        let disk = { entries: { 0: { uid: 0, content: 'old', depth: 7 } } };
+        const cache = new Map();
+        let fail = true;
+        let saves = 0;
+        let reloads = 0;
+        const api = {
+            world_names: ['Book'], worldInfoCache: cache,
+            loadWorldInfo: async (name) => {
+                if (!cache.has(name)) cache.set(name, structuredClone(disk));
+                return structuredClone(cache.get(name));
+            },
+            saveWorldInfo: async (name, data, immediate) => {
+                assert.equal(immediate, true);
+                ++saves;
+                cache.set(name, data);
+                if (fail && mode === 'http500') return;
+                if (fail && mode === 'network') throw new Error('offline');
+                disk = structuredClone(data);
+                if (fail && mode === 'lost-ack') throw new Error('connection closed after save');
+            },
+            reloadEditor: () => { ++reloads; },
+        };
+        const service = createDirectorWorldInfoService({ loadApi: async () => api });
+        const config = { worldName: 'Book', entryUid: '0' };
+        assert.equal((await service.write(config, 'new')).ok, false, mode);
+        assert.equal(cache.has('Book'), false, mode);
+        assert.equal(reloads, 0);
+        fail = false;
+        assert.equal((await service.write(config, 'new')).ok, true, mode);
+        assert.equal(disk.entries[0].content, 'new');
+        assert.equal(disk.entries[0].depth, 7);
+        assert.equal(saves, mode === 'lost-ack' ? 1 : 2);
+        assert.equal(reloads, 1);
+    }
+});
+
+test('saving refreshes the native editor copy so another field edit cannot restore old director content', async () => {
+    const f = fixture();
+    await f.service.write(f.config, '[WestWorld Director Injection]\nnew');
+    assert.equal(f.reloads.length, 1);
+    const editor = f.editorData();
+    editor.entries[1].comment = 'edited separately';
+    await f.api.saveWorldInfo(f.config.worldName, editor, true);
+    assert.equal(f.data().entries[0].content, '[WestWorld Director Injection]\nnew');
+    assert.equal(f.data().entries[1].comment, 'edited separately');
+    await f.service.write(f.config, '[WestWorld Director Injection]\nnew');
+    assert.equal(f.reloads.length, 1);
 });
