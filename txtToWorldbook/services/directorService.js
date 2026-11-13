@@ -6,6 +6,7 @@ import {
     diffBoundDirectorSession,
     normalizeDirectorBeatState,
     ensureMemoryDirectorRuntime,
+    getCombinedBeatStartIndex,
 } from './directorStateService.js';
 import {
     insertDirectorInjection,
@@ -13,6 +14,8 @@ import {
     withDirectorInjectionMarker,
     hashText,
 } from './directorInjectionService.js';
+
+const COMBINED_BEAT_REQUIREMENT = '本轮把合并后的原文作为一个节拍完整演绎：从给定起点出发，按原文顺序覆盖两段正文，到给定终点收束。段落交界处直接接续，之后的节拍仅供预览。';
 
 export function createDirectorService(deps = {}) {
     const {
@@ -390,10 +393,10 @@ export function createDirectorService(deps = {}) {
         }
 
         if (memory.chapterScript.beats.length > 0) {
-            memory.chapterScript.beats = ensureMinimumBeatCount(
-                memory.chapterScript.beats,
-                `${memory.chapterOutline || ''}`
-            );
+            const savedBeats = memory.chapterScript.beats;
+            memory.chapterScript.beats = getCombinedBeatStartIndex(memory, savedBeats.length) !== null
+                ? savedBeats.slice(0, 8)
+                : ensureMinimumBeatCount(savedBeats, memory.chapterOutline || '');
             memory.chapterScript.beats = maybeRepairShiftedBeatMetadata(memory.chapterScript.beats);
             return memory.chapterScript.beats;
         }
@@ -408,6 +411,22 @@ export function createDirectorService(deps = {}) {
         );
         memory.chapterScript.beats = maybeRepairShiftedBeatMetadata(memory.chapterScript.beats);
         return memory.chapterScript.beats;
+    }
+
+    function combineCurrentBeats(beats, start) {
+        if (start === null) return beats;
+        const first = beats[start];
+        const second = beats[start + 1];
+        const combined = beats.slice();
+        combined[start + 1] = {
+            id: `${first.id}–${second.id}`,
+            summary: `${first.summary}；${second.summary}`,
+            original_text: [first.original_text, second.original_text].filter(Boolean).join('\n\n'),
+            entryEvent: first.entryEvent,
+            exitCondition: second.exitCondition,
+            combined: true,
+        };
+        return combined;
     }
 
     function extractJsonObject(text) {
@@ -720,17 +739,18 @@ export function createDirectorService(deps = {}) {
     }
 
     function buildDirectorPrompt({ chapterTitle, chapterOutline, currentBeatIdx, beats, latestDialogue, latestUserMessage, directionContext }) {
+        const currentBeat = beats[currentBeatIdx] || beats[0] || null;
         const compactBeats = beats.map((beat, idx) => ({
             idx,
             id: beat.id,
             summary: beat.summary,
             entryEvent: beat.entryEvent,
             exitCondition: beat.exitCondition,
-        }));
-        const currentBeat = beats[currentBeatIdx] || beats[0] || null;
+        })).filter(({ idx }) => !currentBeat?.combined || idx !== currentBeatIdx - 1);
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
         const contextMode = context.mode === 'new_beat' ? 'new_beat' : 'in_beat';
-        const startAnchor = toShortText(context.start_anchor || '', 180)
+        const startAnchor = (currentBeat?.combined ? currentBeat.entryEvent : '')
+            || toShortText(context.start_anchor || '', 180)
             || (contextMode === 'new_beat'
                 ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_NEW_DEFAULT)
                 : renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_START_IN_BEAT_DEFAULT));
@@ -738,9 +758,12 @@ export function createDirectorService(deps = {}) {
         const contextEntryEvent = toShortText(context.entry_event || '', 120) || emptyContext;
         const contextRecentAssistant = toTailText(context.recent_assistant || '', 200) || emptyContext;
         const contextRecentUser = toShortText(context.recent_user || '', 220) || emptyContext;
-        const endGuideline = toShortText(context.end_guideline || '', 180)
+        const endGuideline = (currentBeat?.combined ? currentBeat.exitCondition : '')
+            || toShortText(context.end_guideline || '', 180)
             || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_END_BOUNDARY);
-        const currentOriginal = String(currentBeat?.original_text || '').trim();
+        const currentOriginal = currentBeat?.combined
+            ? currentBeat.original_text
+            : String(currentBeat?.original_text || '').trim();
         const currentOriginalForPrompt = currentOriginal || emptyContext;
         const contextModeLabel = contextMode === 'new_beat'
             ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_MODE_NEW)
@@ -748,7 +771,7 @@ export function createDirectorService(deps = {}) {
         const entryEventLine = contextMode === 'new_beat'
             ? renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_ENTRY_LINE, { ENTRY_EVENT: contextEntryEvent })
             : '';
-        return promptRegistryService.composeRequest([PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK], {
+        const prompt = promptRegistryService.composeRequest([PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK], {
             [PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK]: {
                 CHAPTER_TITLE: String(chapterTitle || ''),
                 CHAPTER_OUTLINE: String(chapterOutline || ''),
@@ -765,9 +788,24 @@ export function createDirectorService(deps = {}) {
                 FIXED_STAGE_IDX: String(currentBeatIdx),
             },
         });
+        return currentBeat?.combined
+            ? `${prompt}\n\n本轮使用合并节拍，以下要求优先于上面的节拍内推进规则：${COMBINED_BEAT_REQUIREMENT}`
+            : prompt;
     }
 
     function buildDefaultDirectionScript(currentBeat, nextBeat, directionContext = {}) {
+        if (currentBeat?.combined) {
+            const steps = [
+                '按顺序演绎原文中的前一段剧情',
+                '接续演绎后一段剧情并达到终点',
+            ];
+            return {
+                start: currentBeat.entryEvent,
+                action_chain: buildActionChain(steps),
+                steps,
+                end: currentBeat.exitCondition,
+            };
+        }
         const currentBeatFallback = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_CURRENT_BEAT);
         const currentSummary = toShortText(currentBeat?.summary || currentBeatFallback, 200) || currentBeatFallback;
         const context = directionContext && typeof directionContext === 'object' ? directionContext : {};
@@ -998,7 +1036,9 @@ export function createDirectorService(deps = {}) {
             ? Math.max(0, Math.min(decision.previous_stage_idx, beats.length - 1))
             : Math.max(0, stageIdx - 1);
         const switchedStage = stageIdx !== previousStageIdx;
-        const currentOriginal = String(currentBeat?.original_text || '').trim();
+        const currentOriginal = currentBeat?.combined
+            ? currentBeat.original_text
+            : String(currentBeat?.original_text || '').trim();
         const currentOriginalSection = currentOriginal
             || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_CURRENT_MISSING);
         const nextBeatSummary = toShortText(
@@ -1051,49 +1091,55 @@ export function createDirectorService(deps = {}) {
             .map((step, idx) => `  ${idx + 1}. ${step}`)
             .join('\n');
 
-        const stageExecutionRequirement = renderDirectorFragment(
-            switchedStage
-                ? PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_SWITCHED
-                : PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_STAY
-        );
+        const stageExecutionRequirement = currentBeat?.combined
+            ? `- 执行要求: ${COMBINED_BEAT_REQUIREMENT}`
+            : renderDirectorFragment(
+                switchedStage
+                    ? PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_SWITCHED
+                    : PROMPT_MODULE_IDS.DIRECTOR_INJECTION_REQUIREMENT_STAY
+            );
         const defaultStart = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_START);
         const defaultEnd = renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_DEFAULT_END);
+        const start = currentBeat?.combined ? currentBeat.entryEvent : directionScript.start;
+        const end = currentBeat?.combined ? currentBeat.exitCondition : directionScript.end;
 
         return promptRegistryService.renderModule(PROMPT_MODULE_IDS.DIRECTOR_INJECTION, {
             CURRENT_BEAT_ID: String(currentBeat?.id || `b${stageIdx + 1}`),
             CURRENT_BEAT_SUMMARY: String(currentBeat?.summary || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_CONTEXT_CURRENT_BEAT)),
             CURRENT_BEAT_ORIGINAL: currentOriginalSection,
-            DIRECTION_START: String(directionScript.start || defaultStart),
+            DIRECTION_START: String(start || defaultStart),
             DIRECTION_ACTION_CHAIN: String(actionChain || renderDirectorFragment(PROMPT_MODULE_IDS.DIRECTOR_INJECTION_DEFAULT_ACTION)),
             DIRECTION_PROCESS_LINES: processLines || defaultSteps.map((step, idx) => `  ${idx + 1}. ${step}`).join('\n'),
-            DIRECTION_END: String(directionScript.end || defaultEnd),
+            DIRECTION_END: String(end || defaultEnd),
             STAGE_EXECUTION_REQUIREMENT: stageExecutionRequirement,
             CURRENT_EXIT_CONDITION: currentExitCondition,
             NEXT_BEAT_SUMMARY: nextBeatSummary,
             NEXT_BEAT_ENTRY_EVENT: nextBeatEntryEvent,
             NEXT_BEAT_PREVIEW_200: nextBeatPreview200,
-            START_RECAP: String(directionScript.start || defaultStart),
+            START_RECAP: String(start || defaultStart),
         });
     }
 
-    function isDecisionForBeat(decision, beatIndex, meta = null, chapterIndex = null) {
+    function isDecisionForBeat(decision, beatIndex, combined, meta = null, chapterIndex = null) {
         if (!decision || typeof decision !== 'object') return false;
         if (!Number.isInteger(decision.stage_idx) || decision.stage_idx !== beatIndex) return false;
+        if ((decision.combined === true) !== combined) return false;
         if (meta && Number.isInteger(meta.chapterIndex) && Number.isInteger(chapterIndex)) {
             return meta.chapterIndex === chapterIndex;
         }
         return true;
     }
 
-    function getDecisionForCurrentBeat(memory, chapterIndex, beatIndex) {
+    function getDecisionForCurrentBeat(memory, chapterIndex, beatIndex, combined) {
         const localDecision = memory?.directorDecision || null;
-        if (isDecisionForBeat(localDecision, beatIndex)) {
+        if (isDecisionForBeat(localDecision, beatIndex, combined)) {
             return localDecision;
         }
+        if (combined) return null;
 
         const lastDecision = AppState.experience?.directorLastDecision || null;
         const lastMeta = AppState.experience?.directorLastInjectionMeta || null;
-        if (isDecisionForBeat(lastDecision, beatIndex, lastMeta, chapterIndex)) {
+        if (isDecisionForBeat(lastDecision, beatIndex, combined, lastMeta, chapterIndex)) {
             return lastDecision;
         }
 
@@ -1113,13 +1159,14 @@ export function createDirectorService(deps = {}) {
         const memory = queue[chapterIndex] || null;
         if (!memory) return { ok: false, reason: 'chapter-missing' };
         ensureMemoryDirectorRuntime(memory, chapterIndex);
-        const beats = ensureChapterBeats(memory);
+        const chapterBeats = ensureChapterBeats(memory);
+        const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length));
         const beatCount = Array.isArray(beats) ? beats.length : 0;
         const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
             ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beatCount - 1)))
             : 0;
         const beat = beats[beatIndex] || null;
-        const decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex);
+        const decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex, beat?.combined === true);
         const directionScript = decision?.direction_script || {};
 
         return {
@@ -1173,11 +1220,12 @@ export function createDirectorService(deps = {}) {
             const memory = queue[chapterIndex] || null;
             if (!memory) return { ok: false, reason: 'chapter-missing', content: '', meta: {} };
             ensureMemoryDirectorRuntime(memory, chapterIndex);
-            const beats = ensureChapterBeats(memory);
+            const chapterBeats = ensureChapterBeats(memory);
+            const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length));
             const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
                 ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beats.length - 1)))
                 : 0;
-            let decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex);
+            let decision = getDecisionForCurrentBeat(memory, chapterIndex, beatIndex, beats[beatIndex]?.combined === true);
             if (!decision) {
                 const directionContext = buildDirectionContext({
                     beats,
@@ -1377,17 +1425,18 @@ export function createDirectorService(deps = {}) {
         }
         ensureMemoryDirectorRuntime(memory, chapterIndex);
 
-        const beats = ensureChapterBeats(memory);
-        if (!Array.isArray(beats) || beats.length === 0) {
+        const chapterBeats = ensureChapterBeats(memory);
+        if (chapterBeats.length === 0) {
             directorTelemetry?.markGateSkipped?.('beats-missing', { chapterIndex });
             directorWarn(`无可用轻节拍，chapter=${chapterIndex + 1}`);
             return null;
         }
 
         const currentBeatIdx = Number.isInteger(memory.chapterCurrentBeatIndex)
-            ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, beats.length - 1))
+            ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, chapterBeats.length - 1))
             : 0;
         memory.chapterCurrentBeatIndex = currentBeatIdx;
+        const rangeStart = getCombinedBeatStartIndex(memory, chapterBeats.length);
         const turnPrefix = buildDirectorTurnPrefix(chapterIndex);
         const runStartedAt = Date.now();
         const runId = directorTelemetry?.makeRunId?.() || `wwd-${runStartedAt.toString(36)}`;
@@ -1395,17 +1444,19 @@ export function createDirectorService(deps = {}) {
             runId,
             chapterIndex,
             beatIndex: currentBeatIdx,
-            beatCount: beats.length,
+            beatCount: chapterBeats.length,
             session,
         });
-        directorDebug(`start chapter=${chapterIndex + 1}, beat=${currentBeatIdx + 1}/${beats.length}`);
+        directorDebug(`start chapter=${chapterIndex + 1}, beat=${currentBeatIdx + 1}/${chapterBeats.length}`);
 
         const latestUserMessage = getLatestUserMessage(eventData);
         const latestAssistantMessage = getLatestAssistantMessage(eventData);
         const latestDialogue = getLatestDialogue(eventData);
-        const switchCommand = detectExplicitBeatSwitchCommand(latestUserMessage);
-        const switchControl = resolveBeatSwitchControl(currentBeatIdx, beats, switchCommand);
+        // 重生成会重读上一条用户消息，已选中的两拍由手动切拍解除。
+        const switchCommand = rangeStart === null ? detectExplicitBeatSwitchCommand(latestUserMessage) : null;
+        const switchControl = resolveBeatSwitchControl(currentBeatIdx, chapterBeats, switchCommand);
         const lockedBeatIdx = switchControl.lockedBeatIdx;
+        const beats = combineCurrentBeats(chapterBeats, rangeStart);
         const chapterQueue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
         const chapterMaxIdx = Math.max(0, chapterQueue.length - 1);
         const previousChapterIdx = Number.isInteger(AppState.experience?.lastChapterIdx)
@@ -1448,7 +1499,10 @@ export function createDirectorService(deps = {}) {
             previousChapterIdx,
             Number.isInteger(AppState.experience?.lastBeatIdx) ? AppState.experience.lastBeatIdx : -1
         );
-        const currentGlobalBeatOrdinal = toGlobalBeatOrdinal(chapterIndex, lockedBeatIdx);
+        const historyBeatIdx = rangeStart !== null && (chapterChanged || previousBeatIdx !== lockedBeatIdx)
+            ? rangeStart
+            : lockedBeatIdx;
+        const currentGlobalBeatOrdinal = toGlobalBeatOrdinal(chapterIndex, historyBeatIdx);
         const previousGlobalBeatOrdinal = previousBeatIdx >= 0
             ? toGlobalBeatOrdinal(previousChapterIdx, previousBeatIdx)
             : null;
@@ -1469,7 +1523,7 @@ export function createDirectorService(deps = {}) {
             isLargeBeatJump,
             beatJumpDistance,
         });
-        directorDebug(`switch-command=${switchCommand.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
+        directorDebug(`switch-command=${switchCommand?.requested ? `on(${switchCommand.signal || 'explicit'})` : 'off'}`);
         directorDebug(`switch-control=${switchControl.reason}, lockedBeat=${lockedBeatIdx + 1}/${beats.length}`);
         directorDebug(`jump-detect chapterChanged=${chapterChanged ? 'yes' : 'no'}, beatGap=${beatJumpDistance}, global=${previousGlobalBeatOrdinal ?? -1}->${currentGlobalBeatOrdinal ?? -1}, history=${hasReliableBeatHistory ? 'reliable' : 'fallback'}`);
         directorDebug(`start-mode=${directionContext.mode}, prevBeat=${previousBeatIdx >= 0 ? previousBeatIdx + 1 : 0}`);
@@ -1482,7 +1536,7 @@ export function createDirectorService(deps = {}) {
             updateStreamContent(`   章节: ${memory.chapterTitle || `第${chapterIndex + 1}章`}\n`);
             updateStreamContent(`   当前节拍: ${currentBeatIdx + 1}/${beats.length}\n`);
             updateStreamContent(`   用户消息: ${userMsgPreview}\n`);
-            updateStreamContent(`   切拍指令: ${switchCommand.requested ? switchCommand.signal || '显式' : '无'}\n`);
+            updateStreamContent(`   切拍指令: ${switchCommand?.requested ? switchCommand.signal || '显式' : '无'}\n`);
             updateStreamContent(`   锁定节拍: ${lockedBeatIdx + 1}/${beats.length}\n`);
             updateStreamContent(`   判定模式: ${modeLabel}\n`);
         }
@@ -1530,7 +1584,10 @@ export function createDirectorService(deps = {}) {
                 decision = buildFallbackDecision(lockedBeatIdx, beats, 'parse-fallback', directionContext);
                 decisionSource = 'fallback-parse';
             } else {
-                decision = normalizeDecision(parsed, lockedBeatIdx, beats, directionContext);
+                decision = normalizeDecision(
+                    rangeStart === null ? parsed : { ...parsed, stage_idx: lockedBeatIdx },
+                    lockedBeatIdx, beats, directionContext,
+                );
             }
 
             // 新增：输出导演决策详情日志
@@ -1567,6 +1624,13 @@ export function createDirectorService(deps = {}) {
             }
             decision = buildFallbackDecision(lockedBeatIdx, beats, 'error-fallback', directionContext);
             decisionSource = 'fallback-error';
+        }
+
+        if (AppState.experience.currentChapterIndex !== chapterIndex
+            || AppState.memory.queue[chapterIndex] !== memory
+            || memory.chapterCurrentBeatIndex !== currentBeatIdx
+            || getCombinedBeatStartIndex(memory, chapterBeats.length) !== rangeStart) {
+            return shouldInjectChat ? null : { ok: false, reason: 'reading-progress-changed' };
         }
 
         // 节拍切换由流程层决定，导演输出仅负责“怎么演”。
@@ -1623,6 +1687,11 @@ export function createDirectorService(deps = {}) {
         }
 
         decision.previous_stage_idx = currentBeatIdx;
+        if (rangeStart !== null) {
+            decision.combined = true;
+            decision.direction_script.start = beats[lockedBeatIdx].entryEvent;
+            decision.direction_script.end = beats[lockedBeatIdx].exitCondition;
+        }
 
         directorInfo(`判定完成 source=${decisionSource}, stage=${decision.stage_idx}, switch=${decision.switch_direction || 'none'}`);
         if (typeof updateStreamContent === 'function') {

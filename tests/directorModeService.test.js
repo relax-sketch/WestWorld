@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createDirectorService } from '../txtToWorldbook/services/directorService.js';
+import { createChapterExperienceView } from '../txtToWorldbook/ui/chapterExperienceView.js';
 import {
     PROMPT_MODULE_IDS,
     createPromptRegistryService,
@@ -236,6 +237,61 @@ test('off mode skips director prompt preparation without calling API', async () 
 
     assert.equal(setup.getApiCalls(), 0);
     assert.deepEqual(result, { ok: false, reason: 'directorMode=off' });
+});
+
+test('two-beat selection keeps both full originals on regeneration and advances past the pair', async (t) => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { getElementById: () => null };
+    t.after(() => {
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+    });
+
+    const { AppState, service, getSentPrompt } = createService({
+        overrides: {
+            [PROMPT_MODULE_IDS.DIRECTOR_FRAMEWORK]: {
+                body: '{CURRENT_BEAT_ORIGINAL}\n{COMPACT_BEATS_JSON}',
+            },
+            [PROMPT_MODULE_IDS.DIRECTOR_INJECTION]: {
+                body: '{DIRECTION_START}|{CURRENT_BEAT_ORIGINAL}|{DIRECTION_END}|{CURRENT_EXIT_CONDITION}|{NEXT_BEAT_SUMMARY}',
+            },
+        },
+    });
+    const memory = AppState.memory.queue[0];
+    const a = '  正文甲\n\n第二段  ';
+    const b = `  正文乙${'！'.repeat(500)}\n结束  `;
+    memory.chapterScript.beats.push(
+        { summary: '第一拍', original_text: a, entryEvent: '起点甲', exitCondition: '省略的结尾' },
+        { summary: '第二拍', original_text: b, entryEvent: '省略的开头', exitCondition: '终点乙' },
+        { summary: '下一拍预览', original_text: '正文丙', entryEvent: '起点丙', exitCondition: '终点丙' },
+    );
+    const view = createChapterExperienceView({
+        AppState,
+        ErrorHandler: { showUserError: assert.fail, showUserSuccess() {} },
+    });
+    assert.equal((await view.goToNextBeat(2)).status.display, '2–3/4/1');
+    assert.equal(service.getDirectorInjectionPrompt({ includeMarker: false }).content,
+        `起点甲|${a}\n\n${b}|终点乙|终点乙|下一拍预览`);
+    const chat = [{ role: 'user', content: '下一节拍' }];
+    for (const type of ['normal', 'regenerate']) {
+        const result = await service.prepareDirectorInjectionForGeneration({
+            type,
+            latestUserMessage: '下一节拍',
+            chat,
+        });
+        assert.equal(result.content, `起点甲|${a}\n\n${b}|终点乙|终点乙|下一拍预览`);
+        assert.ok(getSentPrompt().includes(`${a}\n\n${b}`));
+        assert.doesNotMatch(getSentPrompt(), /省略的结尾|省略的开头/);
+        assert.equal(memory.chapterCurrentBeatIndex, 2);
+        assert.equal(memory.chapterScript.beats[2].original_text, b);
+        chat.push({ role: 'assistant', content: '这条回复会被删除' });
+        chat.pop();
+    }
+
+    const next = await view.goToNextBeat();
+    assert.equal(next.status.currentBeat, 4);
+    assert.equal(next.status.beatRangeStart, null);
+    assert.ok(service.getDirectorInjectionPrompt().content.includes('正文丙'));
 });
 
 test('API failure and parse failure do not silently inject fallback when disabled', async () => {

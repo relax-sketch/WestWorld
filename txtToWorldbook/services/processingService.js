@@ -2723,6 +2723,7 @@ export function createProcessingService(deps = {}) {
     function commitPolishedAssets(memory, index, assets, source = 'local-presplit-ai-polish') {
         memory.chapterOutline = assets.outline;
         memory.chapterScript = assets.script;
+        delete memory.chapterBeatRangeStartIndex;
         memory.chapterAssetsSource = source;
         memory.chapterAssetsApiSource = assets?.meta?.routeSource || assets?.meta?.apiTarget || '';
         memory.chapterAssetsDraft = null;
@@ -2883,6 +2884,7 @@ export function createProcessingService(deps = {}) {
         const commitAssets = (assets, source = 'director-unknown') => {
             memory.chapterOutline = assets.outline;
             memory.chapterScript = assets.script;
+            delete memory.chapterBeatRangeStartIndex;
             memory.chapterAssetsSource = source;
             memory.chapterAssetsDraft = null;
             const beatCount = Array.isArray(memory.chapterScript?.beats) ? memory.chapterScript.beats.length : 0;
@@ -3959,6 +3961,7 @@ ${'='.repeat(50)}
         memory.chapterAssetsApiSource = 'local-presplit-only';
         memory.chapterAssetsDraft = null;
         memory.chapterCurrentBeatIndex = 0;
+        delete memory.chapterBeatRangeStartIndex;
         memory.chapterOutlineStatus = 'done';
         memory.chapterOutlineError = '';
         updateStreamContent(`🧷 [第${index + 1}章][本地兜底] 用户提交本地预切草稿，beats=${Array.isArray(localScript.beats) ? localScript.beats.length : 0}\n`);

@@ -491,6 +491,7 @@ tochao">thinking\ntucao\ntochao</textarea>
         memory.chapterAssetsApiSource = '';
         memory.chapterScript = { keyNodes: [], beats: [] };
         memory.chapterCurrentBeatIndex = 0;
+        delete memory.chapterBeatRangeStartIndex;
         memory.directorDecision = null;
         memory.chapterOpeningPreview = '';
         memory.chapterOpeningSent = false;

@@ -138,6 +138,14 @@ export function ensureMemoryDirectorRuntime(memory, index = 0) {
     return memory;
 }
 
+export function getCombinedBeatStartIndex(memory, beatCount) {
+    const start = memory.chapterBeatRangeStartIndex;
+    return Number.isInteger(start) && start >= 0
+        && start + 1 === memory.chapterCurrentBeatIndex && start + 1 < beatCount
+        ? start
+        : null;
+}
+
 export function normalizeDirectorBeatState(AppState) {
     const queue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
     ensureExperienceState(AppState, queue.length);

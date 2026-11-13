@@ -1,6 +1,7 @@
 import {
     ensureExperienceState,
     ensureMemoryDirectorRuntime,
+    getCombinedBeatStartIndex,
 } from '../services/directorStateService.js';
 import { PROMPT_MODULE_IDS } from '../services/promptRegistryService.js';
 
@@ -468,6 +469,7 @@ export function createChapterExperienceView(deps = {}) {
         memory.chapterAssetsApiSource = '';
         memory.chapterScript = { keyNodes: [], beats: [] };
         memory.chapterCurrentBeatIndex = 0;
+        delete memory.chapterBeatRangeStartIndex;
         memory.directorDecision = null;
         memory.chapterOpeningPreview = '';
         memory.chapterOpeningSent = false;
@@ -537,7 +539,7 @@ export function createChapterExperienceView(deps = {}) {
         ErrorHandler.showUserSuccess(`已重置 ${AppState.memory.queue.length} 章导演切拍。`);
     }
 
-    async function switchCurrentBeat(offset = 0) {
+    async function switchCurrentBeat(offset = 0, combine = false) {
         ensureState();
         const chapterIndex = Math.max(0, Math.min(AppState.experience.currentChapterIndex || 0, Math.max(0, AppState.memory.queue.length - 1)));
         const memory = getMemory(chapterIndex);
@@ -572,10 +574,16 @@ export function createChapterExperienceView(deps = {}) {
         }
 
         memory.chapterCurrentBeatIndex = targetBeatIndex;
+        if (combine && targetBeatIndex === currentBeatIndex + 2) {
+            memory.chapterBeatRangeStartIndex = currentBeatIndex + 1;
+            if (!memory.chapterScript.beats.length) memory.chapterScript.beats = beats;
+        } else {
+            delete memory.chapterBeatRangeStartIndex;
+        }
         AppState.experience.currentBeatIndex = targetBeatIndex;
         renderCurrentPanel();
         await persistCurrentState();
-        ErrorHandler.showUserSuccess(`已切换到第${targetBeatIndex + 1}节拍（共${beatCount}节拍）`);
+        if (!combine) ErrorHandler.showUserSuccess(`已切换到第${targetBeatIndex + 1}节拍（共${beatCount}节拍）`);
     }
 
     function parseNodeLines(text) {
@@ -824,6 +832,7 @@ export function createChapterExperienceView(deps = {}) {
         memory.chapterCurrentBeatIndex = normalizedBeats.length > 0
             ? Math.max(0, Math.min(Number.isInteger(draft.chapterCurrentBeatIndex) ? draft.chapterCurrentBeatIndex : 0, normalizedBeats.length - 1))
             : 0;
+        delete memory.chapterBeatRangeStartIndex;
 
         ensureMemoryRuntime(memory, chapterIndex);
         renderCurrentPanel();
@@ -1102,9 +1111,10 @@ export function createChapterExperienceView(deps = {}) {
 
         const beats = normalizeBeats(script, memory.chapterOutline || '');
         const currentBeatIndex = Number.isInteger(memory.chapterCurrentBeatIndex) ? memory.chapterCurrentBeatIndex : 0;
+        const rangeStart = getCombinedBeatStartIndex(memory, beats.length);
         const beatCards = beats.length > 0
             ? beats.map((beat, idx) => {
-                const isActive = idx === currentBeatIndex;
+                const isActive = idx === currentBeatIndex || idx === rangeStart;
                 const originalText = typeof beat.original_text === 'string' ? beat.original_text : '';
                 const entryEvent = String(
                     beat.entryEvent
@@ -1217,9 +1227,12 @@ export function createChapterExperienceView(deps = {}) {
             nextBtn.textContent = isLast ? '⏹ 已是最后一章' : '⏭ 下一章';
         }
         if (hintEl) {
-            const beatHint = beatCount > 1
-                ? `当前节拍：${currentBeatIndex + 1}/${beatCount}。可点按钮切换，也可在输入中写“上一节拍/下一节拍”触发。`
-                : '当前章仅1个节拍，暂不可切换。';
+            const rangeStart = getCombinedBeatStartIndex(memory, beatCount);
+            const beatHint = rangeStart !== null
+                ? `当前合并节拍：${rangeStart + 1}–${currentBeatIndex + 1}/${beatCount}。可点按钮切换。`
+                : (beatCount > 1
+                    ? `当前节拍：${currentBeatIndex + 1}/${beatCount}。可点按钮切换，也可在输入中写“上一节拍/下一节拍”触发。`
+                    : '当前章仅1个节拍，暂不可切换。');
             if (isLast) {
                 hintEl.textContent = `当前已到最后一章。${beatHint}`;
             } else if (idx === 0) {
@@ -1501,10 +1514,25 @@ export function createChapterExperienceView(deps = {}) {
         }
     }
 
-    async function enterChapter(index) {
+    async function enterChapter(index, combine = false) {
         if (index < 0 || index >= AppState.memory.queue.length) return;
         ensureState();
+        if (AppState.experience.currentChapterIndex !== index) {
+            const previousMemory = getMemory(AppState.experience.currentChapterIndex);
+            if (previousMemory) delete previousMemory.chapterBeatRangeStartIndex;
+        }
         AppState.experience.currentChapterIndex = index;
+        const memory = getMemory(index);
+        if (memory && combine) {
+            ensureMemoryRuntime(memory, index);
+            const start = memory.chapterCurrentBeatIndex;
+            const beats = normalizeBeats(memory.chapterScript, memory.chapterOutline || '');
+            if (start + 1 < beats.length) {
+                memory.chapterBeatRangeStartIndex = start;
+                memory.chapterCurrentBeatIndex = start + 1;
+                if (!memory.chapterScript.beats.length) memory.chapterScript.beats = beats;
+            }
+        }
         renderCurrentPanel();
     }
 
@@ -1560,6 +1588,7 @@ export function createChapterExperienceView(deps = {}) {
             : 0;
         memory.chapterCurrentBeatIndex = beatIndex;
         AppState.experience.currentBeatIndex = beatIndex;
+        const rangeStart = getCombinedBeatStartIndex(memory, totalBeats);
 
         return {
             ok: true,
@@ -1567,16 +1596,19 @@ export function createChapterExperienceView(deps = {}) {
             currentChapter: chapterIndex + 1,
             totalChapters: queue.length,
             currentBeat: totalBeats > 0 ? beatIndex + 1 : 0,
+            beatRangeStart: rangeStart === null ? null : rangeStart + 1,
             totalBeats,
             remainingChapters,
-            display: totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}/${remainingChapters}` : '0/0',
+            display: rangeStart !== null
+                ? `${rangeStart + 1}–${beatIndex + 1}/${totalBeats}/${remainingChapters}`
+                : (totalBeats > 0 ? `${beatIndex + 1}/${totalBeats}/${remainingChapters}` : '0/0'),
             canPreviousBeat: totalBeats > 0 && beatIndex > 0,
             canNextBeat: totalBeats > 0 && beatIndex < maxBeatIndex,
             canNextChapter: chapterIndex < maxChapterIndex,
         };
     }
 
-    async function goToNextBeat() {
+    async function goToNextBeat(count = 1) {
         const status = getReadingProgressStatus();
         if (!status.ok) {
             ErrorHandler.showUserError('暂无可切换节拍的章节');
@@ -1587,7 +1619,8 @@ export function createChapterExperienceView(deps = {}) {
             return { ok: false, reason: 'last-beat', status };
         }
 
-        await switchCurrentBeat(1);
+        const combine = count === 2;
+        await switchCurrentBeat(combine ? 2 : 1, combine);
         return { ok: true, status: getReadingProgressStatus() };
     }
 
@@ -1606,7 +1639,7 @@ export function createChapterExperienceView(deps = {}) {
         return { ok: true, status: getReadingProgressStatus() };
     }
 
-    async function goToNextChapter() {
+    async function goToNextChapter(count = 1) {
         const status = getReadingProgressStatus();
         if (!status.ok) {
             ErrorHandler.showUserError('暂无可切换章节');
@@ -1617,7 +1650,7 @@ export function createChapterExperienceView(deps = {}) {
             return { ok: false, reason: 'last-chapter', status };
         }
 
-        await enterChapter(status.currentChapter);
+        await enterChapter(status.currentChapter, count === 2);
         await persistCurrentState();
         return { ok: true, status: getReadingProgressStatus() };
     }
