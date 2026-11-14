@@ -33,6 +33,7 @@ export function createChapterExperienceView(deps = {}) {
         chapterHint: 'ttw-current-chapter-hint',
         editButton: 'ttw-edit-current-chapter-btn',
         copyPreviousContextButton: 'ttw-copy-previous-context-btn',
+        copyBeatOriginalsButton: 'ttw-copy-beat-originals-btn',
         prevButton: 'ttw-prev-chapter-btn',
         prevBeatButton: 'ttw-prev-beat-btn',
         nextBeatButton: 'ttw-next-beat-btn',
@@ -344,6 +345,89 @@ export function createChapterExperienceView(deps = {}) {
         } catch (error) {
             ErrorHandler.showUserError(`复制失败：${error?.message || error}`);
         }
+    }
+
+    function openCopyBeatOriginals() {
+        const currentChapterIndex = AppState.experience?.currentChapterIndex ?? 0;
+        const currentBeatIndex = getMemory(currentChapterIndex)?.chapterCurrentBeatIndex ?? 0;
+        const chapters = AppState.memory.queue.map((memory) => {
+            const beats = memory?.chapterScript?.beats;
+            return Array.isArray(beats) ? beats.slice(0, 8) : [];
+        });
+        const beats = chapters.flatMap((chapter, chapterIndex) =>
+            chapter.map((beat, beatIndex) => ({
+                chapter: chapterIndex + 1,
+                beat: beatIndex + 1,
+                text: beat?.original_text ?? beat?.originalText ?? '',
+            })),
+        );
+        if (!beats.length) {
+            ErrorHandler.showUserError('暂无可复制的节拍原文');
+            return;
+        }
+
+        const current = beats.findIndex(({ chapter, beat }) => chapter === currentChapterIndex + 1 && beat === currentBeatIndex + 1);
+        const label = ({ chapter, beat }) => `第${chapter}章 · 第${beat}拍`;
+        const options = beats.map((beat, index) => `<option value="${index}">${label(beat)}</option>`).join('');
+        const modal = ModalFactory.create({
+            id: 'ttw-copy-beat-originals-modal',
+            title: '复制原文',
+            body: `
+                <label for="ttw-copy-beat-start">起点</label>
+                <select id="ttw-copy-beat-start" class="ttw-select">
+                    <option value="">默认：第1章 · 第1拍</option>${options}
+                </select>
+                <label for="ttw-copy-beat-end">终点</label>
+                <select id="ttw-copy-beat-end" class="ttw-select">
+                    <option value="">${current >= 0 ? `默认：当前拍（${label(beats[current])}）` : '请选择终点'}</option>${options}
+                </select>
+                <p>可跨章，包含起点和终点。</p>
+            `,
+            footer: '<button type="button" class="ttw-btn ttw-btn-primary" data-copy-originals>复制</button>',
+            maxWidth: '460px',
+        });
+        const startSelect = modal.querySelector('#ttw-copy-beat-start');
+        const endSelect = modal.querySelector('#ttw-copy-beat-end');
+        const copyButton = modal.querySelector('[data-copy-originals]');
+        copyButton.addEventListener('click', async () => {
+            const start = Number(startSelect.value);
+            const end = endSelect.value === '' ? current : Number(endSelect.value);
+            if (startSelect.value === '' && beats[0].chapter !== 1) {
+                ErrorHandler.showUserError('第1章缺少节拍，请选择起点');
+                return;
+            }
+            if (end < 0) {
+                ErrorHandler.showUserError('请选择终点');
+                return;
+            }
+            if (start > end) {
+                ErrorHandler.showUserError('起点不能晚于终点');
+                return;
+            }
+            const selected = beats.slice(start, end + 1);
+            const emptyChapter = chapters.findIndex((chapter, index) =>
+                index + 1 >= beats[start].chapter && index + 1 <= beats[end].chapter && !chapter.length,
+            );
+            if (emptyChapter >= 0) {
+                ErrorHandler.showUserError(`第${emptyChapter + 1}章缺少节拍，请调整范围或先生成节拍`);
+                return;
+            }
+            const missing = selected.find(({ text }) => typeof text !== 'string' || !text.trim());
+            if (missing) {
+                ErrorHandler.showUserError(`${label(missing)}缺少原文，请调整范围或补齐原文`);
+                return;
+            }
+            copyButton.disabled = true;
+            try {
+                await writeClipboardText(selected.map(({ text }) => text).join('\n\n'));
+                ModalFactory.close(modal);
+                ErrorHandler.showUserSuccess('原文已复制到剪贴板');
+            } catch (error) {
+                ErrorHandler.showUserError(`复制失败：${error?.message || error}`);
+            } finally {
+                copyButton.disabled = false;
+            }
+        });
     }
 
     function normalizeSplitType(type) {
@@ -1941,6 +2025,11 @@ export function createChapterExperienceView(deps = {}) {
             copyPreviousContextBtn.addEventListener('click', () => {
                 copyPreviousContext();
             });
+        }
+        const copyBeatOriginalsBtn = document.getElementById(selectors.copyBeatOriginalsButton);
+        if (copyBeatOriginalsBtn && !copyBeatOriginalsBtn.dataset.bound) {
+            copyBeatOriginalsBtn.dataset.bound = '1';
+            copyBeatOriginalsBtn.addEventListener('click', openCopyBeatOriginals);
         }
     }
 

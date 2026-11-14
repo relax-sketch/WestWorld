@@ -935,6 +935,7 @@ function buildResultSectionHtml() {
                     <div class="ttw-current-panel-actions">
                         <button id="ttw-edit-current-chapter-btn" class="ttw-btn ttw-btn-small">✏️ 编辑章节概览</button>
                         <button id="ttw-copy-previous-context-btn" class="ttw-btn ttw-btn-small">📋 复制前置剧情</button>
+                        <button type="button" id="ttw-copy-beat-originals-btn" class="ttw-btn ttw-btn-small">📋 复制原文</button>
                         <button id="ttw-prev-chapter-btn" class="ttw-btn ttw-btn-small">⏮ 上一章</button>
                         <button id="ttw-prev-beat-btn" class="ttw-btn ttw-btn-small">⏮ 上一节拍</button>
                         <button id="ttw-next-beat-btn" class="ttw-btn ttw-btn-small">⏭ 下一节拍</button>
