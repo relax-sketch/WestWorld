@@ -383,7 +383,7 @@ export function createDirectorService(deps = {}) {
         return normalized.slice(0, 8).map((beat, idx) => normalizeBeat(beat, idx));
     }
 
-    function ensureChapterBeats(memory) {
+    function ensureChapterBeats(memory, previousMemory) {
         if (!memory || !memory.chapterScript || typeof memory.chapterScript !== 'object') {
             return [];
         }
@@ -394,7 +394,7 @@ export function createDirectorService(deps = {}) {
 
         if (memory.chapterScript.beats.length > 0) {
             const savedBeats = memory.chapterScript.beats;
-            memory.chapterScript.beats = getCombinedBeatStartIndex(memory, savedBeats.length) !== null
+            memory.chapterScript.beats = getCombinedBeatStartIndex(memory, savedBeats.length, previousMemory) !== null
                 ? savedBeats.slice(0, 8)
                 : ensureMinimumBeatCount(savedBeats, memory.chapterOutline || '');
             memory.chapterScript.beats = maybeRepairShiftedBeatMetadata(memory.chapterScript.beats);
@@ -413,9 +413,12 @@ export function createDirectorService(deps = {}) {
         return memory.chapterScript.beats;
     }
 
-    function combineCurrentBeats(beats, start) {
+    function combineCurrentBeats(beats, start, previousMemory) {
         if (start === null) return beats;
-        const first = beats[start];
+        const previousBeats = start === -1 ? previousMemory.chapterScript.beats.slice(0, 8) : null;
+        const first = previousBeats
+            ? normalizeBeat(previousBeats.at(-1), previousBeats.length - 1)
+            : beats[start];
         const second = beats[start + 1];
         const combined = beats.slice();
         combined[start + 1] = {
@@ -1159,8 +1162,9 @@ export function createDirectorService(deps = {}) {
         const memory = queue[chapterIndex] || null;
         if (!memory) return { ok: false, reason: 'chapter-missing' };
         ensureMemoryDirectorRuntime(memory, chapterIndex);
-        const chapterBeats = ensureChapterBeats(memory);
-        const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length));
+        const previousMemory = queue[chapterIndex - 1];
+        const chapterBeats = ensureChapterBeats(memory, previousMemory);
+        const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length, previousMemory), previousMemory);
         const beatCount = Array.isArray(beats) ? beats.length : 0;
         const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
             ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beatCount - 1)))
@@ -1220,8 +1224,9 @@ export function createDirectorService(deps = {}) {
             const memory = queue[chapterIndex] || null;
             if (!memory) return { ok: false, reason: 'chapter-missing', content: '', meta: {} };
             ensureMemoryDirectorRuntime(memory, chapterIndex);
-            const chapterBeats = ensureChapterBeats(memory);
-            const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length));
+            const previousMemory = queue[chapterIndex - 1];
+            const chapterBeats = ensureChapterBeats(memory, previousMemory);
+            const beats = combineCurrentBeats(chapterBeats, getCombinedBeatStartIndex(memory, chapterBeats.length, previousMemory), previousMemory);
             const beatIndex = Number.isInteger(memory.chapterCurrentBeatIndex)
                 ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, Math.max(0, beats.length - 1)))
                 : 0;
@@ -1425,7 +1430,9 @@ export function createDirectorService(deps = {}) {
         }
         ensureMemoryDirectorRuntime(memory, chapterIndex);
 
-        const chapterBeats = ensureChapterBeats(memory);
+        const chapterQueue = AppState.memory.queue;
+        const previousMemory = chapterQueue[chapterIndex - 1];
+        const chapterBeats = ensureChapterBeats(memory, previousMemory);
         if (chapterBeats.length === 0) {
             directorTelemetry?.markGateSkipped?.('beats-missing', { chapterIndex });
             directorWarn(`无可用轻节拍，chapter=${chapterIndex + 1}`);
@@ -1436,7 +1443,7 @@ export function createDirectorService(deps = {}) {
             ? Math.max(0, Math.min(memory.chapterCurrentBeatIndex, chapterBeats.length - 1))
             : 0;
         memory.chapterCurrentBeatIndex = currentBeatIdx;
-        const rangeStart = getCombinedBeatStartIndex(memory, chapterBeats.length);
+        const rangeStart = getCombinedBeatStartIndex(memory, chapterBeats.length, previousMemory);
         const turnPrefix = buildDirectorTurnPrefix(chapterIndex);
         const runStartedAt = Date.now();
         const runId = directorTelemetry?.makeRunId?.() || `wwd-${runStartedAt.toString(36)}`;
@@ -1456,8 +1463,7 @@ export function createDirectorService(deps = {}) {
         const switchCommand = rangeStart === null ? detectExplicitBeatSwitchCommand(latestUserMessage) : null;
         const switchControl = resolveBeatSwitchControl(currentBeatIdx, chapterBeats, switchCommand);
         const lockedBeatIdx = switchControl.lockedBeatIdx;
-        const beats = combineCurrentBeats(chapterBeats, rangeStart);
-        const chapterQueue = Array.isArray(AppState.memory?.queue) ? AppState.memory.queue : [];
+        const beats = combineCurrentBeats(chapterBeats, rangeStart, previousMemory);
         const chapterMaxIdx = Math.max(0, chapterQueue.length - 1);
         const previousChapterIdx = Number.isInteger(AppState.experience?.lastChapterIdx)
             ? Math.max(0, Math.min(AppState.experience.lastChapterIdx, chapterMaxIdx))
@@ -1466,12 +1472,15 @@ export function createDirectorService(deps = {}) {
 
         const beatCountCache = new Map();
         beatCountCache.set(chapterIndex, beats.length);
+        if (rangeStart === -1) {
+            beatCountCache.set(chapterIndex - 1, Math.min(8, previousMemory.chapterScript.beats.length));
+        }
 
         function getChapterBeatCount(idx) {
             if (!Number.isInteger(idx) || idx < 0 || idx > chapterMaxIdx) return 0;
             if (beatCountCache.has(idx)) return beatCountCache.get(idx);
             const chapterMemory = chapterQueue[idx];
-            const chapterBeats = ensureChapterBeats(chapterMemory);
+            const chapterBeats = ensureChapterBeats(chapterMemory, chapterQueue[idx - 1]);
             const count = Array.isArray(chapterBeats) ? chapterBeats.length : 0;
             beatCountCache.set(idx, Math.max(0, count));
             return beatCountCache.get(idx);
@@ -1502,7 +1511,9 @@ export function createDirectorService(deps = {}) {
         const historyBeatIdx = rangeStart !== null && (chapterChanged || previousBeatIdx !== lockedBeatIdx)
             ? rangeStart
             : lockedBeatIdx;
-        const currentGlobalBeatOrdinal = toGlobalBeatOrdinal(chapterIndex, historyBeatIdx);
+        const currentGlobalBeatOrdinal = historyBeatIdx === -1
+            ? toGlobalBeatOrdinal(chapterIndex - 1, getChapterBeatCount(chapterIndex - 1) - 1)
+            : toGlobalBeatOrdinal(chapterIndex, historyBeatIdx);
         const previousGlobalBeatOrdinal = previousBeatIdx >= 0
             ? toGlobalBeatOrdinal(previousChapterIdx, previousBeatIdx)
             : null;
@@ -1629,7 +1640,7 @@ export function createDirectorService(deps = {}) {
         if (AppState.experience.currentChapterIndex !== chapterIndex
             || AppState.memory.queue[chapterIndex] !== memory
             || memory.chapterCurrentBeatIndex !== currentBeatIdx
-            || getCombinedBeatStartIndex(memory, chapterBeats.length) !== rangeStart) {
+            || getCombinedBeatStartIndex(memory, chapterBeats.length, AppState.memory.queue[chapterIndex - 1]) !== rangeStart) {
             return shouldInjectChat ? null : { ok: false, reason: 'reading-progress-changed' };
         }
 

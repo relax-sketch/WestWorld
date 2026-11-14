@@ -138,9 +138,11 @@ export function ensureMemoryDirectorRuntime(memory, index = 0) {
     return memory;
 }
 
-export function getCombinedBeatStartIndex(memory, beatCount) {
+export function getCombinedBeatStartIndex(memory, beatCount, previousMemory) {
     const start = memory.chapterBeatRangeStartIndex;
-    return Number.isInteger(start) && start >= 0
+    const previousBeats = previousMemory?.chapterScript?.beats;
+    const crossesChapter = start === -1 && Array.isArray(previousBeats) && previousBeats.length > 0;
+    return Number.isInteger(start) && (start >= 0 || crossesChapter)
         && start + 1 === memory.chapterCurrentBeatIndex && start + 1 < beatCount
         ? start
         : null;

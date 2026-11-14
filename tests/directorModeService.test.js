@@ -303,3 +303,45 @@ test('API failure and parse failure do not silently inject fallback when disable
     const malformedResult = await prepare(malformed.service);
     assert.deepEqual(malformedResult, { ok: false, reason: 'directorFallbackOnError=false' });
 });
+
+test('local two-beat selection crosses chapters and keeps the same originals on regeneration', async (t) => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { getElementById: () => null };
+    t.after(() => {
+        if (previousDocument === undefined) delete globalThis.document;
+        else globalThis.document = previousDocument;
+    });
+
+    const { AppState, service, getApiCalls } = createService({
+        mode: 'local-fallback',
+        overrides: {
+            [PROMPT_MODULE_IDS.DIRECTOR_INJECTION]: {
+                body: '{DIRECTION_START}|{CURRENT_BEAT_ORIGINAL}|{DIRECTION_END}|{NEXT_BEAT_SUMMARY}',
+            },
+        },
+    });
+    AppState.memory.queue[0].chapterScript.beats.push({
+        summary: '章末', entryEvent: '起点甲', original_text: '正文甲', exitCondition: '省略的结尾',
+    });
+    AppState.memory.queue.push({
+        chapterOutline: '仅供概况显示',
+        chapterScript: { beats: [
+            { summary: '章首', entryEvent: '省略的开头', original_text: '正文乙', exitCondition: '终点乙' },
+            { summary: '后续', original_text: '正文丙' },
+        ] },
+    });
+    const view = createChapterExperienceView({
+        AppState,
+        ErrorHandler: { showUserError: assert.fail, showUserSuccess() {} },
+    });
+    assert.equal((await view.goToNextBeat(2)).status.display, '1章末–2章1拍');
+    for (const type of ['normal', 'regenerate']) {
+        const result = await service.prepareDirectorInjectionForGeneration({ type });
+        assert.equal(result.content, '起点甲|正文甲\n\n正文乙|终点乙|后续');
+    }
+    assert.equal(getApiCalls(), 0);
+    const next = (await view.goToNextBeat()).status;
+    assert.equal(next.currentChapter, 2);
+    assert.equal(next.currentBeat, 2);
+    assert.equal(next.beatRangeStart, null);
+});
